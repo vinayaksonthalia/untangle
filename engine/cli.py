@@ -24,6 +24,7 @@ from engine.evidence import ReconIndex
 from engine.ingest import InputError, load_bank, load_ledger, load_recon
 from engine.llm.client import LLMClient
 from engine.llm.narrate import resolve_unknowns
+from engine.exceptions import build_exceptions
 from engine.feegst import fee_gst
 from engine.models import Rail, RunReport
 from engine.reconcile import reconcile
@@ -68,6 +69,7 @@ def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
     reconciliations, unresolved_rzp, _sidx = reconcile(lines_by_key, attributions, recon_rows)
     feegst = fee_gst(reconciliations, recon_rows)
     reconciled_paise = sum(r.credit_amount_paise for r in reconciliations)
+    exceptions = build_exceptions(attributions, unresolved_rzp, lines_by_key)
 
     confidences = [a.confidence for a in attributions if not a.abstained]
     totals = {
@@ -81,6 +83,8 @@ def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
         "reconciled_paise": reconciled_paise,
         "unresolved_rzp_count": len(unresolved_rzp),
         "fee_gst_recoverable_paise": feegst.total_recoverable_paise,
+        "exception_count": len(exceptions),
+        "exceptions_by_reason": dict(sorted(Counter(e.reason_code for e in exceptions).items())),
         "total_credit_paise": total_credit_paise,
         "required_precision": round(required_precision(), 4),
         "coverage_curve": [c.__dict__ for c in coverage_curve(confidences)],
@@ -90,7 +94,7 @@ def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
         attributions=attributions,
         reconciliations=reconciliations,
         fee_gst=feegst,
-        exceptions=[],               # Phase 5 (US3)
+        exceptions=exceptions,
         audit_root=ledger.root,
         config={
             "engine_version": _ENGINE_VERSION,
@@ -155,6 +159,8 @@ def _print_summary(report: RunReport) -> None:
           f"razorpay credits to the paise · {t['unresolved_rzp_count']} unresolved")
     print(f"Recoverable fee-GST (input tax credit, from Razorpay's own tax-on-fee): "
           f"{_fmt_inr(t['fee_gst_recoverable_paise'])}")
+    by_reason = ", ".join(f"{k} {v}" for k, v in t.get("exceptions_by_reason", {}).items())
+    print(f"Exceptions: {t.get('exception_count', 0)}" + (f" ({by_reason})" if by_reason else ""))
     print(f"Audit root: {report.audit_root}")
 
 
@@ -180,6 +186,14 @@ def _cmd_why(args) -> int:
         print("    (none — insufficient signal, abstained)")
     for e in match["evidence"]:
         print(f"    - [{e['weight']:.2f}] {e['signal']}: {e['detail']}")
+    rec = next((r for r in report.get("reconciliations", []) if r["line_key"] == args.line_key), None)
+    if rec:
+        print(f"reconciled: covers {len(rec['covered_entity_ids'])} recon rows; "
+              f"residual {rec['residual_paise']} paise; balanced={rec['balanced']}")
+    exc = next((e for e in report.get("exceptions", []) if e["line_key"] == args.line_key), None)
+    if exc:
+        print(f"exception: {exc['reason_code']} — {exc['detail']}")
+        print(f"    suggested: {exc['suggested_action']}")
     return 0
 
 
