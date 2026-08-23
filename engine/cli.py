@@ -57,8 +57,6 @@ def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
         ledger.append("attribution", {"line_key": a.line_key, "rail": a.rail,
                                       "confidence": round(a.confidence, 4), "tier": a.tier,
                                       "abstained": a.abstained})
-    ledger.append("run_end", {"attributed": sum(1 for a in attributions if not a.abstained)})
-
     by_rail = Counter(a.rail for a in attributions)
     rupees_by_rail: dict[str, int] = defaultdict(int)
     for a, ln in zip(attributions, lines, strict=True):
@@ -70,6 +68,14 @@ def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
     feegst = fee_gst(reconciliations, recon_rows)
     reconciled_paise = sum(r.credit_amount_paise for r in reconciliations)
     exceptions = build_exceptions(attributions, unresolved_rzp, lines_by_key)
+    for r in reconciliations:
+        ledger.append("reconciliation", {"line_key": r.line_key,
+                                         "covered": len(r.covered_entity_ids),
+                                         "residual_paise": r.residual_paise, "balanced": r.balanced})
+    for e in exceptions:
+        ledger.append("exception", {"line_key": e.line_key, "reason_code": e.reason_code})
+    ledger.append("run_end", {"attributed": sum(1 for a in attributions if not a.abstained),
+                              "reconciled": len(reconciliations), "exceptions": len(exceptions)})
 
     confidences = [a.confidence for a in attributions if not a.abstained]
     totals = {
@@ -156,7 +162,7 @@ def _print_summary(report: RunReport) -> None:
     print(f"Total credited: {_fmt_inr(t['total_credit_paise'])} across "
           f"{t['n_recon_rows']} recon rows")
     print(f"Reconciled {_fmt_inr(t['reconciled_paise'])} across {t['reconciled_count']} "
-          f"razorpay credits to the paise · {t['unresolved_rzp_count']} unresolved")
+          f"razorpay credits to the paise (±₹1 labelled drift) · {t['unresolved_rzp_count']} unresolved")
     print(f"Recoverable fee-GST (input tax credit, from Razorpay's own tax-on-fee): "
           f"{_fmt_inr(t['fee_gst_recoverable_paise'])}")
     by_reason = ", ".join(f"{k} {v}" for k, v in t.get("exceptions_by_reason", {}).items())
