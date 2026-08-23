@@ -1,0 +1,8 @@
+source_url: https://razorpay.com/docs/api/settlements/fetch-recon
+fetched_at: 2026-08-21 (curl, no query params)
+fetched_from: Vinayak's machine (Indian egress IP)
+served_variant: INR / MasterCard / KARB  (grep: INR=12, MasterCard=9, KARB=9, USD=0, AMEX=0)
+note: An independent reviewer fetching the SAME URL received USD / AMEX. No query
+      parameter was used by either party. Conclusion: razorpay.com/docs serves a
+      geo-varied sample by client location. Numbers are identical across variants;
+      only currency / card_network / card_issuer strings change.
