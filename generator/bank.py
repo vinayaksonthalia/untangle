@@ -50,6 +50,10 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
     rng_utr = Rng(cfg.seed, "bank_utr")
     rng_narr = Rng(cfg.seed, "bank_narr")
     rng_line = Rng(cfg.seed, "bank_lineid")
+    rng_brand = Rng(cfg.seed, "bank_brand")       # brand-less decision
+    rng_vdate = Rng(cfg.seed, "bank_valuedate")   # value_date jitter
+    rng_decoy = Rng(cfg.seed, "bank_decoy")        # amount-collision / brandish decoys
+    rng_bankutr = Rng(cfg.seed, "bank_legutr")     # per-leg bank UTR + bank txn refs
 
     nr = cfg.noise
 
@@ -131,12 +135,26 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
     rzp_lines: List[dict] = []
     truth: List[dict] = []
     hard_counts = {
-        "split_settlement": 0, "merge_settlements": len(merged_pairs),
-        "rounding_drift": 0, "mangled_utr": 0, "bank_charge": 0,
+        "split_settlement_events": 0, "split_settlement_legs": 0,
+        "merge_settlements": len(merged_pairs),
+        "rounding_drift": 0, "mangled_utr": 0, "prefix_destroyed": 0,
+        "utr_absent": 0, "brand_less": 0, "value_date_jitter": 0,
+        "amount_collision_rzp": 0, "bank_charge": 0,
         "carry_forward": carry_count,
     }
+    # razorpay lines chosen to get a same-amount decoy on another rail (SERIOUS-1a)
+    collision_targets: List[dict] = []
 
-    def emit_rzp_line(settlement_ids, settlement_utrs, rows, settled_at, day, tags):
+    def _bank_leg_utr(settled_at: int) -> str:
+        """A bank-assigned UTR for a split leg: UTR-shaped but NOT the recon
+        settlement_utr, so each leg carries its OWN bank UTR (shared settlement
+        id lives in the label). Defeats the clean-recon-UTR join on split legs."""
+        alpha = "abcdefghijklmnopqrstuvwxyz0123456789"
+        suffix = "".join(rng_bankutr.choice(alpha) for _ in range(6))
+        return f"{settled_at}{suffix}"
+
+    def emit_rzp_line(settlement_ids, settlement_utrs, rows, settled_at, day, tags,
+                      leg_utr=None):
         true_amt = _net_of_rows(row_index, rows)
         drift = 0
         if rng_hard.chance(nr.rounding_drift_rate):
@@ -145,25 +163,59 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
             hard_counts["rounding_drift"] += 1
         display_paise = true_amt + drift
 
-        utr = settlement_utrs[0]
+        # Each split leg carries its own bank UTR; otherwise the settlement's UTR.
+        clean_utr = leg_utr if leg_utr is not None else settlement_utrs[0]
+
+        # ---- UTR visibility in the narration/ref (SERIOUS-1c / SERIOUS-2) ----
         mangled = False
         if rng_hard.chance(nr.mangled_utr_rate):
-            narr_utr = N.mangle_utr(utr, rng_utr)
+            destroy = rng_utr.chance(nr.mangled_prefix_destroy_share)
+            narr_utr = N.mangle_utr(clean_utr, rng_utr, destroy_prefix=destroy)
             mangled = True
             tags = tags + ["mangled_utr"]
             hard_counts["mangled_utr"] += 1
+            if destroy:
+                tags = tags + ["prefix_destroyed"]
+                hard_counts["prefix_destroyed"] += 1
+        elif rng_hard.chance(nr.utr_absent_rate):
+            narr_utr = None  # UTR echoed nowhere on this line
+            tags = tags + ["utr_absent"]
+            hard_counts["utr_absent"] += 1
         else:
-            narr_utr = utr
-        narration = N.razorpay_narration(narr_utr, rng_narr)
+            narr_utr = clean_utr
+
+        # ---- Brand visibility (SERIOUS-1b: brand-less settlements) ----
+        if rng_brand.chance(nr.brandless_rate):
+            narration = N.razorpay_narration_brandless(narr_utr, rng_narr)
+            tags = tags + ["brand_less"]
+            hard_counts["brand_less"] += 1
+        else:
+            narration = N.razorpay_narration(narr_utr, rng_narr)
+
+        # ref_no echoes the (possibly mangled) UTR, else a bank txn ref (no UTR)
+        ref_no = narr_utr if narr_utr is not None else N.bank_txn_ref(rng_bankutr)
+
+        # ---- value_date jitter (SERIOUS-2: break value_date == UTR epoch) ----
+        value_date = settled_at
+        if rng_vdate.chance(nr.value_date_jitter_rate):
+            value_date = settled_at + rng_vdate.choice([-2, -1, 1, 2]) * DAY
+            tags = tags + ["value_date_jitter"]
+            hard_counts["value_date_jitter"] += 1
+
+        # ---- amount-collision decoy target (SERIOUS-1a) ----
+        if rng_decoy.chance(nr.amount_collision_rate):
+            tags = tags + ["amount_collision"]
+            hard_counts["amount_collision_rzp"] += 1
+            collision_targets.append({"credit_paise": display_paise,
+                                      "day": day})
 
         line_id = "bl_" + rng_line.token(12)
-        value_date = settled_at
         line = {
             "line_id": line_id,
             "value_date": value_date,
             "txn_date": value_date,
             "narration": narration,
-            "ref_no": narr_utr,
+            "ref_no": ref_no,
             "credit_paise": display_paise,
             "debit_paise": 0,
             "_rail": "razorpay_settlement",
@@ -176,6 +228,7 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
             "settlement_ids": settlement_ids,
             "settlement_utrs": settlement_utrs,
             "narration_utr": narr_utr,
+            "bank_leg_utr": leg_utr,
             "utr_mangled": mangled,
             "rounding_drift_paise": drift,
             "true_amount_paise": true_amt,
@@ -190,7 +243,6 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
             base_tags = base_tags + ["carry_forward"]
         do_split = ev["kind"] == "single" and len(ev["rows"]) >= 4 and rng_hard.chance(nr.split_settlement_rate)
         if do_split:
-            hard_counts["split_settlement"] += 1
             rows = list(ev["rows"])
             rng_hard.shuffle(rows)
             cut = len(rows) // 2
@@ -201,14 +253,17 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
                     do_split = False
                     break
             if do_split:
+                hard_counts["split_settlement_events"] += 1
                 for leg, grp in enumerate(groups):
                     settled_at = ev["settled_at"] + (leg * DAY)  # different value-dates
+                    # each leg gets its OWN bank UTR; settlement_id stays shared
+                    leg_utr = _bank_leg_utr(settled_at)
                     emit_rzp_line(ev["settlement_ids"], ev["settlement_utrs"], grp,
                                   settled_at, ev["day"] + leg,
-                                  base_tags + ["split_settlement", f"split_leg_{leg+1}of2"])
+                                  base_tags + ["split_settlement", f"split_leg_{leg+1}of2"],
+                                  leg_utr=leg_utr)
+                    hard_counts["split_settlement_legs"] += 1
                 continue
-            else:
-                hard_counts["split_settlement"] -= 1
         emit_rzp_line(ev["settlement_ids"], ev["settlement_utrs"], ev["rows"],
                       ev["settled_at"], ev["day"], list(base_tags))
 
@@ -260,6 +315,37 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
             narr, ref, credit, debit = N.unrelated_narration(rng_narr, rng_rail)
             emit_other("unrelated", rng_rail.randint(2, cfg.n_days - 1),
                        rng_rail.randint(0, 23), credit, debit, narr, ref)
+
+    # ---- Amount-collision decoys (SERIOUS-1a): a non-rzp line sharing the EXACT
+    # displayed credit of a razorpay line, so amount is not a key and an
+    # amount-only join produces false positives. ----
+    hard_counts["amount_collision_decoys"] = 0
+    _collision_rails = ["other_gateway", "direct_upi", "cod_remittance", "unrelated"]
+    for tgt in collision_targets:
+        rail = rng_decoy.choice(_collision_rails)
+        if rail == "other_gateway":
+            narr, ref = N.other_gateway_narration(rng_narr)
+        elif rail == "direct_upi":
+            narr, ref = N.direct_upi_narration(rng_narr)
+        elif rail == "cod_remittance":
+            narr, ref = N.cod_narration(rng_narr)
+        else:
+            narr, ref, _c, _d = N.unrelated_narration(rng_narr, rng_rail)
+        day = min(cfg.n_days - 1, max(2, tgt["day"] + rng_decoy.choice([-1, 0, 1])))
+        emit_other(rail, day, rng_rail.randint(0, 23),
+                   tgt["credit_paise"], 0, narr, ref, hard=["amount_collision"])
+        hard_counts["amount_collision_decoys"] += 1
+
+    # ---- Brandish decoys (SERIOUS-1b): non-rzp credits engineered to LOOK
+    # Razorpay-ish (carry a RAZORPAY/RZPX token) so a brand grep false-positives. ----
+    hard_counts["decoy_brandish"] = 0
+    n_brandish = int(round(nr.decoy_brandish_rate * n_rzp))
+    for _ in range(n_brandish):
+        narr, ref, rail = N.brandish_decoy_narration(rng_narr)
+        amt = rng_rail.randint(20000, 6000000)
+        emit_other(rail, rng_rail.randint(2, cfg.n_days - 1),
+                   rng_rail.randint(0, 23), amt, 0, narr, ref, hard=["decoy_brandish"])
+        hard_counts["decoy_brandish"] += 1
 
     # ---- Bank charge / reversal debit lines (B4), ~ per week ----
     n_weeks = max(1, cfg.n_days // 7)

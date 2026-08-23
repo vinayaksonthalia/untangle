@@ -24,14 +24,51 @@ _RZP_TEMPLATES = [
     "NEFT CR-RAZORPAY-{utr}",
 ]
 
+# Branded, but NO UTR anywhere (bank dropped the reference field). Still a real
+# Razorpay settlement; the clean-UTR join finds nothing here.
+_RZP_TEMPLATES_NOUTR = [
+    "NEFT CR-RAZORPAY SOFTWARE PVT LTD-MERCHANT SETTLEMENT",
+    "RTGS/RAZORPAY SOFTWARE PRIVATE LIM/SETTLEMENT",
+    "ACH C/ RAZORPAYX SETTLEMENT CREDIT",
+]
 
-def mangle_utr(utr: str, rng: Rng) -> str:
-    """Truncate / drop chars / uppercase / split with a space — B1."""
-    mode = rng.choice(["truncate_tail", "truncate_head", "drop_middle", "upper", "spaced"])
+# BRAND-LESS Razorpay settlements (FR-016 edge case): sponsor-bank IFSC + UTR
+# only, the remitter-name field truncated away by the bank. Contains NO
+# "RAZORPAY"/"RZPX"/"RZP" token, so a brand grep MISSES these. `{utr}` may be
+# absent (None) -> a template without the field is chosen.
+_RZP_BRANDLESS_UTR = [
+    "NEFT CR-RATN0000088-{utr}",
+    "NEFT CR-RATN0000088-MERCHANT SETTLEMENT-{utr}",
+    "RTGS/{utr}/RATN0000088",
+    "NEFT-{utr}-YESB0PTMUPI-SETTLEMENT",
+    "IMPS/{utr}/RATN0000088/SETTLE",
+]
+_RZP_BRANDLESS_NOUTR = [
+    "NEFT CR-RATN0000088-MERCHANT SETTLEMENT",
+    "IMPS RATN0000088 SETTLEMENT CREDIT",
+    "RTGS/RATN0000088/MERCHANT PAYOUT",
+]
+
+
+def mangle_utr(utr: str, rng: Rng, destroy_prefix: bool = False) -> str:
+    """Truncate / drop chars / uppercase / split with a space — B1.
+
+    If `destroy_prefix` is True the 10-digit epoch-like prefix is DESTROYED
+    (dropped or replaced), so the UTR can't be reconstructed from its prefix and
+    a value_date+amount recovery attack fails (SERIOUS-2). Otherwise the prefix
+    is largely preserved (truncate_tail / drop_middle / upper / spaced)."""
+    if destroy_prefix:
+        suffix = utr[10:] if len(utr) > 10 else utr[len(utr) // 2:]
+        mode = rng.choice(["suffix_only", "bankref", "tail_frag"])
+        if mode == "suffix_only":
+            return suffix.upper()
+        if mode == "bankref":
+            return "N" + rng.digits(4) + suffix.upper()
+        # tail_frag: keep only the last few chars of the whole UTR
+        return utr[-rng.randint(4, 6):].upper()
+    mode = rng.choice(["truncate_tail", "drop_middle", "upper", "spaced"])
     if mode == "truncate_tail":
-        return utr[: max(6, len(utr) - rng.randint(2, 5))]
-    if mode == "truncate_head":
-        return utr[rng.randint(2, 4):]
+        return utr[: max(10, len(utr) - rng.randint(2, 5))]
     if mode == "drop_middle":
         i = len(utr) // 2
         return utr[: i] + utr[i + rng.randint(1, 3):]
@@ -42,8 +79,44 @@ def mangle_utr(utr: str, rng: Rng) -> str:
     return utr[:i] + " " + utr[i:]
 
 
-def razorpay_narration(utr: str, rng: Rng) -> str:
+def razorpay_narration(utr, rng: Rng) -> str:
+    """Branded Razorpay narration. `utr` None -> a UTR-less branded template."""
+    if utr is None:
+        return rng.choice(_RZP_TEMPLATES_NOUTR)
     return rng.choice(_RZP_TEMPLATES).format(utr=utr)
+
+
+def razorpay_narration_brandless(utr, rng: Rng) -> str:
+    """Brand-less Razorpay narration (no RAZORPAY/RZPX/RZP token)."""
+    if utr is None:
+        return rng.choice(_RZP_BRANDLESS_NOUTR)
+    return rng.choice(_RZP_BRANDLESS_UTR).format(utr=utr)
+
+
+def bank_txn_ref(rng: Rng) -> str:
+    """A bank-assigned transaction reference (NOT the settlement UTR) — used in
+    ref_no when the UTR is echoed nowhere, so the clean-UTR join finds nothing."""
+    return rng.choice(["N", "S", "R"]) + rng.digits(rng.randint(9, 12))
+
+
+# ---- Brandish DECOYS: non-Razorpay credits engineered to LOOK Razorpay-ish ----
+# They carry a RAZORPAY/RZPX token but are NOT the merchant's settlement (a
+# RazorpayX vendor payout, a personal reimbursement, a UPI collect naming a rzp
+# handle, a cashback). A brand grep FALSELY attributes these -> precision drops.
+_BRANDISH_DECOYS = [
+    ("NEFT CR-RAZORPAYX PAYOUTS-VENDOR REFUND-{ref}", "unrelated"),
+    ("IMPS/{ref}/FROM RAZORPAY EMPLOYEE WELFARE/REIMB", "unrelated"),
+    ("UPI/CR/{ref}/razorpayx@ybl/COLLECT", "direct_upi"),
+    ("NEFT-RZPX-{ref}-CASHBACK PROMO", "unrelated"),
+    ("RTGS/RAZORPAY CAPITAL LOAN DISBURSAL/{ref}", "unrelated"),
+]
+
+
+def brandish_decoy_narration(rng: Rng):
+    """Return (narration, ref, rail) for a Razorpay-looking non-settlement."""
+    tmpl, rail = rng.choice(_BRANDISH_DECOYS)
+    ref = rng.choice(["RZP", "RX", "N"]) + rng.digits(rng.randint(9, 11))
+    return tmpl.format(ref=ref), ref, rail
 
 
 # ---- Other payment gateways (Cashfree / PayU / CCAvenue) ----

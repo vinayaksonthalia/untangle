@@ -12,12 +12,31 @@ Invariants asserted:
   I4  No on_hold row (settled == False) is ever covered by a bank line (V7).
   I5  Every ground-truth line_id exists in the bank statement, and vice-versa.
 
+Adversarial-hardening invariants (FR-016) — the benchmark must actually contain
+the cases it claims, so no headline metric rests on an absent hard class:
+  I6  Every `brand_less` razorpay line's narration carries NO brand token
+      (RAZORPAY / RZPX / RZP) — a brand grep genuinely misses it.
+  I7  Every `prefix_destroyed` razorpay line's narration/ref does NOT contain the
+      UTR's 10-digit epoch prefix — the UTR can't be recovered from its prefix.
+  I8  Every `decoy_brandish` line is a NON-razorpay rail AND carries a brand
+      token — a brand grep genuinely false-positives on it.
+  I9  Every `amount_collision` razorpay line shares its exact displayed credit
+      with at least one non-razorpay bank line — amount is not a key.
+  I10 At least one `carry_forward` bank line exists — the case actually fires.
+
 Raises AssertionError on any violation; returns a small report dict on success.
 """
 
 from __future__ import annotations
 
 from typing import Dict, List
+
+BRAND_TOKENS = ("RAZORPAY", "RZPX", "RZP")
+
+
+def _has_brand(narration: str) -> bool:
+    u = (narration or "").upper()
+    return any(tok in u for tok in BRAND_TOKENS)
 
 
 def run(recon_rows: List[dict], bank_lines: List[dict], truth: List[dict]) -> Dict:
@@ -65,9 +84,49 @@ def run(recon_rows: List[dict], bank_lines: List[dict], truth: List[dict]) -> Di
     assert not missing, f"I3: {len(missing)} settled rows never covered (e.g. {missing[:3]})"
     assert not doubled, f"I3: {len(doubled)} rows double-covered (e.g. {doubled[:3]})"
 
+    # ---- Adversarial-hardening invariants (I6-I10) ----
+    # credit amount -> set of rails that have a bank line with that exact amount
+    amount_rails: Dict[int, set] = {}
+    for b in bank_lines:
+        if b["credit_paise"]:
+            amount_rails.setdefault(b["credit_paise"], set()).add(b["_rail"])
+
+    carry_forward_lines = 0
+    for t in truth:
+        tags = t.get("hard_cases", [])
+        narr = bank_by_id[t["line_id"]]["narration"]
+        if "carry_forward" in tags:
+            carry_forward_lines += 1
+        if t["rail"] == "razorpay_settlement":
+            if "brand_less" in tags:
+                assert not _has_brand(narr), \
+                    f"I6: brand_less line {t['line_id']} carries a brand token: {narr!r}"
+            if "prefix_destroyed" in tags:
+                clean = t.get("bank_leg_utr") or (t["settlement_utrs"][0]
+                                                  if t["settlement_utrs"] else "")
+                prefix = clean[:10]
+                assert prefix and prefix not in narr, (
+                    f"I7: prefix_destroyed line {t['line_id']} still exposes UTR "
+                    f"prefix {prefix!r} in {narr!r}"
+                )
+            if "amount_collision" in tags:
+                rails = amount_rails.get(t["bank_display_paise"], set())
+                assert any(r != "razorpay_settlement" for r in rails), (
+                    f"I9: amount_collision line {t['line_id']} has no non-rzp "
+                    f"line sharing amount {t['bank_display_paise']}"
+                )
+        else:
+            if "decoy_brandish" in tags:
+                assert _has_brand(narr), \
+                    f"I8: decoy_brandish line {t['line_id']} lacks a brand token: {narr!r}"
+
+    assert carry_forward_lines >= 1, \
+        "I10: no carry_forward bank line was produced (case declared but absent)"
+
     return {
         "razorpay_lines_checked": checked,
         "settled_rows_covered": len(settled_batch_rows),
-        "invariants": ["I1", "I2", "I3", "I4", "I5"],
+        "carry_forward_lines": carry_forward_lines,
+        "invariants": ["I1", "I2", "I3", "I4", "I5", "I6", "I7", "I8", "I9", "I10"],
         "status": "PASS",
     }

@@ -47,13 +47,18 @@ def _modal_rate(method: str, network: Optional[str], ctype: Optional[str]) -> fl
     return C.MODAL_RATE_UPI  # upi -> 0
 
 
-def compute_fee(amount: int, method: str, network, ctype, deviate: bool) -> Dict[str, int]:
+def compute_fee(amount: int, method: str, network, ctype, deviate: bool,
+                direction_up: bool = True) -> Dict[str, int]:
     """Return {base_fee, tax, fee}. tax is inside fee. UPI stays zero even if
-    a deviation was requested (PROJECT_SPEC 4b: never manufacture UPI variance)."""
+    a deviation was requested (PROJECT_SPEC 4b: never manufacture UPI variance).
+
+    `direction_up` is drawn from the seeded RNG by the caller (NOT from amount
+    parity): a deviating row's rate is pushed UP (x1.6) or DOWN (x0.5) at random,
+    so fee-variance direction is ~50/50 rather than ~90% one-directional."""
     rate = _modal_rate(method, network, ctype)
     if deviate and method != "upi":
         # push off the cluster mode by a visible but plausible factor
-        rate = rate * (1.6 if (amount % 2 == 0) else 0.5)
+        rate = rate * (1.6 if direction_up else 0.5)
     base_fee = int(round(amount * rate))
     tax = int(round(base_fee * C.GST_ON_FEE_RATE))
     fee = base_fee + tax
@@ -120,11 +125,34 @@ def build(cfg: C.Config) -> dict:
     rng_gst = Rng(cfg.seed, "gst")
     rng_desc = Rng(cfg.seed, "desc")
     rng_assign = Rng(cfg.seed, "assign")
+    rng_carry = Rng(cfg.seed, "carry")
 
     batches = build_batches(cfg, rng_id)
     by_day: Dict[int, List[dict]] = {}
     for b in batches:
         by_day.setdefault(b["day"], []).append(b)
+
+    # ---- Reserve carry-forward batches (SERIOUS-3) ----
+    # A few settlement batches are deliberately starved of payments and later
+    # seeded with refund/chargeback DEBITS so their net is <= 0. In bank.py these
+    # roll forward into the next positive settlement (labeled carry_forward).
+    # We reserve at most one batch per day (settlements_per_day=4) so every day
+    # keeps assignable batches, and never on the first/last settlement day so a
+    # later positive batch always exists to absorb the carry.
+    n_carry = max(3, int(round(cfg.noise.carry_forward_rate * len(batches))))
+    safe_days = [d for d in sorted(by_day) if 3 <= d <= cfg.n_days - 3
+                 and len(by_day[d]) >= 2]
+    carry_days = rng_carry.sample(safe_days, min(n_carry, len(safe_days)))
+    carry_batches: List[dict] = []
+    reserved = set()
+    for d in carry_days:
+        b = rng_carry.choice(by_day[d])
+        carry_batches.append(b)
+        reserved.add(b["settlement_id"])
+    by_day_assignable: Dict[int, List[dict]] = {
+        d: [b for b in bs if b["settlement_id"] not in reserved]
+        for d, bs in by_day.items()
+    }
 
     recon_rows: List[dict] = []
     orders: List[dict] = []
@@ -141,7 +169,8 @@ def build(cfg: C.Config) -> dict:
         network, ctype, issuer = _card_fields(rng_card, method)
         amount = _amount(rng_amt)
         deviate = rng_fee.chance(cfg.noise.fee_variance_rate)
-        fee = compute_fee(amount, method, network, ctype, deviate)
+        direction_up = rng_fee.chance(0.5)  # RNG-drawn, not amount-parity (MINOR fix)
+        fee = compute_fee(amount, method, network, ctype, deviate, direction_up)
 
         on_hold = rng_flag.chance(cfg.noise.on_hold_rate)
         created_day = rng_time.randint(0, cfg.n_days - 3)
@@ -157,7 +186,8 @@ def build(cfg: C.Config) -> dict:
             settlement_utr = None
             settled = False
         else:
-            batch = rng_assign.choice(by_day[created_day + 2])
+            pool = by_day_assignable.get(created_day + 2) or by_day[created_day + 2]
+            batch = rng_assign.choice(pool)
             settled_at = batch["settled_at"]
             settlement_id = batch["settlement_id"]
             settlement_utr = batch["settlement_utr"]
@@ -225,11 +255,11 @@ def build(cfg: C.Config) -> dict:
     order_by_id = {o["order_id"]: o for o in orders}
 
     # ---- Refunds (some cross-cycle: settle in a LATER batch than the payment) ----
-    n_refunds = int(round(cfg.n_payments * 0.08))
+    n_refunds = int(round(cfg.n_payments * cfg.noise.refund_rate))
     refund_parents = rng_flag.sample([p for p in payments if p["batch"] is not None],
                                      min(n_refunds, len([p for p in payments if p["batch"]])))
     for p in refund_parents:
-        partial = rng_flag.chance(0.4)
+        partial = rng_flag.chance(cfg.noise.partial_refund_rate)
         ramount = p["amount"] if not partial else max(4900, int(p["amount"] * rng_amt.choice([0.25, 0.5, 0.75])))
         parent_day = p["batch"]["day"]
         is_cross_cycle = False
@@ -291,15 +321,47 @@ def build(cfg: C.Config) -> dict:
         dispute_ids.append(rid)
         order_by_id[p["oid"]]["status"] = "chargeback"
 
+    # ---- Seed carry-forward batches (SERIOUS-3) ----
+    # Each reserved carry batch has no payments; we attach 1-2 refund/chargeback
+    # DEBIT rows (referencing payments settled in OTHER batches) so its net is
+    # strictly negative. bank.py's roll-forward then carries these rows into the
+    # next positive settlement, producing labeled `carry_forward` bank lines.
+    carry_seed_refunds = 0
+    settled_payments = [p for p in payments if p["batch"] is not None]
+    for cb in carry_batches:
+        n_seed = rng_carry.randint(1, 2)
+        for _ in range(n_seed):
+            p = rng_carry.choice(settled_payments)
+            rid = ids.refund_id(rng_id)
+            ramount = p["amount"]  # full refund -> guarantees net<=0 for the batch
+            created_at = cb["settled_at"] - rng_time.randint(3600, 3 * DAY)
+            row = {
+                "entity_id": rid, "type": "refund", "debit": ramount, "credit": 0,
+                "amount": ramount, "currency": CURRENCY, "fee": 0, "tax": 0,
+                "on_hold": False, "settled": True, "created_at": created_at,
+                "settled_at": cb["settled_at"], "settlement_id": cb["settlement_id"],
+                "posted_at": None, "credit_type": "default",
+                "description": "Refund (carried settlement)", "notes": None,
+                "payment_id": p["pid"], "settlement_utr": cb["settlement_utr"],
+                "order_id": p["oid"], "order_receipt": None,
+                "method": p["method"], "card_network": p["network"],
+                "card_issuer": p["issuer"], "card_type": p["ctype"], "dispute_id": None,
+            }
+            recon_rows.append(row)
+            cb["rows"].append(["refund", rid])
+            carry_seed_refunds += 1
+
     # ---- Route transfers (V2): debit = amount + fee, order_id NULL, method NULL ----
+    # Exclude reserved carry batches so their net stays <= 0 (carry_forward).
+    non_carry_batches = [b for b in batches if b["settlement_id"] not in reserved]
     n_transfers = int(round(cfg.n_payments * cfg.noise.transfer_rate))
     for _ in range(n_transfers):
         p = rng_assign.choice(payments)
         tamount = max(4900, int(p["amount"] * rng_amt.choice([0.2, 0.3, 0.5])))
-        base_fee = int(round(tamount * 0.0025))
+        base_fee = int(round(tamount * cfg.noise.transfer_base_fee_rate))
         tax = int(round(base_fee * C.GST_ON_FEE_RATE))
         fee = base_fee + tax
-        batch = rng_assign.choice(batches)
+        batch = rng_assign.choice(non_carry_batches)
         tid = ids.transfer_id(rng_id)
         created_at = p["created_at"] + rng_time.randint(0, 3 * DAY)
         row = {
@@ -318,7 +380,9 @@ def build(cfg: C.Config) -> dict:
         batch["rows"].append(["transfer", tid])
 
     # ---- Adjustments (V1): no join key at all; credit_type OMITTED (V10) ----
-    for batch in batches:
+    # Skip reserved carry batches: a positive adjustment credit could flip their
+    # net back above zero and defeat the carry_forward construction.
+    for batch in non_carry_batches:
         n_adj = 1 if rng_flag.chance(cfg.noise.adjustment_per_batch) else 0
         if n_adj and rng_flag.chance(0.15):
             n_adj = 2
@@ -366,6 +430,8 @@ def build(cfg: C.Config) -> dict:
             "transfers": n_transfers,
             "on_hold_rows": len(on_hold_ids),
             "fee_variance_rows": len(fee_variance_ids),
+            "carry_batches_reserved": len(carry_batches),
+            "carry_seed_refunds": carry_seed_refunds,
         },
         "fee_variance_ids": fee_variance_ids,
         "on_hold_ids": on_hold_ids,

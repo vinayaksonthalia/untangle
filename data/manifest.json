@@ -17,15 +17,25 @@
     "noise_rates": {
       "on_hold_rate": 0.02,
       "dispute_rate": 0.015,
+      "refund_rate": 0.08,
+      "partial_refund_rate": 0.4,
       "cross_cycle_refund_rate": 0.35,
       "transfer_rate": 0.03,
+      "transfer_base_fee_rate": 0.0025,
       "adjustment_per_batch": 0.35,
       "fee_variance_rate": 0.03,
       "split_settlement_rate": 0.08,
       "merge_settlement_rate": 0.06,
       "rounding_drift_rate": 0.1,
-      "mangled_utr_rate": 0.15,
+      "mangled_utr_rate": 0.3,
+      "mangled_prefix_destroy_share": 0.55,
+      "utr_absent_rate": 0.2,
       "bank_charge_per_week": 2.0,
+      "brandless_rate": 0.22,
+      "amount_collision_rate": 0.2,
+      "decoy_brandish_rate": 0.18,
+      "value_date_jitter_rate": 0.6,
+      "carry_forward_rate": 0.04,
       "order_id_missing_rate": 0.04,
       "order_id_mangled_rate": 0.03,
       "order_id_duplicate_rate": 0.02
@@ -33,67 +43,81 @@
   },
   "outputs": {
     "recon_report.json": {
-      "bytes": 8676206,
-      "sha256": "a7c2e191ef67027d5d81ab0a9fc35f3b5ce526a1b04fe3729dfef692e6960e28"
+      "bytes": 8679852,
+      "sha256": "3d7e03fe7f5af77309cdcc5c7724cf4d9151bc24d30bdbf4c006e5091224de76"
     },
     "order_ledger.csv": {
       "bytes": 905434,
       "sha256": "112a0b7226c395664199cd10bd5b74ca3e295ef762c965358b2036769c2bb808"
     },
     "bank_statement.csv": {
-      "bytes": 30726,
-      "sha256": "78fe4e1f2517262f2bf009343dadeaef3962687e398f957ba66ac7cf195edba3"
+      "bytes": 34528,
+      "sha256": "2b61d9633a1e577f660df63c40f4b3316e5a4cfc5d5179c825e7f86b6f53fdc5"
     },
     "ground_truth.json": {
-      "bytes": 996548,
-      "sha256": "f44932cbd56fc3fb03aed75b8ea69b40f17d5ac29da284709e4b3ce3ee01842a"
+      "bytes": 1019000,
+      "sha256": "06efe5477a7b5f9ae2a5629b8fdd1ad4065a2b051810d8bff861c030bfede7d6"
     }
   },
   "row_counts": {
-    "recon_rows": 12416,
+    "recon_rows": 12422,
     "recon_rows_by_type": {
       "payment": 11000,
-      "refund": 1045,
+      "refund": 1053,
       "transfer": 330,
-      "adjustment": 41
+      "adjustment": 39
     },
     "order_ledger_rows": 11226,
-    "bank_statement_lines": 257,
-    "ground_truth_labels": 257
+    "bank_statement_lines": 294,
+    "ground_truth_labels": 294
   },
   "per_rail_counts": {
-    "razorpay_settlement": 117,
-    "other_gateway": 33,
-    "direct_upi": 44,
-    "cod_remittance": 22,
-    "unrelated": 41
+    "razorpay_settlement": 113,
+    "other_gateway": 39,
+    "direct_upi": 55,
+    "cod_remittance": 28,
+    "unrelated": 59
   },
   "per_hard_case_counts": {
-    "split_settlement": 8,
+    "split_settlement_events": 8,
+    "split_settlement_legs": 16,
     "merge_settlements": 3,
-    "rounding_drift": 8,
-    "mangled_utr": 13,
+    "rounding_drift": 11,
+    "mangled_utr": 31,
+    "prefix_destroyed": 19,
+    "utr_absent": 13,
+    "brand_less": 16,
+    "value_date_jitter": 69,
+    "amount_collision_rzp": 21,
     "bank_charge": 8,
-    "carry_forward": 0,
+    "carry_forward": 4,
+    "amount_collision_decoys": 21,
+    "decoy_brandish": 20,
     "on_hold_rows": 206,
     "dispute_rows": 165,
-    "fee_variance_rows": 179,
+    "fee_variance_rows": 157,
     "cross_cycle_refunds": 297,
     "route_transfers": 330,
-    "adjustments": 41,
+    "adjustments": 39,
     "ledger_order_id_missing": 457,
     "ledger_order_id_mangled": 350,
     "ledger_order_id_duplicate": 226
   },
   "selfcheck": {
-    "razorpay_lines_checked": 117,
-    "settled_rows_covered": 12210,
+    "razorpay_lines_checked": 113,
+    "settled_rows_covered": 12216,
+    "carry_forward_lines": 4,
     "invariants": [
       "I1",
       "I2",
       "I3",
       "I4",
-      "I5"
+      "I5",
+      "I6",
+      "I7",
+      "I8",
+      "I9",
+      "I10"
     ],
     "status": "PASS"
   },

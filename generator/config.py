@@ -1,9 +1,15 @@
 """
 Central configuration for the `untangle` synthetic-data generator.
 
-DESIGN RULE: every rate that controls corruption/commingling is a NAMED field
-here, never a magic number buried in logic. The noise taxonomy table in
-generator/README.md is generated to stay in sync with these values.
+DESIGN RULE: every *injection-rate* knob that controls how often a corruption /
+commingling / adversarial case fires is a NAMED field on `NoiseRates`, never a
+magic number buried in logic. A small, explicitly-enumerated set of STRUCTURAL
+constants remains inline where they are arithmetic facts or fixed catalogs
+(the GST-on-fee rate, the per-network MDR table, the rounding-drift magnitude
+set, and the sample bank-charge amounts); each of those is annotated at its
+definition and listed in generator/README.md under "Intentional constants".
+The noise taxonomy table in generator/README.md stays in sync with the
+`NoiseRates` fields below.
 
 All monetary amounts are in PAISE (integer subunits) — verified against the
 Razorpay recon fixture (fixtures/recon_sdk_node_2026-08-21.md), where
@@ -54,6 +60,10 @@ WALLETS: List[str] = ["paytm", "phonepe", "freecharge", "mobikwik"]
 # ---------------------------------------------------------------------------
 GST_ON_FEE_RATE = 0.18
 
+# STRUCTURAL CONSTANT (annotated): per-(network, type) modal base MDR fraction.
+# A fixed pricing catalog, not an injection rate. RuPay DEBIT is zero-rated
+# (RBI zero-MDR on RuPay debit + BHIM-UPI, effective Jan-2020), so it is
+# deliberately 0.0000 — mirroring the UPI zero-MDR treatment below.
 MODAL_RATE_CARD: Dict[Tuple[str, str], float] = {
     # (network, type) -> base MDR fraction
     ("MasterCard", "credit"): 0.0200,
@@ -63,7 +73,7 @@ MODAL_RATE_CARD: Dict[Tuple[str, str], float] = {
     ("Diners", "credit"): 0.0300,
     ("MasterCard", "debit"): 0.0090,
     ("Visa", "debit"): 0.0090,
-    ("RuPay", "debit"): 0.0060,
+    ("RuPay", "debit"): 0.0000,  # zero-MDR (RBI RuPay-debit zero-rating)
     ("AMEX", "debit"): 0.0120,
     ("Diners", "debit"): 0.0120,
 }
@@ -98,8 +108,11 @@ class NoiseRates:
     # --- Recon-side / settlement structure ---
     on_hold_rate: float = 0.020          # V7: settled=false, never hits bank this cycle
     dispute_rate: float = 0.015          # V8: payment spawns a chargeback debit later
+    refund_rate: float = 0.080           # fraction of settled payments that spawn a refund row
+    partial_refund_rate: float = 0.400   # of refunds, fraction that are partial (not full amount)
     cross_cycle_refund_rate: float = 0.35  # V5: refund settles in a LATER batch than its payment
     transfer_rate: float = 0.030         # V2: route transfer rows (trf_*)
+    transfer_base_fee_rate: float = 0.0025  # base MDR applied to a route transfer's amount
     adjustment_per_batch: float = 0.35   # V1: expected adjustment rows per settlement batch
 
     # --- Fee variance (feeds PROJECT_SPEC 4 fee-variance module) ---
@@ -109,8 +122,18 @@ class NoiseRates:
     split_settlement_rate: float = 0.080   # V6/B: one settlement -> two bank credits, diff value-dates
     merge_settlement_rate: float = 0.060   # B3: two settlements -> one same-day bank credit
     rounding_drift_rate: float = 0.100     # M4: bank credit differs from true net by a few paise
-    mangled_utr_rate: float = 0.150        # B1: UTR in narration truncated/mangled
+    mangled_utr_rate: float = 0.300        # B1: UTR in narration truncated/mangled
+    mangled_prefix_destroy_share: float = 0.55  # of mangled UTRs, fraction whose epoch prefix is DESTROYED
+    utr_absent_rate: float = 0.20          # (of non-mangled rzp lines) UTR echoed NOWHERE (ref_no is a bank txn id)
     bank_charge_per_week: float = 2.0      # B4: NEFT/RTGS charge + GST debit lines per week
+
+    # --- Adversarial hardening (FR-016): defeat single-key baselines ---
+    # brand keyword, unique amount, and clean UTR must each FAIL alone.
+    brandless_rate: float = 0.22           # rzp settlement lines whose narration carries NO brand token
+    amount_collision_rate: float = 0.20    # rzp lines that get a same-amount decoy on another rail
+    decoy_brandish_rate: float = 0.18      # non-rzp lines (as a fraction of rzp count) made to look Razorpay-ish
+    value_date_jitter_rate: float = 0.60   # rzp lines whose bank value_date is shifted off settled_at (breaks value_date==UTR-epoch)
+    carry_forward_rate: float = 0.040      # fraction of settlement batches forced net<=0 (roll forward -> carry_forward)
 
     # --- Merchant order-ledger corruption (exports from Shopify/Tally/Woo) ---
     order_id_missing_rate: float = 0.040   # M1: order_id blank/empty
