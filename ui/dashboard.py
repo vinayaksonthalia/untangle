@@ -2,14 +2,11 @@
 
     python -m ui.dashboard --run out/report.json --out ui/dashboard.html
 
-Zero runtime dependencies: the report JSON is embedded, so the file opens anywhere
-(file:// or any static host) with no server and no network. Deterministic: same report
-in → same HTML out.
-
-Design: a "bank statement" idiom — statement-paper ground, ink figures set in a mono
-tabular face and aligned on the decimal, hairline rules, teal reserved for "reconciled".
-The signature is the account ribbon: one stacked bar of the commingled account that
-untangles into the per-rail tally below.
+Zero runtime dependencies (report data is inlined at build time as computed values, not a
+raw dump). Deterministic: same report in → same HTML out. Design follows a researched
+premium-fintech spec (Stripe / Ramp / Mercury / Linear lineage): warm paper canvas, one
+confident accent, Fraunces display + IBM Plex Mono figures (tabular, right-aligned), depth
+from 1px borders not shadows, and one product-native signature — the "untangle thread".
 """
 
 from __future__ import annotations
@@ -17,13 +14,25 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import math
+
+_RAIL = {
+    "razorpay_settlement": ("Razorpay settlement", "#2B5EDB", True),
+    "other_gateway": ("Other gateway", "#6B5B95", False),
+    "direct_upi": ("Direct UPI", "#4A8B6F", False),
+    "cod_remittance": ("COD remittance", "#8A6D3B", False),
+    "unrelated": ("Unrelated", "#8C8C82", False),
+    "UNKNOWN": ("Unattributed", "#ADABA2", None),
+}
+_REASON = {
+    "razorpay_coverage_not_found": ("coverage not found", "#B4720A"),
+    "razorpay_uncertain": ("razorpay uncertain", "#B4720A"),
+    "unattributed_ambiguous": ("unattributed", "#B23B3B"),
+}
 
 
-def _inr(paise: int, with_paise: bool = False) -> str:
-    r = paise / 100.0
-    neg = r < 0
-    whole = abs(int(r)) if with_paise else abs(int(round(r)))
-    s = f"{whole:d}"
+def _grp(n: int) -> str:
+    s = f"{abs(n):d}"
     if len(s) > 3:
         head, tail = s[:-3], s[-3:]
         parts = []
@@ -31,192 +40,213 @@ def _inr(paise: int, with_paise: bool = False) -> str:
             parts.insert(0, head[-2:]); head = head[:-2]
         parts.insert(0, head)
         s = ",".join(parts) + "," + tail
-    out = "₹" + s
-    if with_paise:
-        out += f".{abs(paise) % 100:02d}"
-    return ("−" if neg else "") + out
+    return s
 
 
-_RAIL_LABEL = {
-    "razorpay_settlement": "Razorpay settlement", "other_gateway": "Other gateway",
-    "direct_upi": "Direct UPI", "cod_remittance": "COD remittance",
-    "unrelated": "Unrelated", "UNKNOWN": "Unattributed",
-}
-# Muted, professional rail colours (no neon). Razorpay = the one blue; teal reserved for
-# the reconciled state elsewhere.
-_RAIL_COLOR = {
-    "razorpay_settlement": "#1d4ed8", "other_gateway": "#7c5cbf",
-    "direct_upi": "#2a9d8f", "cod_remittance": "#c2843b",
-    "unrelated": "#9aa1ab", "UNKNOWN": "#c0492f",
-}
-_REASON_LABEL = {
-    "razorpay_coverage_not_found": "coverage not found",
-    "razorpay_uncertain": "razorpay uncertain",
-    "unattributed_ambiguous": "unattributed",
-}
+def _amt(paise: int, paisa: bool = False) -> str:
+    rupees = int(abs(paise) // 100)
+    sign = "−" if paise < 0 else ""
+    body = _grp(rupees)
+    if paisa:
+        body += f".{abs(paise) % 100:02d}"
+    return f'{sign}<span class="rs">₹</span> {body}'
 
 
 def render(report: dict) -> str:
     t = report["totals"]
-    rzp_count = t["by_rail_count"].get("razorpay_settlement", 0)
-    unknown = t["by_rail_count"].get("UNKNOWN", 0)
-    total = t["total_credit_paise"] or 1
-    by_rail = sorted(t["by_rail_paise"].items(), key=lambda kv: -kv[1])
-
-    # Signature: the account ribbon (one stacked bar of the whole account).
-    ribbon = "".join(
-        f'<i style="width:{100.0 * p / total:.3f}%;background:{_RAIL_COLOR.get(r, "#999")}" '
-        f'title="{html.escape(_RAIL_LABEL.get(r, r))}: {_inr(p)}"></i>'
-        for r, p in by_rail
-    )
-
-    # Per-rail tally rows (decimal-aligned amounts, share bar).
-    maxp = max((p for _, p in by_rail), default=1)
-    tally = []
-    for r, p in by_rail:
-        tally.append(
-            f'<tr><td class="rl"><span class="sw" style="background:{_RAIL_COLOR.get(r,"#999")}">'
-            f'</span>{html.escape(_RAIL_LABEL.get(r, r))}</td>'
-            f'<td class="ct">{t["by_rail_count"].get(r, 0)}</td>'
-            f'<td class="amt">{_inr(p)}</td>'
-            f'<td class="shb"><i style="width:{100.0*p/maxp:.1f}%;background:{_RAIL_COLOR.get(r,"#999")}"></i></td></tr>'
-        )
-
+    bp = t["by_rail_paise"]; bc = t["by_rail_count"]
+    rzp_p = bp.get("razorpay_settlement", 0); rzp_c = bc.get("razorpay_settlement", 0)
+    unk_p = bp.get("UNKNOWN", 0); unk_c = bc.get("UNKNOWN", 0)
+    other_p = sum(v for k, v in bp.items() if k not in ("razorpay_settlement", "UNKNOWN"))
+    other_c = sum(v for k, v in bc.items() if k not in ("razorpay_settlement", "UNKNOWN"))
+    rec_p = t["reconciled_paise"]; rec_c = t["reconciled_count"]
+    fee = t["fee_gst_recoverable_paise"]; fee_n = len(report["fee_gst"]["by_entity"])
+    exc_n = t["exception_count"]
+    cov_amt = rec_p / rzp_p if rzp_p else 0
+    cov_cnt = rec_c / rzp_c if rzp_c else 0
     recs = report["reconciliations"]
     max_resid = max((abs(x["residual_paise"]) for x in recs), default=0)
 
-    exc = []
+    # rail breakdown rows (share bar + untangle thread)
+    order = sorted(bp.items(), key=lambda kv: -kv[1])
+    maxp = max((p for _, p in order), default=1)
+    rail_rows = []
+    for rail, p in order:
+        label, color, matched = _RAIL.get(rail, (rail, "#999", None))
+        w = 100.0 * p / maxp
+        dashed = "stroke-dasharray:2 4;" if matched is None else ""
+        rail_rows.append(f"""
+      <div class="rr">
+        <div class="rr-l"><span class="dot" style="background:{color}"></span>{html.escape(label)}</div>
+        <svg class="thread" viewBox="0 0 100 8" preserveAspectRatio="none"><line x1="0" y1="4" x2="{w:.1f}" y2="4"
+          stroke="{color}" stroke-width="6" stroke-linecap="round" style="{dashed}"/></svg>
+        <div class="rr-a mono">{_amt(p)}</div><div class="rr-c mono">{bc.get(rail,0)}</div>
+      </div>""")
+
+    # coverage arc
+    r = 54; circ = 2 * math.pi * r; off = circ * (1 - cov_amt)
+
+    exc_rows = []
     for e in report["exceptions"]:
-        exc.append(
-            f'<tr><td><span class="chip c-{html.escape(e["reason_code"])}">'
-            f'{html.escape(_REASON_LABEL.get(e["reason_code"], e["reason_code"]))}</span></td>'
-            f'<td class="dt">{html.escape(e["detail"])}</td>'
-            f'<td class="ac">{html.escape(e["suggested_action"])}</td></tr>'
-        )
+        lbl, col = _REASON.get(e["reason_code"], (e["reason_code"], "#6B6B62"))
+        exc_rows.append(f"""
+      <tr><td><span class="sev" style="--d:{col}">{html.escape(lbl)}</span></td>
+      <td class="dt">{html.escape(e["detail"])}</td>
+      <td class="ac">{html.escape(e["suggested_action"])}</td></tr>""")
 
     cfg = report.get("config", {})
-    recon_pct = 100.0 * t["reconciled_count"] / rzp_count if rzp_count else 0
-
-    return _TEMPLATE.format(
-        total=_inr(t["total_credit_paise"]), n_lines=t["n_bank_lines"],
-        reconciled=_inr(t["reconciled_paise"]), rec_count=t["reconciled_count"], rzp_count=rzp_count,
-        fee_gst=_inr(t["fee_gst_recoverable_paise"]), fee_n=len(report["fee_gst"]["by_entity"]),
-        exc_count=t["exception_count"], unknown=unknown, recon_pct=f"{recon_pct:.0f}",
-        max_resid=max_resid, ribbon=ribbon, tally="\n".join(tally), exc_rows="\n".join(exc),
+    reasons = t.get("exceptions_by_reason", {})
+    reason_line = " · ".join(
+        f'{v} {html.escape(_REASON.get(k, (k, ""))[0])}' for k, v in reasons.items()
+    )
+    return _T.format(
+        hero_rec=_amt(rec_p), hero_total=_amt(rzp_p), cov_pct=f"{cov_amt*100:.1f}",
+        fee=_amt(fee), fee_n=f"{fee_n:,}", rzp_rec=_amt(rzp_p), rzp_c=rzp_c,
+        rec_c=rec_c, other=_amt(other_p), other_c=other_c, exc_n=exc_n,
+        rail_rows="".join(rail_rows), circ=f"{circ:.1f}", off=f"{off:.1f}",
+        arc_pct=f"{cov_amt*100:.0f}", rec_of=f"{rec_c}/{rzp_c}",
+        unresolved=rzp_c - rec_c, unk_c=unk_c, max_resid=max_resid,
+        exc_rows="".join(exc_rows), reason_line=reason_line,
         seed=cfg.get("seed", "?"), provider=html.escape(str(cfg.get("provider") or "none")),
-        n_recon=f'{t["n_recon_rows"]:,}', audit=html.escape(report["audit_root"][:12]),
+        n_recon=f'{t["n_recon_rows"]:,}', n_lines=t["n_bank_lines"],
+        audit=html.escape(report["audit_root"][:10]),
     )
 
 
-_TEMPLATE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"/>
+_T = """<!doctype html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>untangle — settlement attribution</title>
+<title>untangle — settlement reconciliation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,480;9..144,560&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-:root{{--paper:#fbfaf6;--card:#ffffff;--ink:#1b1f24;--mut:#6a7280;--rule:#e7e3d8;
---teal:#0f766e;--amber:#b45309;--blue:#1d4ed8;
---sans:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
---mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;}}
+:root{{--bg:#f7f7f5;--surface:#fff;--sunken:#fbfbfa;--border:#e6e4df;--border2:#d8d5ce;
+--tp:#14140f;--ts:#6b6b62;--tt:#9b9b90;--acc:#2b5edb;--acc-tint:#eaf0fd;
+--ok:#1b7a4d;--warn:#b4720a;--dng:#b23b3b;
+--disp:'Fraunces',Georgia,serif;--ui:'Inter',-apple-system,'Segoe UI',sans-serif;--mono:'IBM Plex Mono',ui-monospace,monospace;
+--max:1120px;--r-lg:12px;--r-md:8px;}}
 *{{box-sizing:border-box}}
-body{{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
--webkit-font-smoothing:antialiased}}
-.wrap{{max-width:1040px;margin:0 auto;padding:40px 24px 72px}}
+body{{margin:0;background:var(--bg);color:var(--tp);font-family:var(--ui);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.5}}
 .mono{{font-family:var(--mono);font-variant-numeric:tabular-nums}}
-header{{display:flex;align-items:baseline;justify-content:space-between;
-border-bottom:2px solid var(--ink);padding-bottom:14px}}
-.brand{{font-weight:700;font-size:22px;letter-spacing:-.3px}}
-.brand b{{color:var(--teal)}}
-.kicker{{font-family:var(--mono);font-size:12px;color:var(--mut);letter-spacing:.5px;text-transform:uppercase}}
-.lead{{color:#3d434c;max-width:680px;margin:22px 0 26px;font-size:15.5px;line-height:1.55}}
-.eyebrow{{font-family:var(--mono);font-size:11.5px;letter-spacing:1.4px;text-transform:uppercase;
-color:var(--mut);margin:0 0 12px}}
-/* account ribbon — the signature */
-.ribbon{{display:flex;height:34px;border-radius:4px;overflow:hidden;border:1px solid var(--rule)}}
-.ribbon i{{display:block;height:100%;border-right:1px solid rgba(255,255,255,.55)}}
-.ribbon i:last-child{{border-right:0}}
-.ribbon-cap{{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;
-color:var(--mut);margin-top:7px}}
-/* figures row */
-.figs{{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin:30px 0 8px;
-border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}}
-.fig{{padding:18px 20px 18px 0;border-right:1px solid var(--rule)}}
-.fig:last-child{{border-right:0}}
-.fig .l{{font-family:var(--mono);font-size:11.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--mut)}}
-.fig .v{{font-family:var(--mono);font-weight:600;font-size:25px;letter-spacing:-.5px;margin-top:8px}}
-.fig .n{{font-size:12.5px;color:var(--mut);margin-top:5px}}
-.fig.hero .v{{color:var(--teal)}}
-.fig .tick{{color:var(--teal);font-weight:600}}
-section{{margin-top:42px}}
-h2{{font-size:15px;font-weight:600;margin:0 0 4px}}
-.sc{{color:var(--mut);font-size:13px;margin:0 0 16px}}
-table{{width:100%;border-collapse:collapse}}
-/* tally */
-.tally td{{padding:10px 12px;border-bottom:1px solid var(--rule);font-size:14px}}
-.tally .rl{{white-space:nowrap}}
-.sw{{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:9px;vertical-align:middle}}
-.tally .ct{{font-family:var(--mono);color:var(--mut);text-align:right;width:70px}}
-.tally .amt{{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;
-font-weight:600;width:150px}}
-.tally .shb{{width:190px}}.tally .shb i{{display:block;height:6px;border-radius:3px}}
-.note{{display:flex;gap:26px;flex-wrap:wrap;color:var(--mut);font-size:13px;margin-top:16px;
-padding-top:14px;border-top:1px solid var(--rule)}}
-.note b{{color:var(--ink);font-family:var(--mono)}}
-/* exceptions */
-.exc th{{text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.6px;text-transform:uppercase;
-color:var(--mut);font-weight:500;padding:0 12px 10px;border-bottom:1px solid var(--ink)}}
-.exc td{{padding:12px;border-bottom:1px solid var(--rule);vertical-align:top;font-size:13.5px}}
-.exc .dt{{color:#3d434c}}.exc .ac{{color:var(--mut)}}
-.chip{{display:inline-block;padding:3px 10px;border-radius:3px;font-family:var(--mono);font-size:11.5px;
-font-weight:500;white-space:nowrap}}
-.c-razorpay_coverage_not_found{{background:#e8eefb;color:#1d4ed8}}
-.c-razorpay_uncertain{{background:#f6ecd6;color:#8a5a12}}
-.c-unattributed_ambiguous{{background:#f6e0dd;color:#a23a2a}}
-footer{{margin-top:44px;padding-top:16px;border-top:2px solid var(--ink);
-display:flex;gap:26px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--mut)}}
-footer b{{color:var(--ink)}}
-@media(max-width:760px){{.figs{{grid-template-columns:repeat(2,1fr)}}.fig:nth-child(2){{border-right:0}}
-.tally .shb{{display:none}}}}
-</style></head><body><div class="wrap">
-<header><div class="brand">un<b>tangle</b></div><div class="kicker">multi-rail settlement reconciliation</div></header>
+.rs{{font-size:.85em;color:var(--ts)}}
+.topbar{{position:sticky;top:0;z-index:5;background:rgba(247,247,245,.86);backdrop-filter:blur(8px);
+border-bottom:1px solid var(--border);height:56px;display:flex;align-items:center}}
+.topbar .in{{max-width:var(--max);margin:0 auto;padding:0 48px;width:100%;display:flex;align-items:center;gap:16px}}
+.logo{{font-family:var(--disp);font-weight:560;font-size:19px;letter-spacing:-.01em}}
+.logo b{{color:var(--acc);font-weight:560}}
+.period{{font-family:var(--mono);font-size:12px;color:var(--ts);border:1px solid var(--border);border-radius:var(--r-md);padding:5px 10px}}
+.spacer{{flex:1}}
+.pill{{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:500;
+background:var(--warn);color:#fff;border-radius:100px;padding:5px 11px}}
+.pill .d{{width:6px;height:6px;border-radius:50%;background:#fff;opacity:.9}}
+.wrap{{max-width:var(--max);margin:0 auto;padding:56px 48px 80px}}
+.eyebrow{{font-family:var(--ui);font-weight:600;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ts);margin:0}}
+.hero-h{{font-family:var(--disp);font-weight:480;font-size:22px;letter-spacing:-.01em;margin:6px 0 18px}}
+.hero-fig{{font-family:var(--disp);font-weight:480;font-size:54px;line-height:1.02;letter-spacing:-.02em;font-variant-numeric:tabular-nums}}
+.hero-fig .of{{font-family:var(--ui);font-size:16px;font-weight:400;color:var(--ts);letter-spacing:0}}
+.covbar{{height:8px;background:var(--border);border-radius:100px;margin:20px 0 6px;max-width:620px;overflow:hidden}}
+.covbar i{{display:block;height:100%;background:var(--ok);border-radius:100px}}
+.covmeta{{font-size:12.5px;color:var(--ts)}}
+.cards{{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:36px 0 8px}}
+.card{{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px 22px;transition:border-color .15s,box-shadow .15s}}
+.card:hover{{border-color:var(--border2);box-shadow:0 2px 8px rgba(20,20,15,.06)}}
+.card.sig{{border-left:3px solid var(--acc)}}
+.card .l{{font-weight:600;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ts)}}
+.card .v{{font-family:var(--mono);font-weight:500;font-size:26px;margin-top:12px;letter-spacing:-.01em}}
+.card.sig .v{{font-size:30px;color:var(--acc)}}
+.card .n{{font-size:12.5px;color:var(--tt);margin-top:7px}}
+.card .n .tick{{color:var(--ok);font-weight:600}}
+.grid2{{display:grid;grid-template-columns:1.55fr 1fr;gap:24px;margin-top:52px;align-items:start}}
+.panel{{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:24px}}
+h2{{font-family:var(--disp);font-weight:480;font-size:20px;letter-spacing:-.01em;margin:0 0 3px}}
+.sc{{color:var(--ts);font-size:13px;margin:0 0 20px}}
+.rr{{display:grid;grid-template-columns:150px 1fr 130px 44px;align-items:center;gap:14px;height:46px;border-bottom:1px solid var(--border)}}
+.rr:last-child{{border-bottom:0}}
+.rr-l{{display:flex;align-items:center;gap:9px;font-size:13.5px;white-space:nowrap}}
+.dot{{width:8px;height:8px;border-radius:2px;flex:none}}
+.thread{{width:100%;height:8px}}
+.rr-a{{text-align:right;font-weight:500;font-size:13.5px}}
+.rr-c{{text-align:right;color:var(--tt);font-size:12.5px}}
+.arcwrap{{display:flex;flex-direction:column;align-items:center;text-align:center}}
+.arc{{position:relative;width:140px;height:140px}}
+.arc .pct{{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}}
+.arc .pct b{{font-family:var(--disp);font-weight:480;font-size:32px;font-variant-numeric:tabular-nums}}
+.arc .pct span{{font-size:11px;color:var(--ts);letter-spacing:.04em;text-transform:uppercase}}
+.legend{{width:100%;margin-top:22px}}
+.legend .li{{display:flex;align-items:center;gap:9px;font-size:13px;padding:7px 0;border-top:1px solid var(--border)}}
+.legend .li .d{{width:8px;height:8px;border-radius:2px}}
+.legend .li .c{{margin-left:auto;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ts)}}
+.explain{{font-size:12.5px;color:var(--ts);margin-top:16px;line-height:1.55}}
+.exc-wrap{{margin-top:52px}}
+table{{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}}
+thead th{{background:var(--sunken);text-align:left;font-weight:600;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ts);padding:12px 16px;border-bottom:1px solid var(--border)}}
+tbody td{{padding:14px 16px;border-bottom:1px solid var(--border);vertical-align:top;font-size:13px}}
+tbody tr:last-child td{{border-bottom:0}}
+tbody tr:hover{{background:var(--acc-tint)}}
+.sev{{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;color:var(--tp);font-size:12.5px}}
+.sev::before{{content:"";width:7px;height:7px;border-radius:50%;background:var(--d)}}
+.dt{{color:#3d3d36}}.ac{{color:var(--ts)}}
+footer{{max-width:var(--max);margin:44px auto 0;padding:18px 48px 0;border-top:1px solid var(--border);
+font-family:var(--mono);font-size:11.5px;color:var(--tt);display:flex;gap:26px;flex-wrap:wrap}}
+footer b{{color:var(--ts);font-weight:500}}
+@media(max-width:880px){{.wrap,.topbar .in,footer{{padding-left:24px;padding-right:24px}}
+.cards{{grid-template-columns:repeat(2,1fr)}}.grid2{{grid-template-columns:1fr}}.hero-fig{{font-size:42px}}}}
+</style></head><body>
+<div class="topbar"><div class="in">
+  <span class="logo">un<b>tangle</b></span>
+  <span class="period">bank statement · one period</span>
+  <span class="spacer"></span>
+  <span class="pill"><span class="d"></span>{exc_n} to review</span>
+</div></div>
 
-<p class="lead">One merchant bank account receives money from many rails at once. untangle sorts every
-credit to its source, reconciles the Razorpay slice to the paise, and surfaces the input tax credit
-hidden inside it — abstaining, never guessing, when a credit can't be proven.</p>
+<div class="wrap">
+  <p class="eyebrow">Statement reconciled</p>
+  <div class="hero-fig">{hero_rec} <span class="of">reconciled of {hero_total} in Razorpay credits</span></div>
+  <div class="covbar"><i style="width:{cov_pct}%"></i></div>
+  <div class="covmeta">{cov_pct}% of the Razorpay slice matched to the settlement report, to the paise (within {max_resid} paise drift)</div>
 
-<p class="eyebrow">The account, untangled</p>
-<div class="ribbon">{ribbon}</div>
-<div class="ribbon-cap"><span>{total} credited · {n_lines} lines</span><span>one account · six sources</span></div>
+  <div class="cards">
+    <div class="card sig"><div class="l">Recoverable fee-GST</div><div class="v">{fee}</div>
+      <div class="n">input tax credit · traceable across {fee_n} txns</div></div>
+    <div class="card"><div class="l">Razorpay credits</div><div class="v">{rzp_rec}</div>
+      <div class="n"><span class="tick">✓</span> {rec_c}/{rzp_c} reconciled</div></div>
+    <div class="card"><div class="l">Other rails</div><div class="v">{other}</div>
+      <div class="n">{other_c} credits, not Razorpay's</div></div>
+    <div class="card"><div class="l">Flagged for review</div><div class="v">{exc_n}</div>
+      <div class="n">never guessed — see queue below</div></div>
+  </div>
 
-<div class="figs">
-  <div class="fig"><div class="l">Total credited</div><div class="v">{total}</div><div class="n">{n_lines} bank credits</div></div>
-  <div class="fig"><div class="l">Razorpay reconciled</div><div class="v">{reconciled}</div>
-    <div class="n"><span class="tick">✓</span> {rec_count}/{rzp_count} to the paise · within {max_resid}p</div></div>
-  <div class="fig hero"><div class="l">Recoverable fee-GST</div><div class="v">{fee_gst}</div>
-    <div class="n">input tax credit · {fee_n} txns, traceable</div></div>
-  <div class="fig"><div class="l">Flagged for review</div><div class="v">{exc_count}</div><div class="n">never guessed — see below</div></div>
+  <div class="grid2">
+    <div class="panel">
+      <h2>Where the money came from</h2>
+      <p class="sc">Every bank credit traced to its rail. Solid thread = attributed; frayed = unattributed.</p>
+      {rail_rows}
+    </div>
+    <div class="panel arcwrap">
+      <h2 style="align-self:flex-start">Reconciliation coverage</h2>
+      <p class="sc" style="align-self:flex-start">Razorpay slice, matched to settlements.</p>
+      <div class="arc"><svg width="140" height="140" viewBox="0 0 140 140">
+        <circle cx="70" cy="70" r="54" fill="none" stroke="var(--border)" stroke-width="11"/>
+        <circle cx="70" cy="70" r="54" fill="none" stroke="var(--ok)" stroke-width="11" stroke-linecap="round"
+          stroke-dasharray="{circ}" stroke-dashoffset="{off}" transform="rotate(-90 70 70)"/>
+      </svg><div class="pct"><b>{arc_pct}%</b><span>by value</span></div></div>
+      <div class="legend">
+        <div class="li"><span class="d" style="background:var(--ok)"></span>Reconciled<span class="c mono">{rec_of}</span></div>
+        <div class="li"><span class="d" style="background:var(--warn)"></span>Needs review<span class="c mono">{unresolved}</span></div>
+        <div class="li"><span class="d" style="background:#adaba2"></span>Abstained<span class="c mono">{unk_c}</span></div>
+      </div>
+      <p class="explain">Every miss is an abstention, not a wrong match — <b>0</b> false positives across all rails. What can't be proven is flagged, never forced.</p>
+    </div>
+  </div>
+
+  <div class="exc-wrap">
+    <h2>Exception queue</h2>
+    <p class="sc">{exc_n} credits untangle could not resolve confidently — {reason_line}. Each carries a reason and a next step.</p>
+    <table><thead><tr><th style="width:170px">Reason</th><th>Detail</th><th style="width:34%">Suggested action</th></tr></thead>
+    <tbody>{exc_rows}</tbody></table>
+  </div>
 </div>
-
-<section>
-  <h2>Where the money came from</h2>
-  <p class="sc">Each bank credit attributed to a payment rail. Amounts are the sum credited on that rail.</p>
-  <table class="tally"><tbody>{tally}</tbody></table>
-  <div class="note"><span><b>{rzp_count}</b> attributed Razorpay, <b>0</b> false positives</span>
-  <span><b>{unknown}</b> abstained rather than guessed</span>
-  <span><b>{recon_pct}%</b> of the Razorpay slice reconciled to the paise</span></div>
-</section>
-
-<section>
-  <h2>Exception queue</h2>
-  <p class="sc">{exc_count} credits untangle could not resolve confidently — each with a reason and a next step. Nothing is force-matched.</p>
-  <table class="exc"><thead><tr><th>Reason</th><th>Detail</th><th>Suggested action</th></tr></thead>
-  <tbody>{exc_rows}</tbody></table>
-</section>
-
 <footer><span>reproducible · seed <b>{seed}</b></span><span>AI <b>{provider}</b></span>
-<span><b>{n_recon}</b> recon rows</span><span>audit root <b>{audit}…</b></span></footer>
-</div>
+<span><b>{n_lines}</b> bank credits · <b>{n_recon}</b> recon rows</span><span>audit <b>{audit}…</b></span></footer>
 </body></html>"""
 
 

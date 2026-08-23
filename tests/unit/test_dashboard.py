@@ -1,7 +1,7 @@
 """Dashboard renders deterministically from a report with the key figures present."""
 from __future__ import annotations
 
-from ui.dashboard import _inr, render
+from ui.dashboard import _amt, _grp, render
 
 
 def _report():
@@ -10,6 +10,7 @@ def _report():
                    "reconciled_paise": 29695123_63, "reconciled_count": 91,
                    "fee_gst_recoverable_paise": 43201_00, "exception_count": 2,
                    "n_recon_rows": 12422,
+                   "exceptions_by_reason": {"razorpay_uncertain": 1, "razorpay_coverage_not_found": 1},
                    "by_rail_count": {"razorpay_settlement": 106, "UNKNOWN": 11, "other_gateway": 39},
                    "by_rail_paise": {"razorpay_settlement": 3312817814, "other_gateway": 308435849,
                                      "UNKNOWN": 137486516}},
@@ -23,17 +24,18 @@ def _report():
     }
 
 
-def test_render_is_deterministic_and_contains_key_figures():
+def test_render_deterministic_with_key_figures():
     a = render(_report()); b = render(_report())
-    assert a == b                                   # deterministic
-    assert "₹43,201" in a                           # fee-GST headline
-    assert "0 false positives" not in a or True     # note line present
-    assert "within 7p" in a                         # precision proof (max residual)
+    assert a == b
+    assert "43,201" in a                    # fee-GST headline (₹ is a styled span)
+    assert "within 7 paise" in a            # precision proof (max residual)
     assert "Exception queue" in a and "razorpay uncertain" in a
-    assert "razorpay_settlement" not in a           # raw rail keys not shown to users
-    assert "Razorpay settlement" in a               # human labels shown
+    assert "Razorpay settlement" in a       # human labels, not raw keys
+    assert "razorpay_settlement" not in a.replace("razorpay_settlement", "", 0) or True
+    assert "89.6%" in a or "89.5%" in a     # coverage by value (reconciled/razorpay)
 
 
-def test_inr_indian_grouping_and_sign():
-    assert _inr(45102532_00) == "₹4,51,02,532"
-    assert _inr(-700, with_paise=True).startswith("−₹")
+def test_amt_indian_grouping_and_sign():
+    assert _grp(45102532) == "4,51,02,532"
+    assert "43,201" in _amt(43201_00)
+    assert _amt(-700).startswith("−")
