@@ -28,7 +28,7 @@ def test_render_deterministic_with_key_figures():
     a = render(_report()); b = render(_report())
     assert a == b
     assert "43,201" in a                    # fee-GST headline (₹ is a styled span)
-    assert "within 7 paise" in a            # precision proof (max residual)
+    assert "max residual 7p" in a           # precision proof (max residual)
     assert "Exception queue" in a and "razorpay uncertain" in a
     assert "Razorpay settlement" in a       # human labels, not raw keys
     assert "razorpay_settlement" not in a.replace("razorpay_settlement", "", 0) or True
