@@ -1,6 +1,9 @@
 # MVP Attribution — Measured Results (2026-08-23)
 
-Deterministic path (`--no-ai`), seed 42, scored against blind ground truth (`eval/` is the only reader of ground truth). Reproduce: see quickstart.md.
+Deterministic path (`--no-ai`), scored against blind ground truth (`eval/` is the
+only reader of ground truth; `engine/` never sees it). Reproduce: see quickstart.md.
+
+## In-sample (seed 42 — the seed the keyword lists were developed against)
 
 ```
 
@@ -33,7 +36,7 @@ Per-hard-case (recall / abstain / rzp-false-positives):
 
 Decoy false-positive rate (non-rzp predicted razorpay): 0/181 = 0.000
 
-Confidence calibration (bin → mean conf vs empirical accuracy):
+Confidence vs accuracy per bin (NOT calibration: with zero wrong auto-attributions, accuracy is 1.000 by construction — the scores are conservative, not probabilities):
   [0.5,0.6)    n=   3  conf=0.575  acc=1.000
   [0.6,0.7)    n=  11  conf=0.646  acc=1.000
   [0.7,0.8)    n=  23  conf=0.717  acc=1.000
@@ -44,3 +47,34 @@ Conservation: PASS  (one-verdict-per-line=True, accounts-for-all=True)
 
 Overall (context only, NOT the headline): accuracy-incl-abstain=0.963, coverage=0.963
 ```
+
+## Out-of-sample (fresh unseen seeds — generalization check, audit SERIOUS-1)
+
+The engine is re-run on data it was never tuned on. Precision and the zero-decoy-FP
+property hold; recall degrades modestly and honestly.
+
+| seed | razorpay precision | razorpay recall | decoy FP | overall acc |
+|------|--------------------|-----------------|----------|-------------|
+| 42 (in-sample) | 1.000 | 0.938 | 0.000 | 0.963 |
+| 7  | 1.000 | 0.919 | 0.000 | 0.939 |
+| 13 | 1.000 | 0.860 | 0.000 | 0.908 |
+| 99 | 1.000 | 0.907 | 0.000 | 0.914 |
+| 2026 | 1.000 | 0.878 | 0.000 | 0.913 |
+
+**Honest caveat:** these seeds share the generator's narration *vocabulary* (only the
+instance draws differ — which lines are brand-less, the amounts, collisions, dates).
+True vocabulary generalization needs a different generator or a real merchant statement;
+that remains the out-of-distribution test we call out in the spec.
+
+## Notes on integrity (from the Fable audit, 2026-08-23)
+
+- **No leakage:** `engine/` never reads ground truth or imports `generator/` (enforced
+  by `tests/unit/test_isolation.py`). Verified independently by re-running from scratch.
+- **Precision 1.000 is legitimate:** abstained lines are excluded from precision denominators
+  (standard) but counted against recall; coverage and accuracy-incl-abstain are printed
+  alongside so nothing is hidden. It means zero wrong auto-attributions occurred.
+- **The confidence/accuracy table is NOT calibration:** with zero wrong auto-attributions,
+  accuracy is 1.000 in every bin by construction; scores are conservative, not probabilities.
+- **Latent risk closed (audit SERIOUS-2):** a coincidental amount match can no longer, on its
+  own, auto-attribute Razorpay — it now requires a substantive tie (UTR / set-sum / identity).
+  This benchmark never triggered the path, so the measured numbers are unchanged.

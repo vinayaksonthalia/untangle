@@ -156,7 +156,7 @@ class FeeGstRecovery:
 
 
 @dataclass
-class Exception:
+class ExceptionRecord:
     line_key: str
     reason_code: str
     detail: str

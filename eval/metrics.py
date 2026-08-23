@@ -62,8 +62,10 @@ def score(report: dict, truth_path: str, bank_csv: str) -> dict:
     pred: dict[str, tuple[str, float]] = {}
     for a in report["attributions"]:
         lid = key2lid.get(a["line_key"])
-        if lid:
-            pred[lid] = (a["rail"], a["confidence"])
+        assert lid is not None, (
+            f"prediction {a['line_key']} has no matching bank line — would silently "
+            "convert a false positive into a false negative")
+        pred[lid] = (a["rail"], a["confidence"])
 
     # ---- per-rail precision/recall ----
     per_rail = {r: PR() for r in _RAILS}

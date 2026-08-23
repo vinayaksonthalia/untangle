@@ -25,7 +25,10 @@ from engine.evidence import (
 )
 from engine.models import BankCreditLine, EvidenceItem, Rail, RailAttribution, Tier
 
-_HARD_RZP_SIGNALS = {"utr_exact", "utr_suffix", "amount_corr", "setsum"}
+_HARD_RZP_SIGNALS = {"utr_exact", "utr_suffix", "setsum"}
+# Amount/date agreement is CORROBORATING only, never sole proof (audit SERIOUS-2):
+# a coincidental amount match must not auto-attribute Razorpay.
+_RZP_COINCIDENTAL = {"amount_corr", "value_date_proximity"}
 _SETSUM_MAX_TERMS = 3
 _SETSUM_MAX_CANDIDATES = 40  # cap the candidate window; abstain rather than explode.
 
@@ -98,6 +101,11 @@ def attribute_line(line: BankCreditLine, index: ReconIndex, threshold: float) ->
     # Precision guard: razorpay may only compete against a distinctive non-rzp keyword
     # when it has a hard recon tie.
     if non_rzp and not rzp_hard:
+        rzp_score = 0.0
+    # Coincidental-amount guard (audit SERIOUS-2): a Razorpay verdict needs at least one
+    # substantive signal (UTR tie / set-sum / Razorpay identity token) — amount+date
+    # agreement alone abstains rather than risk a false 'this is Razorpay's'.
+    if not any(e.signal not in _RZP_COINCIDENTAL for e in rzp_ev):
         rzp_score = 0.0
     if rzp_score > 0.0:
         scores[Rail.RAZORPAY_SETTLEMENT.value] = (

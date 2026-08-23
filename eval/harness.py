@@ -37,7 +37,9 @@ def _print_report(m: dict) -> None:
     print(f"\nDecoy false-positive rate (non-rzp predicted razorpay): "
           f"{d['predicted_razorpay']}/{d['non_rzp_lines']} = {d['rate']:.3f}")
 
-    print("\nConfidence calibration (bin → mean conf vs empirical accuracy):")
+    print("\nConfidence vs accuracy per bin (NOT calibration: with zero wrong "
+          "auto-attributions, accuracy is 1.000 by construction — the scores are "
+          "conservative, not probabilities):")
     for b in m["calibration"]:
         print(f"  {b['bin']:<12} n={b['n']:>4}  conf={b['mean_confidence']:.3f}  "
               f"acc={b['empirical_accuracy']:.3f}")

@@ -1,4 +1,4 @@
-"""Append-only, hash-chained audit ledger (constitution IV, research R7).
+"""Hash-chained audit ledger — whole-file snapshot (constitution IV, research R7).
 
 Each entry stores the SHA-256 of the previous entry, forming a chain: tampering
 with any past entry invalidates every hash after it. This is stated precisely as

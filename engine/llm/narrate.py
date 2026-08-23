@@ -4,8 +4,11 @@
 Rules of engagement:
 - Runs ONLY on residual UNKNOWN lines that carry free-text narration.
 - Text is PII-masked (``mask.py``) before it ever leaves the process.
-- The model only *proposes* a rail; a deterministic rule must confirm it before the
-  verdict changes. The model can never, alone, turn an UNKNOWN into a money verdict.
+- The model only *proposes* a rail. A razorpay_settlement (money-affecting) proposal is
+  accepted ONLY when a substantive deterministic tie corroborates it (UTR / set-sum /
+  Razorpay identity token, and no decoy) — never on amount agreement alone, never on the
+  model's say-so. Non-money rails may be LLM-labelled on otherwise-UNKNOWN lines; they are
+  recorded as llm-derived and excluded from the reconciliation and fee-GST path.
 - With ``--no-ai`` the client is a no-op returning None, so every UNKNOWN stays UNKNOWN
   and the whole pipeline is byte-identical.
 """
@@ -43,9 +46,13 @@ def _confirms(proposal: str, line: BankCreditLine, index: ReconIndex) -> bool:
     tiers already left as UNKNOWN.
     """
     if proposal == Rail.RAZORPAY_SETTLEMENT.value:
+        # Money-affecting: require a SUBSTANTIVE deterministic tie (not amount-only) and
+        # no decoy. The LLM can never, alone, turn UNKNOWN into a Razorpay verdict.
         if has_decoy_marker(line):
             return False
-        return bool(razorpay_signals(line, index))
+        sig = {e.signal for e in razorpay_signals(line, index)}
+        return bool(sig - {"amount_corr", "value_date_proximity"})
+    # Non-money rails never enter the money path; an LLM label here is recorded and safe.
     return proposal in _VALID_RAILS
 
 

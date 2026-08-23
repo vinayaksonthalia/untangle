@@ -25,3 +25,6 @@ venv/
 
 # runtime output (regenerated)
 out/
+
+# out-of-sample validation scratch
+.oos/
