@@ -1,0 +1,28 @@
+[project]
+name = "untangle"
+version = "0.1.0"
+description = "Multi-rail bank-credit attribution & Razorpay-slice reconciliation engine"
+requires-python = ">=3.12"
+# stdlib-first. Runtime has NO third-party dependencies.
+# Test/dev tooling only:
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "hypothesis>=6"]
+
+[tool.setuptools]
+packages = ["engine", "engine.llm", "eval"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+python_files = ["test_*.py"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
