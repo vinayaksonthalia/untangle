@@ -24,7 +24,9 @@ from engine.evidence import ReconIndex
 from engine.ingest import InputError, load_bank, load_ledger, load_recon
 from engine.llm.client import LLMClient
 from engine.llm.narrate import resolve_unknowns
-from engine.models import FeeGstRecovery, Rail, RunReport
+from engine.feegst import fee_gst
+from engine.models import Rail, RunReport
+from engine.reconcile import reconcile
 
 _ENGINE_VERSION = "0.1.0"
 
@@ -62,6 +64,11 @@ def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
         rupees_by_rail[a.rail] += ln.amount_paise
     total_credit_paise = sum(ln.amount_paise for ln in lines if ln.is_credit)
 
+    lines_by_key = {ln.key: ln for ln in lines}
+    reconciliations, unresolved_rzp, _sidx = reconcile(lines_by_key, attributions, recon_rows)
+    feegst = fee_gst(reconciliations, recon_rows)
+    reconciled_paise = sum(r.credit_amount_paise for r in reconciliations)
+
     confidences = [a.confidence for a in attributions if not a.abstained]
     totals = {
         "n_bank_lines": len(lines),
@@ -70,6 +77,10 @@ def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
         "by_rail_paise": dict(sorted(rupees_by_rail.items())),
         "attributed": sum(1 for a in attributions if not a.abstained),
         "abstained": sum(1 for a in attributions if a.abstained),
+        "reconciled_count": len(reconciliations),
+        "reconciled_paise": reconciled_paise,
+        "unresolved_rzp_count": len(unresolved_rzp),
+        "fee_gst_recoverable_paise": feegst.total_recoverable_paise,
         "total_credit_paise": total_credit_paise,
         "required_precision": round(required_precision(), 4),
         "coverage_curve": [c.__dict__ for c in coverage_curve(confidences)],
@@ -77,8 +88,8 @@ def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
     return RunReport(
         totals=totals,
         attributions=attributions,
-        reconciliations=[],          # Phase 4 (US2)
-        fee_gst=FeeGstRecovery(0, []),
+        reconciliations=reconciliations,
+        fee_gst=feegst,
         exceptions=[],               # Phase 5 (US3)
         audit_root=ledger.root,
         config={
@@ -140,7 +151,10 @@ def _print_summary(report: RunReport) -> None:
         print(f"    {rail:<22} {counts[rail]:>4}   {_fmt_inr(t['by_rail_paise'].get(rail, 0))}")
     print(f"Total credited: {_fmt_inr(t['total_credit_paise'])} across "
           f"{t['n_recon_rows']} recon rows")
-    print("Reconciliation & fee-GST: (Phase 4 — not in this MVP build)")
+    print(f"Reconciled {_fmt_inr(t['reconciled_paise'])} across {t['reconciled_count']} "
+          f"razorpay credits to the paise · {t['unresolved_rzp_count']} unresolved")
+    print(f"Recoverable fee-GST (input tax credit, from Razorpay's own tax-on-fee): "
+          f"{_fmt_inr(t['fee_gst_recoverable_paise'])}")
     print(f"Audit root: {report.audit_root}")
 
 

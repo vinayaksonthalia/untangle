@@ -172,7 +172,7 @@ class RunReport:
     attributions: list[RailAttribution]
     reconciliations: list[ReconciliationResult]
     fee_gst: FeeGstRecovery | None
-    exceptions: list[Exception]
+    exceptions: list[ExceptionRecord]
     audit_root: str
     config: dict
 
