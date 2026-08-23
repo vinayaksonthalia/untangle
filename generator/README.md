@@ -1,7 +1,7 @@
 # `untangle` — synthetic-data generator
 
 Seeded, reproducible generator of a **multi-rail bank-credit attribution**
-benchmark for the Track-4 project. It emits three linked artifacts plus an
+benchmark for the untangle attribution engine. It emits three linked artifacts plus an
 answer key. **It contains no matcher, no attribution logic, and no solver** —
 only data and labels. Keep this directory out of the matcher session's context
 (isolation protocol, EXCEPTION_TAXONOMY.md §"Isolation protocol").
@@ -52,7 +52,7 @@ with the data it labels, generation aborts instead of emitting a bad benchmark.
 - `transfer` rows: `order_id` NULL, `method`/`card_*` NULL.
 - `adjustment` rows: `order_id`/`payment_id`/`settlement_utr` NULL, and `credit_type` is **omitted** (V10).
 - UPI carries **zero fee** (P2M ~zero-MDR) — so a fee-variance detector correctly
-  reports "no detectable variance" rather than manufacturing findings (PROJECT_SPEC 4b).
+  reports "no detectable variance" rather than manufacturing findings (UPI P2M is near-zero-MDR, so low variance is expected there, not a gap).
 - **RuPay debit** is likewise **zero-MDR** (RBI zero-rating) — its modal rate is 0.
 
 ## Noise / commingling taxonomy (rates are config, in `config.py::NoiseRates`)
@@ -102,7 +102,7 @@ majority.
 | Dispute / chargeback debit rows | `dispute_rate` | 0.015 | V8: `dispute_id` populated; debit lands in a later settlement. |
 | Route transfer rows | `transfer_rate` | 0.03 | V2: `trf_*` rows, `order_id` NULL, resolve via parent payment. |
 | Adjustment rows (no join key) | `adjustment_per_batch` | 0.35 / batch | V1: `adj_*` rows with no order/payment/UTR key; explainable only from free text + amount. |
-| Unexplained fee variance | `fee_variance_rate` | 0.03 | PROJECT_SPEC §4: a fraction of non-UPI rows deviate from their cluster's modal effective rate; feeds the fee-variance module. Never injected on UPI. |
+| Unexplained fee variance | `fee_variance_rate` | 0.03 | A fraction of non-UPI rows deviate from their cluster's modal effective rate; feeds the fee-variance module. Never injected on UPI. |
 
 ### Merchant-ledger corruption — taxonomy M1/M2 (in `noise.py`)
 

@@ -1,1 +1,1 @@
-"""untangle synthetic-data generator (Track-4 Razorpay buildathon)."""
+"""untangle synthetic-data generator — multi-rail bank-credit attribution benchmark."""

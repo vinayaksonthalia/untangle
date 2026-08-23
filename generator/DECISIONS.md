@@ -13,7 +13,7 @@ thing is wrong.
   would make every conservation sum wrong by the GST amount.
 
 - **UPI rows get zero fee, and fee-variance is never injected on UPI.**
-  PROJECT_SPEC 4b: P2M UPI is ~zero-MDR. Injecting UPI variance would train the
+  P2M UPI is ~zero-MDR. Injecting UPI variance would train the
   matcher to "find" fee anomalies that don't exist in reality — a manufactured
   finding, which the spec explicitly forbids.
 

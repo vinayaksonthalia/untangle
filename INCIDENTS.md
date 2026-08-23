@@ -6,7 +6,7 @@ Real failures, written after the fact, by me. Not generated. Each entry: what I 
 
 ## 001 — Three confident wrong claims about the vendor schema in two hours
 
-**Date:** 21 Aug 2026 · **Severity:** would have been unrecoverable in the panel · **Status:** resolved, process changed
+**Date:** 21 Aug 2026 · **Severity:** would have been unrecoverable in a live review · **Status:** resolved, process changed
 
 **What I believed.** Before writing any matcher code I was mapping Razorpay's settlement-recon schema. Three claims got asserted confidently in quick succession:
 
@@ -27,7 +27,7 @@ Real failures, written after the fact, by me. Not generated. Each entry: what I 
 - Raw vendor sources are now committed under `fixtures/`, each with a sibling `.txt` recording source URL, fetch date, **and egress location** — without that last field, anyone verifying the README from another country sees different bytes and would conclude the fixtures were fabricated.
 - Every schema claim in this repo is now an assertion in `scripts/verify_schema_claims.py` — no network, no LLM, reproducible byte-for-byte by anyone. Currently 7/7 passing. If a claim can't be expressed as an assertion against a committed fixture, it doesn't go in the repo.
 - One claim was *removed* rather than asserted: whether `credit_type` and `posted_at` are absent from the documented parameter list. A regex over raw HTML can't distinguish a table cell from prose, and I'm not going to assert what I can only guess at.
-- Rule adopted: **nothing enters the README, taxonomy, or pitch unless the source has been personally opened and a specific line can be pointed at.** "The AI verified it" is not verification.
+- Rule adopted: **nothing enters the README, taxonomy, or docs unless the source has been personally opened and a specific line can be pointed at.** "The AI verified it" is not verification.
 
 **What it caught downstream.** Running the enum assertion that came out of this found the `method` enum is Indian (`card`, `netbanking`, `wallet`, `upi`, `emi`) — not the US `card`/`ach` set. UPI, netbanking and wallet rows carry null `card_network`, `card_type` and `card_issuer`, so the planned fee-variance clustering on `(method, card_network, card_type, card_issuer)` would have collapsed most Indian volume into a single null bucket. Clustering is now method-aware. That bug was found before the matcher existed.
 
