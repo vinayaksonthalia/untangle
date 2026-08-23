@@ -1,7 +1,7 @@
 # untangle — Architecture
 
-Status: the **attribution + evaluation** core (User Story 1) is built and measured.
-Reconciliation + fee-GST (US2) and exceptions + "why" (US3) are specified and next.
+Status: **attribution + reconciliation + fee-GST + exceptions + eval** (User Stories 1–3)
+are built, measured, and independently audited. The demo UI is the remaining phase.
 This document describes what exists in code today.
 
 ## The one-paragraph mental model

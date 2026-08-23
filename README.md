@@ -29,10 +29,24 @@ be reconciled and the recoverable fee-GST (input tax credit) be surfaced.
 
 ## Status (active development)
 
-- [x] Multi-rail synthetic data generator (seeded, reproducible, self-checking)
-- [ ] Attribution engine (deterministic tiers + LLM residue + abstention)
-- [ ] Evaluation harness (per-rail precision/recall, ablation, calibration)
+- [x] Multi-rail synthetic data generator (seeded, reproducible, self-checking; proven
+      adversarial — `generator/difficulty_probe.py`)
+- [x] Attribution engine (deterministic tiers A/B/C + calibrated abstention; LLM at the edge)
+- [x] Reconciliation of the Razorpay slice + recoverable fee-GST (paise-exact)
+- [x] Honest exception list + `why` trace
+- [x] Evaluation harness (per-rail **and per-hard-case** precision/recall, decoy FP, ablation)
 - [ ] Demo UI
+
+### Measured (seed 42, deterministic `--no-ai`, scored vs blind ground truth)
+
+- Attribution precision **1.000** on every rail; **0 decoy false-positives** (naive brand-grep: 100%).
+- Out-of-sample (4 unseen seeds): precision 1.000 and 0 decoy-FP hold; recall 0.86–0.94.
+- Reconciliation: **91/91 covered sets exact** vs ground truth, to the paise.
+- Recoverable fee-GST surfaced from Razorpay's own tax-on-fee, per-transaction traceable.
+- Every miss is an **abstention**, never a misattribution — surfaced as a named exception.
+
+See [docs/mvp-eval-results.md](docs/mvp-eval-results.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
+and [docs/EXPLAINED.md](docs/EXPLAINED.md).
 
 ## Reproduce the data
 
