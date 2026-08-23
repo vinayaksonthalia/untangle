@@ -14,7 +14,7 @@
 
 A merchant's bank account receives money from many rails at once — Razorpay settlements, a second gateway, direct UPI, COD remittances, loan disbursals, personal transfers. Before anything can be reconciled, the merchant needs to know which credits are Razorpay's. The system reads the bank statement and labels every credit line with its rail, a confidence level, and an evidence trail — and abstains (UNKNOWN) rather than guess when the signal is weak.
 
-**Why this priority**: Every downstream number (reconciliation, recoverable tax credit, exception list) is wrong if attribution is wrong. This is the core capability competitors assume away. It is independently valuable even alone: a merchant who only learns "these 44 credits are not Razorpay, don't expect them in your recon" has already saved hours.
+**Why this priority**: Every downstream number (reconciliation, recoverable tax credit, exception list) is wrong if attribution is wrong. This is the core capability existing reconciliation tools assume away. It is independently valuable even alone: a merchant who only learns "these 44 credits are not Razorpay, don't expect them in your recon" has already saved hours.
 
 **Independent Test**: Run attribution over a commingled statement; verify each credit gets a rail verdict + evidence, that low-signal lines abstain, and that attribution precision/recall are measured against blind ground truth — reported per rail and per hard-case class, never as a single blended number.
 
