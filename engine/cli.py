@@ -100,7 +100,9 @@ def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
         "exceptions_by_reason": dict(sorted(Counter(e.reason_code for e in exceptions).items())),
         "total_credit_paise": total_credit_paise,
         "required_precision": round(required_precision(), 4),
-        "coverage_curve": [c.__dict__ for c in coverage_curve(confidences)],
+        # Honest denominator: coverage is over ALL lines, so abstentions lower it (a run that
+        # abstains on half its lines must not report 100% coverage of the other half).
+        "coverage_curve": [c.__dict__ for c in coverage_curve(confidences, total=len(attributions))],
     }
     return RunReport(
         totals=totals,

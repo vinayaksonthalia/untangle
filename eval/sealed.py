@@ -166,7 +166,10 @@ def run_sealed_holdout_comparison(seed: int = DEFAULT_SEALED_SEED, sealed_dir: s
     print(f"\n=== Evaluation Scope & Limits (E4 / ER-005) ===")
     print(f"  • This is an adversarial stress suite (n={sealed_res['totals']['n_bank_lines']}), not an empirical claim about universal real-world performance.")
     print(f"  • What it establishes:")
-    print(f"      - Zero false-positive auto-attributions (precision 1.000) under 14 realistic bank narration corruptions.")
+    if s_decoy['predicted_razorpay'] == 0:
+        print(f"      - Zero false-positive auto-attributions (precision {s_rzp['precision']:.3f}) under 14 realistic bank narration corruptions.")
+    else:
+        print(f"      - {s_decoy['predicted_razorpay']} decoy false-positive auto-attribution(s) (precision {s_rzp['precision']:.3f}) under 14 realistic bank narration corruptions.")
     print(f"      - Safe abstention: The engine says UNKNOWN instead of guessing on decayed or ambiguous strings.")
     print(f"      - Mathematical conservation: Exact paise balance and 100% traceable fee-GST input tax credit.")
     print(f"  • What it does NOT establish:")
