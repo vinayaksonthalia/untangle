@@ -197,7 +197,7 @@ def test_phase4_gate_benchmark_precision_with_approved_rule():
         pattern_value="billdesk",
         rationale="BillDesk netbanking transactions",
     )
-    approve_rule(rule, approver="lead_auditor")
+    rule = approve_rule(rule, approver="lead_auditor")  # approval returns a new frozen rule
 
     attributions = attribute_all(lines, index, DEFAULT_THRESHOLD, rules=[rule])
 
@@ -242,3 +242,43 @@ def test_rules_never_reclassify_debits():
     out = apply_approved_rules([debit, credit], [rule])
     assert "d1" not in out, "a rule must never reclassify a debit into a credit rail"
     assert "c1" in out, "a rule should still resolve a matching credit"
+
+
+def test_rules_are_immutable_after_approval():
+    """Qodo #8: an approved rule cannot be mutated (retargeted) after the fact."""
+    import dataclasses
+    from engine.models import Rail
+    from engine.rules import approve_rule, propose_rule
+
+    r = propose_rule(target_rail=Rail.OTHER_GATEWAY.value, pattern_value="payu")
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        r.approved = True  # frozen
+    approved = approve_rule(r, "auditor")
+    assert approved.approved and approved.approved_by == "auditor"
+    assert not r.approved, "approval returns a NEW rule; the original stays inert"
+
+
+def test_rules_conflict_abstains_order_independent():
+    """Qodo #1: two approved rules matching one line with different target rails must
+    abstain (never force a pick), and the result must not depend on rule order."""
+    from datetime import date
+    from engine.models import BankCreditLine, Rail
+    from engine.rules import apply_approved_rules, approve_rule, propose_rule
+
+    ln = BankCreditLine("l1", date(2026, 6, 15), 1000, "NEFT CR-PAYU-SETTLEMENT", "", is_credit=True)
+    r1 = approve_rule(propose_rule(target_rail=Rail.OTHER_GATEWAY.value, pattern_value="payu"), "x")
+    r2 = approve_rule(propose_rule(target_rail=Rail.UNRELATED.value, pattern_value="settlement"), "x")
+    assert "l1" not in apply_approved_rules([ln], [r1, r2])
+    assert "l1" not in apply_approved_rules([ln], [r2, r1])
+
+
+def test_rules_unknown_pattern_type_never_loose_matches():
+    """Qodo #10: an unknown pattern_type must not fall back to a loose substring match."""
+    from datetime import date
+    from engine.models import BankCreditLine, Rail
+    from engine.rules import ProposedRule, match_rule
+
+    rule = ProposedRule("rid", 1, Rail.OTHER_GATEWAY.value, "weird_type", "pay", "now",
+                        approved=True, approved_by="x")
+    ln = BankCreditLine("l2", date(2026, 6, 15), 1, "PAYMENT RECEIVED", None, is_credit=True)
+    assert match_rule(ln, rule) is False
