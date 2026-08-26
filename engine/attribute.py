@@ -180,9 +180,24 @@ def _setsum_evidence(line: BankCreditLine, index: ReconIndex) -> list[EvidenceIt
 
 
 def attribute_line(line: BankCreditLine, index: ReconIndex, threshold: float) -> RailAttribution:
+    non_rzp = narration_rail_signals(line)
+
+    # FR-015: v1 attributes inbound CREDITS. A debit (bank charge / reversal / sweep-out) is
+    # never a Razorpay settlement credit — credit-side signals (UTR ties, amount ties, Tier A)
+    # must never fire on it, or a debit could be booked as a Razorpay credit and corrupt
+    # reconciliation. A debit is classified only by a distinctive non-Razorpay narration
+    # keyword (e.g. bank charges → unrelated), else abstained; it can never be razorpay_settlement.
+    if not line.is_credit:
+        d_scores = {rail.value: (_combine(items), items) for rail, items in non_rzp.items()}
+        if not d_scores:
+            return RailAttribution(line.key, Rail.UNKNOWN.value, 0.0, Tier.NONE.value, [], abstained=True)
+        d_rail, (d_conf, d_ev) = max(d_scores.items(), key=lambda kv: (kv[1][0], kv[0]))
+        if d_conf < threshold:
+            return RailAttribution(line.key, Rail.UNKNOWN.value, d_conf, Tier.NONE.value, d_ev, abstained=True)
+        return RailAttribution(line.key, d_rail, d_conf, Tier.B.value, d_ev)
+
     rzp_ev = razorpay_signals(line, index)
     rzp_hard = any(e.signal in _HARD_RZP_SIGNALS for e in rzp_ev)
-    non_rzp = narration_rail_signals(line)
 
     # Tier A: clean UTR exact match is decisive.
     if any(e.signal == "utr_exact" for e in rzp_ev):
