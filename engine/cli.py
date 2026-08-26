@@ -121,7 +121,7 @@ def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
 
 def _cmd_run(args) -> int:
     try:
-        cfg = build_config(no_ai=args.no_ai, provider=args.provider, model=args.model,
+        cfg = build_config(no_ai=not args.ai, provider=args.provider, model=args.model,
                            threshold=args.threshold, seed=args.seed)
     except ConfigError as exc:
         print(f"Config error: {exc}", file=sys.stderr)
@@ -228,7 +228,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--recon", required=True)
     run.add_argument("--ledger", required=True)
     run.add_argument("--out", default="out/")
-    run.add_argument("--no-ai", action="store_true")
+    # AI is OFF by default (G4): the deterministic core is the shipped default. Opt in with --ai.
+    run.add_argument("--ai", action="store_true",
+                     help="enable the edge LLM narration tier (OFF by default)")
+    # Backward-compat: older docs/scripts pass --no-ai; AI is already off by default, so it is a no-op.
+    run.add_argument("--no-ai", action="store_true", help=argparse.SUPPRESS)
     run.add_argument("--provider", choices=["openrouter", "gemini", "groq", "cerebras"])
     run.add_argument("--model")
     run.add_argument("--threshold", type=float, default=None)
