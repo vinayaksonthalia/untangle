@@ -136,6 +136,10 @@ def apply_approved_rules(
         return out
 
     for line in lines:
+        # FR-015: a debit is never an inbound credit — an approved rule (which can target any
+        # rail, including razorpay_settlement) must never reclassify a debit into a credit rail.
+        if not line.is_credit:
+            continue
         for rule in approved:
             if match_rule(line, rule):
                 evidence = [
