@@ -103,8 +103,10 @@ def render(report: dict) -> str:
     exc_rows = []
     for e in report["exceptions"]:
         lbl, col = _REASON.get(e["reason_code"], (e["reason_code"], "#6B6B62"))
+        blob = html.escape(f'{lbl} {e["detail"]} {e["suggested_action"]}'.lower(), quote=True)
         exc_rows.append(f"""
-      <tr><td><span class="sev" style="--d:{col}">{html.escape(lbl)}</span></td>
+      <tr class="excrow" data-reason="{html.escape(e["reason_code"])}" data-text="{blob}">
+      <td><span class="sev" style="--d:{col}">{html.escape(lbl)}</span></td>
       <td class="dt">{html.escape(e["detail"])}</td>
       <td class="ac">{html.escape(e["suggested_action"])}</td></tr>""")
 
@@ -113,6 +115,32 @@ def render(report: dict) -> str:
     reason_line = " · ".join(
         f'{v} {html.escape(_REASON.get(k, (k, ""))[0])}' for k, v in reasons.items()
     )
+    # Interactive filter chips for the exception queue (built from the actual reason counts).
+    # The "All" chip uses a dedicated data-all flag, never a data-reason sentinel, so it can never
+    # collide with a real reason_code (sol review HIGH).
+    chips = [f'<button type="button" class="chip active" data-all="1" aria-pressed="true">All <span class="ct">{exc_n}</span></button>']
+    for k, v in reasons.items():
+        lbl = html.escape(_REASON.get(k, (k, ""))[0])
+        chips.append(f'<button type="button" class="chip" data-reason="{html.escape(k)}" aria-pressed="false">{lbl} <span class="ct">{v}</span></button>')
+    filter_chips = "".join(chips)
+
+    # Toolbar + count only make sense when there is a queue to filter (sol review MEDIUM).
+    if exc_n:
+        exc_toolbar = (
+            '<div class="exc-toolbar"><div class="chips" role="group" aria-label="Filter by reason">'
+            + filter_chips
+            + '</div><div class="search"><input id="excSearch" type="search" '
+            'placeholder="Search reason, detail, action…" autocomplete="off" '
+            'aria-label="Search exceptions"/></div></div>'
+        )
+        exc_section_copy = (
+            f"{exc_n} credits untangle could not resolve confidently — {reason_line}. "
+            "Each carries a reason, evidence trace, and a next step."
+        )
+    else:
+        exc_toolbar = ""
+        exc_section_copy = "No exceptions — every credit was attributed with evidence or abstained cleanly."
+
     prov = cfg.get("provider")
     footer_ai = f"provider <b>{html.escape(str(prov))}</b>" if prov else "matching <b>deterministic</b>"
     attr_c = t.get("attributed", sum(bc.get(k, 0) for k in bc if k != "UNKNOWN"))
@@ -123,7 +151,8 @@ def render(report: dict) -> str:
         rail_rows="".join(rail_rows), circ=f"{circ:.1f}", off=f"{off:.1f}",
         rec_of=f"{rec_c}/{rzp_c}", unresolved=rzp_c - rec_c, unk_c=unk_c,
         pac_rows="".join(pac_rows),
-        exc_rows="".join(exc_rows), reason_line=reason_line, footer_ai=footer_ai,
+        exc_rows="".join(exc_rows), footer_ai=footer_ai,
+        exc_toolbar=exc_toolbar, exc_section_copy=exc_section_copy, script=_DASH_JS,
         seed=cfg.get("seed", "?"), n_recon=f'{t["n_recon_rows"]:,}',
         n_lines=t["n_bank_lines"], audit=html.escape(report["audit_root"][:10]),
     )
@@ -207,19 +236,45 @@ tbody tr:hover{{background:var(--sunken)}}
 footer{{max-width:var(--max);margin:64px auto 0;padding:18px 48px 0;border-top:1px solid var(--border);
 font-family:var(--mono);font-size:11.5px;color:var(--tt);display:flex;gap:26px;flex-wrap:wrap}}
 footer b{{color:var(--ts);font-weight:500}}
+a.logo{{text-decoration:none;color:var(--tp)}}
+.secnav{{display:flex;gap:20px;margin-left:26px}}
+.secnav a{{font-size:13px;color:var(--ts);text-decoration:none;padding:4px 0;border-bottom:2px solid transparent;transition:color .15s,border-color .15s}}
+.secnav a:hover{{color:var(--tp)}}
+.secnav a.on{{color:var(--tp);border-color:var(--acc)}}
+a.pill{{text-decoration:none}}
+[id^="sec-"]{{scroll-margin-top:74px}}
+.exc-toolbar{{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap}}
+.chips{{display:flex;gap:8px;flex-wrap:wrap}}
+.chip{{font-family:var(--ui);font-size:12.5px;color:var(--ts);background:var(--surface);border:1px solid var(--border);border-radius:100px;padding:6px 13px;cursor:pointer;transition:all .13s;display:inline-flex;align-items:center;gap:7px}}
+.chip:hover{{border-color:var(--border2);color:var(--tp)}}
+.chip.active{{background:var(--tp);color:#fff;border-color:var(--tp)}}
+.chip .ct{{font-family:var(--mono);font-size:11px;opacity:.7}}
+.chip.active .ct{{opacity:.85}}
+.search input{{font-family:var(--ui);font-size:13px;color:var(--tp);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:8px 13px;width:250px;max-width:60vw;outline:none;transition:border-color .13s}}
+.search input:focus{{border-color:var(--acc)}}
+tbody tr.hide{{display:none}}
+.noresults{{padding:26px 20px;text-align:center;color:var(--ts);font-size:13px}}
+.linkbtn{{background:none;border:0;color:var(--acc);cursor:pointer;font-size:13px;font-family:var(--ui);text-decoration:underline;padding:0}}
+.exc-count{{font-size:12px;color:var(--tt);margin:12px 2px 0;font-family:var(--mono)}}
 @media(max-width:880px){{.wrap,.topbar .in,footer{{padding-left:24px;padding-right:24px}}
-.cards{{grid-template-columns:repeat(2,1fr)}}.grid2{{grid-template-columns:1fr}}.hero-fig{{font-size:40px}}}}
+.cards{{grid-template-columns:repeat(2,1fr)}}.grid2{{grid-template-columns:1fr}}.hero-fig{{font-size:40px}}
+.secnav{{display:none}}.search input{{width:100%}}.exc-toolbar{{align-items:stretch}}.search{{width:100%}}}}
 </style></head><body>
 <div class="topbar"><div class="in">
   <span class="logo">un<b>tangle</b></span>
   <span class="period">attribution-first reconciliation</span>
+  <nav class="secnav">
+    <a href="#sec-attribution">Attribution</a>
+    <a href="#sec-reconciliation">Reconciliation</a>
+    <a href="#sec-exceptions">Exceptions</a>
+  </nav>
   <span class="spacer"></span>
-  <span class="pill"><span class="d"></span>{exc_n} to review</span>
+  <a class="pill" href="#sec-exceptions"><span class="d"></span>{exc_n} to review</a>
 </div></div>
 
 <div class="wrap">
   <!-- PRIMARY HEADLINE (PR-004: Attribution & Abstention first) -->
-  <p class="eyebrow">Attribution &amp; Calibrated Abstention (Primary Verdict)</p>
+  <p class="eyebrow" id="sec-attribution">Attribution &amp; Calibrated Abstention (Primary Verdict)</p>
   <div class="hero-fig">{attr_c} <span style="font-size:24px;color:var(--ts)">attributed</span> · {unk_c} <span style="font-size:24px;color:var(--warn)">abstained</span></div>
   <div class="hero-of">Every bank credit attributed to its rail with evidence · {unk_c} ambiguous credits abstained (never force-matched)</div>
 
@@ -252,7 +307,7 @@ footer b{{color:var(--ts);font-weight:500}}
   </div>
 
   <!-- SECONDARY SECTION (PR-004: Reconciliation & ITC below, labeled 'proven slice only') -->
-  <div class="proven-section">
+  <div class="proven-section" id="sec-reconciliation">
     <span class="proven-tag">Proven Slice Only</span>
     <h2>Reconciliation &amp; Recoverable ITC</h2>
     <p class="sc">Reconciles ONLY the proven-Razorpay slice to the paise. Unattributed or abstained credits are never forced into reconciliation.</p>
@@ -272,16 +327,91 @@ footer b{{color:var(--ts);font-weight:500}}
     </div>
   </div>
 
-  <div class="exc-wrap">
+  <div class="exc-wrap" id="sec-exceptions">
     <h2>Exception queue</h2>
-    <p class="sc">{exc_n} credits untangle could not resolve confidently — {reason_line}. Each carries a reason, evidence trace, and a next step.</p>
-    <div class="tblwrap"><table><thead><tr><th style="width:170px">Reason</th><th>Detail</th><th style="width:34%">Suggested action</th></tr></thead>
-    <tbody>{exc_rows}</tbody></table></div>
+    <p class="sc">{exc_section_copy}</p>
+    {exc_toolbar}
+    <div class="tblwrap"><table id="excTable"><thead><tr><th style="width:180px">Reason</th><th>Detail</th><th style="width:34%">Suggested action</th></tr></thead>
+    <tbody>{exc_rows}</tbody></table>
+    <div class="noresults" id="excEmpty" hidden>No exceptions match this filter. <button type="button" class="linkbtn" id="excClear">Clear filters</button></div>
+    </div>
+    <p class="exc-count mono" id="excCount" role="status" aria-live="polite"></p>
   </div>
 </div>
+{script}
 <footer><span>reproducible · seed <b>{seed}</b></span><span>{footer_ai}</span>
 <span><b>{n_lines}</b> bank credits · <b>{n_recon}</b> recon rows</span><span>audit <b>{audit}…</b></span></footer>
 </body></html>"""
+
+
+_DASH_JS = """<script>
+(function(){
+  var rows = Array.prototype.slice.call(document.querySelectorAll('#excTable tbody tr.excrow'));
+  var chips = Array.prototype.slice.call(document.querySelectorAll('.chip'));
+  var search = document.getElementById('excSearch');
+  var empty = document.getElementById('excEmpty');
+  var count = document.getElementById('excCount');
+  var clear = document.getElementById('excClear');
+  var total = rows.length;
+  var reason = null; // null = all; never a data-reason sentinel, so no collision with real codes
+
+  function setActive(chip){
+    chips.forEach(function(x){
+      var on = x === chip;
+      x.classList.toggle('active', on);
+      x.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  function apply(){
+    var q = (search && search.value || '').trim().toLowerCase();
+    var shown = 0;
+    rows.forEach(function(tr){
+      var okR = (reason === null) || (tr.getAttribute('data-reason') === reason);
+      var okQ = !q || (tr.getAttribute('data-text') || '').indexOf(q) !== -1;
+      var vis = okR && okQ;
+      tr.classList.toggle('hide', !vis);
+      if (vis) shown++;
+    });
+    if (empty) empty.hidden = !(total > 0 && shown === 0);
+    if (count) count.textContent = shown === total
+      ? total + ' exceptions'
+      : 'Showing ' + shown + ' of ' + total + ' exceptions';
+  }
+  chips.forEach(function(c){
+    c.addEventListener('click', function(){
+      setActive(c);
+      reason = c.hasAttribute('data-all') ? null : c.getAttribute('data-reason');
+      apply();
+    });
+  });
+  if (search) search.addEventListener('input', apply);
+  if (clear) clear.addEventListener('click', function(){
+    reason = null; if (search) search.value = '';
+    var all = chips.filter(function(x){ return x.hasAttribute('data-all'); })[0];
+    if (all) setActive(all);
+    apply();
+  });
+  apply();
+
+  // Section-nav scroll-spy (rect-based; robust to positioned ancestors — sol review LOW)
+  var links = Array.prototype.slice.call(document.querySelectorAll('.secnav a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  function spy(){
+    var idx = 0;
+    targets.forEach(function(t, i){ if (t && t.getBoundingClientRect().top <= 90) idx = i; });
+    // At the bottom of the page the final section may never reach the 90px line (short/empty
+    // queue); force the last nav item active so it can always be reached (sol/Qodo).
+    var d = document.documentElement;
+    if (window.innerHeight + window.scrollY >= d.scrollHeight - 2) idx = targets.length - 1;
+    links.forEach(function(a, i){
+      var on = i === idx;
+      a.classList.toggle('on', on);
+      if (on) a.setAttribute('aria-current', 'location'); else a.removeAttribute('aria-current');
+    });
+  }
+  if (links.length && 'onscroll' in window) { window.addEventListener('scroll', spy, {passive:true}); spy(); }
+})();
+</script>"""
 
 
 def main(argv: list[str] | None = None) -> int:
