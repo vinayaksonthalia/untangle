@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 
 from engine.models import BankCreditLine, EvidenceItem, Rail, RailAttribution, Tier
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProposedRule:
     """A durable, versioned rule proposed upon human exception resolution."""
 
@@ -90,10 +90,9 @@ def approve_rule(rule: ProposedRule, approver: str) -> ProposedRule:
     if not approver or not approver.strip():
         raise ValueError("Approver identifier must be provided")
     now = datetime.now(timezone.utc).isoformat()
-    rule.approved = True
-    rule.approved_by = approver.strip()
-    rule.approved_at = now
-    return rule
+    # Immutable: approval returns a NEW frozen rule; an approved rule cannot be mutated
+    # after the fact (e.g. its target_rail retargeted) — the approval is a fixed record.
+    return replace(rule, approved=True, approved_by=approver.strip(), approved_at=now)
 
 
 def match_rule(line: BankCreditLine, rule: ProposedRule) -> bool:
@@ -118,7 +117,10 @@ def match_rule(line: BankCreditLine, rule: ProposedRule) -> bool:
             return line.bank_ref.lower().startswith(pattern)
         return False
 
-    return pattern in text
+    # Unknown pattern_type: do NOT fall back to a loose substring match (that would let a
+    # short pattern fire inside an unrelated word and lower the precision bar). Only the
+    # explicit, boundary-safe pattern types above may match.
+    return False
 
 
 def apply_approved_rules(
@@ -140,22 +142,51 @@ def apply_approved_rules(
         # rail, including razorpay_settlement) must never reclassify a debit into a credit rail.
         if not line.is_credit:
             continue
-        for rule in approved:
-            if match_rule(line, rule):
-                evidence = [
+        # Collect ALL matching approved rules (deterministic order by rule_id), not just the
+        # first: order must never change the verdict. If matching rules disagree on the target
+        # rail, that is a human-approval conflict — do NOT force a pick; leave the line abstained.
+        matched = sorted((r for r in approved if match_rule(line, r)), key=lambda r: r.rule_id)
+        if not matched:
+            continue
+        conflicting_rails = {r.target_rail for r in matched}
+        if len(conflicting_rails) > 1:
+            # Conflicting approvals → abstain rather than force a rail. Emit an EXPLICIT
+            # abstention marker (not a silent omission): a human-approval conflict is the
+            # strongest "this line is contested" signal, and attribute_all uses this marker
+            # to override a soft base guess (Tier B/C/LLM). It never overrides Tier A, since
+            # a clean UTR-exact identifier tie is machine fact, not a human opinion.
+            out[line.key] = RailAttribution(
+                line_key=line.key,
+                rail=Rail.UNKNOWN.value,
+                confidence=0.0,
+                tier=Tier.NONE.value,
+                evidence=[
                     EvidenceItem(
-                        signal="human_approved_rule",
-                        detail=f"Matched rule {rule.rule_id} (pattern '{rule.pattern_value}') approved by {rule.approved_by}",
-                        weight=0.95,
+                        signal="rule_conflict",
+                        detail=(
+                            "conflicting approved rules target "
+                            f"{sorted(conflicting_rails)}: {sorted(r.rule_id for r in matched)}"
+                        ),
+                        weight=0.0,
                     )
-                ]
-                out[line.key] = RailAttribution(
-                    line_key=line.key,
-                    rail=rule.target_rail,
-                    confidence=0.95,
-                    tier=Tier.RULE.value,
-                    evidence=evidence,
-                    abstained=False,
-                )
-                break
+                ],
+                abstained=True,
+            )
+            continue
+        rule = matched[0]
+        evidence = [
+            EvidenceItem(
+                signal="human_approved_rule",
+                detail=f"Matched rule {rule.rule_id} (pattern '{rule.pattern_value}') approved by {rule.approved_by}",
+                weight=0.95,
+            )
+        ]
+        out[line.key] = RailAttribution(
+            line_key=line.key,
+            rail=rule.target_rail,
+            confidence=0.95,
+            tier=Tier.RULE.value,
+            evidence=evidence,
+            abstained=False,
+        )
     return out

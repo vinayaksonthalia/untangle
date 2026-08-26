@@ -11,6 +11,8 @@ Reason codes (aligned to EXCEPTION_TAXONOMY.md):
 - ``razorpay_uncertain``          — abstained but carried some Razorpay signal below τ.
 - ``razorpay_coverage_not_found`` — attributed Razorpay, but no exact settlement coverage
                                     (split leg / partial / carry-forward the engine bounded out of).
+- ``rule_conflict``               — two approved rules disagree on the rail; abstained (a human
+                                    must retire/correct one rule, not add another pattern).
 """
 
 from __future__ import annotations
@@ -43,7 +45,17 @@ def build_exceptions(
         line = lines_by_key.get(a.line_key)
         ev = list(a.evidence)
         if a.abstained or a.rail == Rail.UNKNOWN.value:
-            if any(e.signal == "multiple_satisfying_subsets" for e in a.evidence):
+            if any(e.signal == "rule_conflict" for e in a.evidence):
+                detail = next((e.detail for e in a.evidence if e.signal == "rule_conflict"), "")
+                out.append(ExceptionRecord(
+                    a.line_key, "rule_conflict",
+                    f"{_amount_str(line)}: contradictory approved rules target different rails "
+                    f"({detail}) — abstained rather than force a pick.",
+                    "Human review: two approved rules disagree on this line's rail. Retire or "
+                    "correct one of the conflicting rules; do NOT add another narration pattern.",
+                    evidence=ev,
+                ))
+            elif any(e.signal == "multiple_satisfying_subsets" for e in a.evidence):
                 out.append(ExceptionRecord(
                     a.line_key, "multiple_satisfying_subsets",
                     f"{_amount_str(line)}: ambiguous set-sum — multiple distinct settlement subsets sum to this amount.",

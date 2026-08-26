@@ -82,3 +82,19 @@ def test_narrate_accepts_confirmable_proposal():
     out = resolve_unknowns(attrs, {"k1": line}, ReconIndex([]), _MockClient("direct_upi"))
     assert out[0].rail == "direct_upi"
     assert out[0].tier == Tier.LLM.value and out[0].llm_used is True
+
+
+def test_narrate_never_resolves_a_rule_conflict():
+    """A rule_conflict abstention is FINAL: the LLM tier must never turn it into a rail,
+    even when the narration would otherwise confirm a proposal."""
+    from engine.models import EvidenceItem
+    line = _unknown_line("SOME AMBIGUOUS UPI CREDIT")  # would confirm direct_upi if allowed
+    conflict = RailAttribution(
+        "k1", Rail.UNKNOWN.value, 0.0, Tier.NONE.value,
+        [EvidenceItem("rule_conflict", "conflicting approved rules target ['direct_upi', 'unrelated']", 0.0)],
+        abstained=True,
+    )
+    out = resolve_unknowns([conflict], {"k1": line}, ReconIndex([]), _MockClient("direct_upi"))
+    assert out[0].rail == Rail.UNKNOWN.value, "conflict must stay abstained through the LLM tier"
+    assert out[0].abstained is True
+    assert out[0].llm_used is False, "conflict line must never be sent to the LLM"

@@ -281,11 +281,21 @@ def attribute_all(
     rule_attrs = apply_approved_rules(lines, rules)
     if not rule_attrs:
         return base
-    # Human-approved rules resolve abstained exceptions (G5/FR-009)
+    # Human-approved rules resolve abstained exceptions (G5/FR-009). One special case:
+    # a rule *conflict* (contradictory human approvals) is an explicit abstention that must
+    # OVERRIDE a soft base verdict (Tier B/C/LLM) — humans disagreeing outweighs a weak guess.
+    # It never overrides Tier A: a clean UTR-exact identifier tie is machine fact, not opinion.
     out: list[RailAttribution] = []
     for a in base:
-        if a.abstained and a.line_key in rule_attrs:
-            out.append(rule_attrs[a.line_key])
+        ra = rule_attrs.get(a.line_key)
+        if ra is None:
+            out.append(a)
+            continue
+        is_conflict = any(e.signal == "rule_conflict" for e in ra.evidence)
+        if is_conflict:
+            out.append(a if a.tier == Tier.A.value else ra)
+        elif a.abstained:
+            out.append(ra)
         else:
             out.append(a)
     return out
