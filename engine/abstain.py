@@ -37,9 +37,19 @@ class CurvePoint:
     coverage: float          # fraction of lines auto-attributed at/above this threshold
 
 
-def coverage_curve(confidences: list[float], steps: int = 20) -> list[CurvePoint]:
-    """Coverage as a function of the confidence cutoff (engine-side; no ground truth)."""
-    n = len(confidences) or 1
+def coverage_curve(
+    confidences: list[float], steps: int = 20, total: int | None = None
+) -> list[CurvePoint]:
+    """Coverage as a function of the confidence cutoff (engine-side; no ground truth).
+
+    ``confidences`` are the confidences of the *auto-attributed* (non-abstained) lines.
+    ``total`` is the honest denominator — the count of ALL lines in the batch, so that
+    abstentions lower coverage. When ``total`` is omitted it falls back to the number of
+    confidences supplied (i.e. coverage of the attributed population only); production
+    callers must pass ``total`` to avoid inflating coverage by excluding abstentions.
+    """
+    n = total if total is not None else len(confidences)
+    n = n or 1
     pts: list[CurvePoint] = []
     for i in range(steps + 1):
         tau = i / steps
