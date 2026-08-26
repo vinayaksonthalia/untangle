@@ -226,3 +226,19 @@ def test_phase4_engine_isolation_g7():
         assert "import generator" not in text, f"{py_file} imports generator!"
         assert "from generator" not in text, f"{py_file} imports from generator!"
         assert "ground_truth" not in text, f"{py_file} references ground_truth!"
+
+
+def test_rules_never_reclassify_debits():
+    """FR-015 / Qodo: an approved rule (even razorpay-target) must never attribute a debit."""
+    from datetime import date
+    from engine.models import BankCreditLine, Rail
+    from engine.rules import apply_approved_rules, approve_rule, propose_rule
+
+    debit = BankCreditLine("d1", date(2026, 6, 15), 50000, "NEFT DR-ACMEPAY-CHARGE", "x", is_credit=False)
+    credit = BankCreditLine("c1", date(2026, 6, 15), 50000, "NEFT CR-ACMEPAY-PAYOUT", "y", is_credit=True)
+    rule = approve_rule(
+        propose_rule(target_rail=Rail.RAZORPAY_SETTLEMENT.value, pattern_value="acmepay"), "alice"
+    )
+    out = apply_approved_rules([debit, credit], [rule])
+    assert "d1" not in out, "a rule must never reclassify a debit into a credit rail"
+    assert "c1" in out, "a rule should still resolve a matching credit"
