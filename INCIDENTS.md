@@ -62,3 +62,17 @@ Real failures, written after the fact, by me. Not generated. Each entry: what I 
 - `build_exceptions` didn't recognise the new marker and reported the generic "no distinctive rail signal — add a narration pattern," which is the wrong reason *and* the wrong fix for a line that already has two contradictory approved rules. Fixed: a dedicated `rule_conflict` exception reason that tells the operator to retire/correct one of the conflicting rules.
 
 **Pattern.** A new state added to one stage is not free — every downstream stage that pattern-matches on the old states has to learn about it. Both misses were "the new marker falls through to a default branch that assumes it isn't special." The whole-pipeline review, not the single-file diff, is where these surface.
+
+---
+
+## 004 — Coverage reported against the wrong denominator; a residual hardcoded "precision 1.000" (2026-08-27)
+
+**What happened.** Two reporting-honesty defects flagged in the pre-submission audit (and by the automated reviewer on an earlier PR) were still live on `main`:
+1. The engine's coverage curve divided by the count of *auto-attributed* lines, not all lines. A run that abstained on many lines still reported ~100% "coverage" of the ones it did attribute — a tautology dressed as a metric. On the demo batch the honest curve is 96.3% coverage / 3.7% abstention at τ≥0.5 and 82.3% / 17.7% at τ≥0.8; the buggy denominator hid the abstention entirely.
+2. The sealed-holdout summary printed "Zero false-positive auto-attributions (precision 1.000)" as a **string literal**, so it would have claimed 1.000 even on a run where the computed precision was lower.
+
+**Why it's serious.** Both are the same failure as incidents 001/002: a number that is true in one framing presented as if it were the honest headline. Coverage that excludes abstentions is not coverage; a hardcoded precision is not a measurement.
+
+**Fix.** `coverage_curve` now takes an explicit `total` denominator and the CLI passes the full line count, so abstentions lower coverage at every cutoff. The sealed summary derives the precision string from the computed value and states the real decoy false-positive count. Regression tests lock the honest denominator (`tests/unit/test_abstain.py`) — including a guard that the old attributed-only denominator inflates to 1.0. Benchmark unchanged: precision 1.000, 0 decoy false-positives.
+
+**Pattern.** A metric is only honest if its denominator is the thing a reader assumes it is. "Coverage" invites the reader to assume "of everything," so anything less has to be spelled out — or, better, computed that way.
