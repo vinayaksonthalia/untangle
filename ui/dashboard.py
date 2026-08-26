@@ -116,11 +116,30 @@ def render(report: dict) -> str:
         f'{v} {html.escape(_REASON.get(k, (k, ""))[0])}' for k, v in reasons.items()
     )
     # Interactive filter chips for the exception queue (built from the actual reason counts).
-    chips = [f'<button class="chip active" data-reason="all">All <span class="ct">{exc_n}</span></button>']
+    # The "All" chip uses a dedicated data-all flag, never a data-reason sentinel, so it can never
+    # collide with a real reason_code (sol review HIGH).
+    chips = [f'<button type="button" class="chip active" data-all="1" aria-pressed="true">All <span class="ct">{exc_n}</span></button>']
     for k, v in reasons.items():
         lbl = html.escape(_REASON.get(k, (k, ""))[0])
-        chips.append(f'<button class="chip" data-reason="{html.escape(k)}">{lbl} <span class="ct">{v}</span></button>')
+        chips.append(f'<button type="button" class="chip" data-reason="{html.escape(k)}" aria-pressed="false">{lbl} <span class="ct">{v}</span></button>')
     filter_chips = "".join(chips)
+
+    # Toolbar + count only make sense when there is a queue to filter (sol review MEDIUM).
+    if exc_n:
+        exc_toolbar = (
+            '<div class="exc-toolbar"><div class="chips" role="group" aria-label="Filter by reason">'
+            + filter_chips
+            + '</div><div class="search"><input id="excSearch" type="search" '
+            'placeholder="Search reason, detail, action…" autocomplete="off" '
+            'aria-label="Search exceptions"/></div></div>'
+        )
+        exc_section_copy = (
+            f"{exc_n} credits untangle could not resolve confidently — {reason_line}. "
+            "Each carries a reason, evidence trace, and a next step."
+        )
+    else:
+        exc_toolbar = ""
+        exc_section_copy = "No exceptions — every credit was attributed with evidence or abstained cleanly."
 
     prov = cfg.get("provider")
     footer_ai = f"provider <b>{html.escape(str(prov))}</b>" if prov else "matching <b>deterministic</b>"
@@ -132,8 +151,8 @@ def render(report: dict) -> str:
         rail_rows="".join(rail_rows), circ=f"{circ:.1f}", off=f"{off:.1f}",
         rec_of=f"{rec_c}/{rzp_c}", unresolved=rzp_c - rec_c, unk_c=unk_c,
         pac_rows="".join(pac_rows),
-        exc_rows="".join(exc_rows), reason_line=reason_line, footer_ai=footer_ai,
-        filter_chips=filter_chips, script=_DASH_JS,
+        exc_rows="".join(exc_rows), footer_ai=footer_ai,
+        exc_toolbar=exc_toolbar, exc_section_copy=exc_section_copy, script=_DASH_JS,
         seed=cfg.get("seed", "?"), n_recon=f'{t["n_recon_rows"]:,}',
         n_lines=t["n_bank_lines"], audit=html.escape(report["audit_root"][:10]),
     )
@@ -310,16 +329,13 @@ tbody tr.hide{{display:none}}
 
   <div class="exc-wrap" id="sec-exceptions">
     <h2>Exception queue</h2>
-    <p class="sc">{exc_n} credits untangle could not resolve confidently — {reason_line}. Each carries a reason, evidence trace, and a next step.</p>
-    <div class="exc-toolbar">
-      <div class="chips">{filter_chips}</div>
-      <div class="search"><input id="excSearch" type="search" placeholder="Search reason, detail, action…" autocomplete="off" aria-label="Search exceptions"/></div>
-    </div>
+    <p class="sc">{exc_section_copy}</p>
+    {exc_toolbar}
     <div class="tblwrap"><table id="excTable"><thead><tr><th style="width:180px">Reason</th><th>Detail</th><th style="width:34%">Suggested action</th></tr></thead>
     <tbody>{exc_rows}</tbody></table>
-    <div class="noresults" id="excEmpty" hidden>No exceptions match this filter. <button class="linkbtn" id="excClear">Clear filters</button></div>
+    <div class="noresults" id="excEmpty" hidden>No exceptions match this filter. <button type="button" class="linkbtn" id="excClear">Clear filters</button></div>
     </div>
-    <p class="exc-count" id="excCount"></p>
+    <p class="exc-count mono" id="excCount" role="status" aria-live="polite"></p>
   </div>
 </div>
 {script}
@@ -337,48 +353,59 @@ _DASH_JS = """<script>
   var count = document.getElementById('excCount');
   var clear = document.getElementById('excClear');
   var total = rows.length;
-  var reason = 'all';
+  var reason = null; // null = all; never a data-reason sentinel, so no collision with real codes
 
+  function setActive(chip){
+    chips.forEach(function(x){
+      var on = x === chip;
+      x.classList.toggle('active', on);
+      x.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
   function apply(){
     var q = (search && search.value || '').trim().toLowerCase();
     var shown = 0;
     rows.forEach(function(tr){
-      var okR = (reason === 'all') || (tr.getAttribute('data-reason') === reason);
+      var okR = (reason === null) || (tr.getAttribute('data-reason') === reason);
       var okQ = !q || (tr.getAttribute('data-text') || '').indexOf(q) !== -1;
       var vis = okR && okQ;
       tr.classList.toggle('hide', !vis);
       if (vis) shown++;
     });
-    if (empty) empty.hidden = shown !== 0;
+    if (empty) empty.hidden = !(total > 0 && shown === 0);
     if (count) count.textContent = shown === total
       ? total + ' exceptions'
       : 'Showing ' + shown + ' of ' + total + ' exceptions';
   }
   chips.forEach(function(c){
     c.addEventListener('click', function(){
-      chips.forEach(function(x){ x.classList.remove('active'); });
-      c.classList.add('active');
-      reason = c.getAttribute('data-reason');
+      setActive(c);
+      reason = c.hasAttribute('data-all') ? null : c.getAttribute('data-reason');
       apply();
     });
   });
   if (search) search.addEventListener('input', apply);
   if (clear) clear.addEventListener('click', function(){
-    reason = 'all'; if (search) search.value = '';
-    chips.forEach(function(x){ x.classList.toggle('active', x.getAttribute('data-reason') === 'all'); });
+    reason = null; if (search) search.value = '';
+    var all = chips.filter(function(x){ return x.hasAttribute('data-all'); })[0];
+    if (all) setActive(all);
     apply();
   });
   apply();
 
-  // Section-nav scroll-spy
+  // Section-nav scroll-spy (rect-based; robust to positioned ancestors — sol review LOW)
   var links = Array.prototype.slice.call(document.querySelectorAll('.secnav a'));
   var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
   function spy(){
-    var y = window.scrollY + 90, idx = 0;
-    targets.forEach(function(t, i){ if (t && t.offsetTop <= y) idx = i; });
-    links.forEach(function(a, i){ a.classList.toggle('on', i === idx); });
+    var idx = 0;
+    targets.forEach(function(t, i){ if (t && t.getBoundingClientRect().top <= 90) idx = i; });
+    links.forEach(function(a, i){
+      var on = i === idx;
+      a.classList.toggle('on', on);
+      if (on) a.setAttribute('aria-current', 'location'); else a.removeAttribute('aria-current');
+    });
   }
-  if ('onscroll' in window) { window.addEventListener('scroll', spy, {passive:true}); spy(); }
+  if (links.length && 'onscroll' in window) { window.addEventListener('scroll', spy, {passive:true}); spy(); }
 })();
 </script>"""
 
