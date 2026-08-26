@@ -112,7 +112,8 @@ _LANDING_CSS = """<style>
 .verdict{padding:15px 20px;background:#fbf6ec;border-top:1px solid var(--border);font-family:var(--ui);font-size:13.5px;color:var(--warn)}
 .verdict b{color:#9a5f08}
 /* comparison */
-.vs{width:100%;border-collapse:collapse;margin-top:26px;font-size:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.vs-wrap{margin-top:26px;overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px}
+.vs{width:100%;border-collapse:collapse;font-size:14px;background:var(--surface);min-width:520px}
 .vs th,.vs td{text-align:left;padding:14px 18px;border-bottom:1px solid var(--border);vertical-align:top}
 .vs thead th{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ts);font-weight:500;background:var(--sunken)}
 .vs thead th:last-child{color:var(--acc)}
@@ -134,6 +135,7 @@ _LANDING_CSS = """<style>
 .finalcta p{color:var(--ts);margin:0 auto 26px;max-width:52ch}
 @media(max-width:840px){.hero{grid-template-columns:1fr;gap:34px}.trap{grid-template-columns:1fr;gap:26px}
 .stats{grid-template-columns:repeat(2,1fr)}.hero-copy h1{max-width:none}}
+@media(max-width:520px){.stats{grid-template-columns:1fr}.proof{padding:28px 22px}.vs th,.vs td{padding:12px 13px}}
 </style>"""
 
 # Inline SVG: commingled credits on the left sort into rails on the right; one abstains.
@@ -258,7 +260,7 @@ def landing_page() -> str:
   <!-- VS -->
   <h2 class="section-h">Not a matcher. An attributor that knows when to stop.</h2>
   <p class="section-s">Most reconciliation tools answer “does line X match row Y?”. untangle answers “whose money is this — and can I prove it?”.</p>
-  <table class="vs">
+  <div class="vs-wrap"><table class="vs">
     <thead><tr><th>&nbsp;</th><th>A naive matcher</th><th>untangle</th></tr></thead>
     <tbody>
       <tr><td>Core question</td><td class="them">Does this credit match a settlement?</td><td class="us">Which rail is this credit from — with evidence?</td></tr>
@@ -268,7 +270,7 @@ def landing_page() -> str:
       <tr><td>How you trust it</td><td class="them">A confidence score</td><td class="us">Per-credit evidence trail + a measured false-positive rate</td></tr>
       <tr><td>Fee-GST (ITC)</td><td class="them">Out of scope</td><td class="us">Traceable input-tax-credit schedule from Razorpay's own figures</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h2 class="section-h">How it works</h2>
   <p class="section-s">Three files in, a paise-exact verdict out. No account, no storage.</p>
