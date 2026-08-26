@@ -15,6 +15,7 @@ that is exactly the decoy trap the benchmark sets.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from itertools import combinations
 
 from engine.evidence import (
@@ -30,19 +31,59 @@ _HARD_RZP_SIGNALS = {"utr_exact", "utr_suffix", "setsum"}
 # a coincidental amount match must not auto-attribute Razorpay.
 _RZP_COINCIDENTAL = {"amount_corr", "value_date_proximity"}
 _SETSUM_MAX_TERMS = 3
-_SETSUM_MAX_CANDIDATES = 40  # cap the candidate window; abstain rather than explode.
+_SETSUM_MAX_CANDIDATES = 200  # candidate pool size up to N=200 per Phase 2
+
+_SIGNAL_CHANNELS = {
+    "utr_exact": "identifier",
+    "utr_suffix": "identifier",
+    "settlement_ref": "identifier",
+    "narration_brand_rzp": "narration",
+    "ifsc_ratn": "narration",
+    "amount_corr": "amount_time",
+    "value_date_proximity": "amount_time",
+    "setsum": "amount_time",
+}
 
 
 def _combine(items: list[EvidenceItem]) -> float:
-    """Noisy-OR combination, capped. Independent signals reinforce; one strong dominates."""
-    acc = 1.0
+    """Correlation-aware combination (G3 / spec FR-004).
+
+    Evidence is grouped by independent channel (identifier, narration, amount/time).
+    Correlated signals within a channel do NOT multiply as independent coin flips;
+    instead, the dominant channel signal is augmented by bounded corroboration.
+    Across independent channels, signals are combined using Noisy-OR.
+    """
+    if not items:
+        return 0.0
+    by_channel: dict[str, list[float]] = {}
     for it in items:
-        acc *= 1.0 - max(0.0, min(1.0, it.weight))
+        ch = _SIGNAL_CHANNELS.get(it.signal)
+        if ch is None:
+            ch = "narration" if it.signal.startswith("narration_pattern:") else it.signal
+        by_channel.setdefault(ch, []).append(max(0.0, min(1.0, it.weight)))
+
+    channel_weights: list[float] = []
+    for ch, weights in by_channel.items():
+        if len(weights) == 1:
+            channel_weights.append(weights[0])
+        else:
+            m = max(weights)
+            boost = sum(w * 0.1 for w in weights if w != m)
+            channel_weights.append(min(0.98, m + boost))
+
+    acc = 1.0
+    for w in channel_weights:
+        acc *= 1.0 - w
     return min(0.99, 1.0 - acc)
 
 
 def _setsum_evidence(line: BankCreditLine, index: ReconIndex) -> list[EvidenceItem] | None:
-    """Try to explain the credit as a sum of 2–3 settlement nets within the date window."""
+    """Try to explain the credit as a sum of 2–3 settlement nets within the date window.
+
+    Enumerates ALL satisfying subsets (tolerance 0, candidate pool up to N=200).
+    If >1 distinct subset of settlement_ids satisfies the amount, returns an EvidenceItem
+    with signal 'multiple_satisfying_subsets' so the caller can abstain (G2/FR-003).
+    """
     if not line.is_credit:
         return None
     target = line.amount_paise
@@ -55,17 +96,86 @@ def _setsum_evidence(line: BankCreditLine, index: ReconIndex) -> list[EvidenceIt
             cands.append((sid, n))
     if not cands or len(cands) > _SETSUM_MAX_CANDIDATES:
         return None
-    for k in range(2, _SETSUM_MAX_TERMS + 1):
-        for combo in combinations(cands, k):
-            if sum(n for _, n in combo) == target:
-                sids = ", ".join(sid for sid, _ in combo)
-                return [
-                    EvidenceItem(
-                        "setsum",
-                        f"credit equals net sum of {k} settlements ({sids})",
-                        0.55,
-                    )
-                ]
+
+    satisfying_subsets: list[tuple[str, ...]] = []
+    seen: set[frozenset[str]] = set()
+
+    # Check if any single settlement equals target in date window
+    for sid in index.net_to_settlements.get(target, []):
+        d = index.settlement_date.get(sid)
+        if d is not None and abs((line.value_date - d).days) <= 5:
+            subset = frozenset([sid])
+            if subset not in seen:
+                seen.add(subset)
+                satisfying_subsets.append((sid,))
+
+    val_to_sids: dict[int, list[str]] = defaultdict(list)
+    for sid, n in cands:
+        val_to_sids[n].append(sid)
+
+    # 2-term sum (fast dictionary lookup)
+    for i in range(len(cands)):
+        sid_i, n_i = cands[i]
+        rem = target - n_i
+        if rem in val_to_sids:
+            for sid_j in val_to_sids[rem]:
+                if sid_j > sid_i:
+                    sub = frozenset([sid_i, sid_j])
+                    if sub not in seen:
+                        seen.add(sub)
+                        satisfying_subsets.append(tuple(sorted(sub)))
+                        if len(satisfying_subsets) > 1:
+                            break
+        if len(satisfying_subsets) > 1:
+            break
+
+    # 3-term sum (fast dictionary lookup)
+    if len(satisfying_subsets) <= 1:
+        for i in range(len(cands)):
+            sid_i, n_i = cands[i]
+            for j in range(i + 1, len(cands)):
+                sid_j, n_j = cands[j]
+                rem = target - n_i - n_j
+                if rem <= 0:
+                    continue
+                if rem in val_to_sids:
+                    for sid_k in val_to_sids[rem]:
+                        if sid_k > sid_j:
+                            sub = frozenset([sid_i, sid_j, sid_k])
+                            if sub not in seen:
+                                seen.add(sub)
+                                satisfying_subsets.append(tuple(sorted(sub)))
+                                if len(satisfying_subsets) > 1:
+                                    break
+                if len(satisfying_subsets) > 1:
+                    break
+            if len(satisfying_subsets) > 1:
+                break
+
+    if len(satisfying_subsets) > 1:
+        return [
+            EvidenceItem(
+                "multiple_satisfying_subsets",
+                f"ambiguous set-sum: {len(satisfying_subsets)} distinct subsets sum to {target} paise",
+                0.0,
+            )
+        ]
+
+    if len(satisfying_subsets) == 1:
+        subset_tuple = satisfying_subsets[0]
+        # If it was a single settlement, that's already covered by amount_corr (not Tier C setsum)
+        if len(subset_tuple) == 1:
+            return None
+        sids = ", ".join(subset_tuple)
+        k = len(subset_tuple)
+        return [
+            EvidenceItem(
+                "setsum",
+                f"credit equals net sum of {k} settlements ({sids})",
+                0.55,
+            )
+        ]
+
     return None
 
 
@@ -85,9 +195,20 @@ def attribute_line(line: BankCreditLine, index: ReconIndex, threshold: float) ->
     tier_used = Tier.B
     if not rzp_hard:
         setsum = _setsum_evidence(line, index)
+        # If setsum is ambiguous (multiple satisfying subsets), must abstain per G2/FR-003
+        if setsum and any(e.signal == "multiple_satisfying_subsets" for e in setsum):
+            if not non_rzp:
+                return RailAttribution(
+                    line.key,
+                    Rail.UNKNOWN.value,
+                    0.0,
+                    Tier.NONE.value,
+                    rzp_ev + setsum,
+                    abstained=True,
+                )
         # Only apply set-sum when there is *some* Razorpay context, to avoid claiming
         # arbitrary credits that merely happen to sum. A competing gateway keyword blocks it.
-        if setsum and (rzp_ev and not non_rzp):
+        if setsum and not any(e.signal == "multiple_satisfying_subsets" for e in setsum) and (rzp_ev and not non_rzp):
             rzp_ev = rzp_ev + setsum
             rzp_hard = True
             tier_used = Tier.C
@@ -133,9 +254,26 @@ def attribute_line(line: BankCreditLine, index: ReconIndex, threshold: float) ->
 
 
 def attribute_all(
-    lines: list[BankCreditLine], index: ReconIndex, threshold: float
+    lines: list[BankCreditLine],
+    index: ReconIndex,
+    threshold: float,
+    rules: list | None = None,
 ) -> list[RailAttribution]:
-    return [attribute_line(ln, index, threshold) for ln in lines]
+    base = [attribute_line(ln, index, threshold) for ln in lines]
+    if not rules:
+        return base
+    from engine.rules import apply_approved_rules
+    rule_attrs = apply_approved_rules(lines, rules)
+    if not rule_attrs:
+        return base
+    # Human-approved rules resolve abstained exceptions (G5/FR-009)
+    out: list[RailAttribution] = []
+    for a in base:
+        if a.abstained and a.line_key in rule_attrs:
+            out.append(rule_attrs[a.line_key])
+        else:
+            out.append(a)
+    return out
 
 
 def _extract_utrs(line: BankCreditLine) -> list[str]:  # re-export for tests

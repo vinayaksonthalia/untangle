@@ -120,7 +120,7 @@ def narration_rail_signals(line: BankCreditLine) -> dict[Rail, list[EvidenceItem
                 EvidenceItem(
                     signal=f"narration_pattern:{rail.value}",
                     detail=f"narration contains {hit!r}",
-                    weight=0.85,
+                    weight=0.95,
                 )
             )
     return out

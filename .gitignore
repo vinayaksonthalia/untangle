@@ -28,3 +28,6 @@ out/
 
 # out-of-sample validation scratch
 .oos/
+data_large/
+out_large/
+data/sealed/
