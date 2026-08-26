@@ -152,10 +152,14 @@ def run_sealed_holdout_comparison(seed: int = DEFAULT_SEALED_SEED, sealed_dir: s
     print(f"  Metric                           Dev Set (seed 42)    Sealed Holdout (seed {seed})")
     print(f"  -----------------------------------------------------------------------------")
     print(f"  Bank Lines (n)                   294                  {sealed_res['totals']['n_bank_lines']}")
-    print(f"  Razorpay Precision               {dev_prec:.3f}                {s_rzp['precision']:.3f} (100% sound)")
-    print(f"  Decoy False Positives            {dev_decoy}/181                {s_decoy['predicted_razorpay']}/{s_decoy['non_rzp_lines']} (0 FP)")
+    prec_tag = "sound" if s_rzp['precision'] >= 0.9995 else f"PRECISION {s_rzp['precision']:.3f} < 1.000"
+    fp_tag = "0 FP" if s_decoy['predicted_razorpay'] == 0 else f"{s_decoy['predicted_razorpay']} FP"
+    ece_val = sm.get('ece', 0.0)
+    ece_tag = "<= 0.10" if ece_val <= 0.10 else "> 0.10 (miscalibrated)"
+    print(f"  Razorpay Precision               {dev_prec:.3f}                {s_rzp['precision']:.3f} ({prec_tag})")
+    print(f"  Decoy False Positives            {dev_decoy}/181                {s_decoy['predicted_razorpay']}/{s_decoy['non_rzp_lines']} ({fp_tag})")
     print(f"  Razorpay Recall                  {dev_recall:.3f}                {s_rzp['recall']:.3f}")
-    print(f"  ECE Calibration                  {dev_ece:.4f}               {sm.get('ece', 0.0):.4f} (<= 0.10)")
+    print(f"  ECE Calibration                  {dev_ece:.4f}               {ece_val:.4f} ({ece_tag})")
     print(f"  Reconciled (Paise-Exact)         91 credits           {sealed_res['totals']['reconciled_count']} credits")
     print(f"  Recoverable Fee-GST              ₹43,201              ₹{sealed_res['totals']['fee_gst_recoverable_paise']/100:,.2f}")
 
