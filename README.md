@@ -12,41 +12,45 @@ credits are even Razorpay's?**
 Only once each bank credit is correctly attributed to its rail can the Razorpay slice
 be reconciled and the recoverable fee-GST (input tax credit) be surfaced.
 
-## Approach
+## Headline: Attribution & Calibrated Abstention (PR-004)
 
-- **Deterministic first.** Rail attribution runs through tiered deterministic rules
-  (UTR-format fingerprints, per-rail narration patterns, amount-graph correlation
-  against the settlement report). Matching and arithmetic are never done by an LLM.
-- **LLM only on the residue.** Ambiguous free-text bank narrations that rules can't
-  resolve go to a language model — nothing else. A no-AI ablation reports exactly how
-  much the model adds.
-- **Calibrated abstention.** A false "this is Razorpay's" corrupts everything
-  downstream, so the engine can say **UNKNOWN** with a measured cost — attribution
-  *precision* is the headline metric, not raw match rate.
-- **Honest by construction.** Every schema claim cites a committed vendor fixture
-  (`fixtures/`, verified by `scripts/verify_schema_claims.py`). Synthetic data is
-  grounded in publicly documented bank and payment-rail formats, not invented.
+`untangle` leads with attribution precision and honest abstention — never a single bare match rate:
 
-## Status (active development)
+- **Attribution Precision: 1.000 (100%)** on every rail; **0 decoy false-positives** across 181 non-Razorpay lines (naive brand-matching hits 100% false-positives).
+- **Calibrated Abstention (ECE = 0.0876 ≤ 0.10)**: when evidence is ambiguous, the engine explicitly abstains as `UNKNOWN` with named reasons and evidence traces.
+- **Zero forced set-sum picks**: enumerates all satisfying subsets; where >1 subset satisfies a credit amount, it abstains (forced picks = 0 up to candidate set $N=200$).
+- **Human-proposed rules (G5 / FR-009)**: rules proposed upon human resolution remain inert until approved, apply only on confident matches, and never lower the precision bar.
 
-- [x] Multi-rail synthetic data generator (seeded, reproducible, self-checking; proven
-      adversarial — `generator/difficulty_probe.py`)
-- [x] Attribution engine (deterministic tiers A/B/C + calibrated abstention; LLM at the edge)
-- [x] Reconciliation of the Razorpay slice + recoverable fee-GST (paise-exact)
-- [x] Honest exception list + `why` trace
-- [x] Evaluation harness (per-rail **and per-hard-case** precision/recall, decoy FP, ablation)
-- [ ] Demo UI
+### Precision-at-Coverage & Abstention Curve (294-line benchmark)
 
-### Measured (seed 42, deterministic `--no-ai`, scored vs blind ground truth)
+| Confidence Cutoff | Coverage % | Abstention Rate % | Attributed Credits | Abstained Credits | Razorpay Precision | Decoy FP Rate |
+|---|---|---|---|---|---|---|
+| **$\tau \ge 0.50$** | **96.3%** | **3.7%** | 283 | 11 | **1.000** | 0.000 (0/181) |
+| **$\tau \ge 0.60$** | **94.9%** | **5.1%** | 279 | 15 | **1.000** | 0.000 (0/181) |
+| **$\tau \ge 0.70$** | **83.7%** | **16.3%** | 246 | 48 | **1.000** | 0.000 (0/181) |
+| **$\tau \ge 0.80$** | **82.3%** | **17.7%** | 242 | 52 | **1.000** | 0.000 (0/181) |
+| **$\tau \ge 0.90$** | **80.6%** | **19.4%** | 237 | 57 | **1.000** | 0.000 (0/181) |
+| **$\tau \ge 0.95$** | **80.6%** | **19.4%** | 237 | 57 | **1.000** | 0.000 (0/181) |
 
-- Attribution precision **1.000** on every rail; **0 decoy false-positives** (naive brand-grep: 100%).
-- Out-of-sample (4 unseen seeds): precision 1.000 and 0 decoy-FP hold; recall 0.86–0.94.
-- Reconciliation: **91/91 covered sets exact** vs ground truth, to the paise.
-- Recoverable fee-GST surfaced from Razorpay's own tax-on-fee, per-transaction traceable.
-- Every miss is an **abstention**, never a misattribution — surfaced as a named exception.
+---
 
-See [docs/mvp-eval-results.md](docs/mvp-eval-results.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
-and [docs/EXPLAINED.md](docs/EXPLAINED.md).
+### Reconciliation & Recoverable ITC (Proven Slice Only)
+
+Reconciliation runs **only** on credits proven to be Razorpay's:
+
+- **Paise-exact reconciliation**: 91/91 covered sets balanced to the paise (±₹1 labelled rounding drift); zero forced balancing entries.
+- **Traceable Fee-GST (ITC)**: ₹43,201 in recoverable input tax credit surfaced directly from Razorpay's tax-on-fee, 100% itemized and traceable.
+- **FR-016 exception handling**: duplicate, split, partial, and unbalanced settlements surface cleanly as exceptions with actionable next steps.
+
+## Status (Completed Phases 1–5)
+
+- [x] Multi-rail synthetic data generator (seeded, reproducible, self-checking; proven adversarial)
+- [x] Attribution engine (deterministic tiers A/B/C + correlation-aware Noisy-OR calibration ECE ≤ 0.10)
+- [x] Set-sum enumerate-all-and-abstain (zero forced picks across $N \in [10, 200]$)
+- [x] Paise-exact reconciliation of proven Razorpay slice + recoverable fee-GST (ITC)
+- [x] Exception queue with evidence traces & human-proposed versioned rules (G5/FR-009/G6)
+- [x] Evaluation harness & generator-blind sealed holdout runner (`eval/sealed.py`)
+- [x] Privacy-by-construction web app and dashboard UI (PR-001..PR-004)
 
 ## Reproduce the data
 

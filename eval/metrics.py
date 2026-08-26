@@ -127,6 +127,14 @@ def score(report: dict, truth_path: str, bank_csv: str) -> dict:
             "empirical_accuracy": round(correct / len(items), 4),
         })
 
+    total_calib_n = sum(b["n"] for b in calib)
+    ece = (
+        sum(b["n"] * abs(b["empirical_accuracy"] - b["mean_confidence"]) for b in calib)
+        / total_calib_n
+        if total_calib_n
+        else 0.0
+    )
+
     # ---- conservation (MVP subset of data-model invariants) ----
     n_lines = report["totals"]["n_bank_lines"]
     n_verdicts = len(report["attributions"])
@@ -140,6 +148,32 @@ def score(report: dict, truth_path: str, bank_csv: str) -> dict:
         "attributed_plus_abstained_equals_total": accounts,
         "pass": exactly_one and accounts,
     }
+
+    # ---- precision-at-coverage & abstention curve ----
+    threshold_steps = [0.50, 0.60, 0.70, 0.80, 0.90, 0.95]
+    cov_curve = []
+    for tau in threshold_steps:
+        n_attr = sum(1 for _, (r, c) in pred.items() if r != "UNKNOWN" and c >= tau)
+        n_abst = len(labels) - n_attr
+        cov = n_attr / len(labels) if labels else 0.0
+        abst_rate = n_abst / len(labels) if labels else 0.0
+        rzp_tp = sum(
+            1 for lid, (r, c) in pred.items()
+            if r == "razorpay_settlement" and c >= tau and labels.get(lid, {}).get("rail") == "razorpay_settlement"
+        )
+        rzp_fp = sum(
+            1 for lid, (r, c) in pred.items()
+            if r == "razorpay_settlement" and c >= tau and labels.get(lid, {}).get("rail") != "razorpay_settlement"
+        )
+        rzp_prec = rzp_tp / (rzp_tp + rzp_fp) if (rzp_tp + rzp_fp) else 1.0
+        cov_curve.append({
+            "threshold": tau,
+            "coverage": round(cov, 4),
+            "abstention_rate": round(abst_rate, 4),
+            "n_attributed": n_attr,
+            "n_abstained": n_abst,
+            "razorpay_precision": round(rzp_prec, 4),
+        })
 
     # overall (reported alongside per-rail; NEVER as the sole headline)
     overall_correct = sum(1 for lid, lab in labels.items()
@@ -156,6 +190,8 @@ def score(report: dict, truth_path: str, bank_csv: str) -> dict:
             "rate": round(decoy_fp / non_rzp_total, 4) if non_rzp_total else 0.0,
         },
         "calibration": calib,
+        "ece": round(ece, 4),
+        "precision_at_coverage": cov_curve,
         "conservation": conservation,
         "overall": {
             "accuracy_incl_abstain": round(overall_correct / len(labels), 4),

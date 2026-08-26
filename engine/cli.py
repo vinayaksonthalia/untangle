@@ -64,10 +64,17 @@ def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
     total_credit_paise = sum(ln.amount_paise for ln in lines if ln.is_credit)
 
     lines_by_key = {ln.key: ln for ln in lines}
-    reconciliations, unresolved_rzp, _sidx = reconcile(lines_by_key, attributions, recon_rows)
+    reconciliations, unresolved_rzp, sidx = reconcile(lines_by_key, attributions, recon_rows)
     feegst = fee_gst(reconciliations, recon_rows)
     reconciled_paise = sum(r.credit_amount_paise for r in reconciliations)
-    exceptions = build_exceptions(attributions, unresolved_rzp, lines_by_key)
+    exceptions = build_exceptions(
+        attributions,
+        unresolved_rzp,
+        lines_by_key,
+        ambiguous_rzp=sidx.ambiguous_lines,
+        duplicate_or_split_rzp=sidx.duplicate_or_split_lines,
+        unbalanced_rzp=sidx.unbalanced_lines,
+    )
     for r in reconciliations:
         ledger.append("reconciliation", {"line_key": r.line_key,
                                          "covered": len(r.covered_entity_ids),
@@ -159,6 +166,15 @@ def _print_summary(report: RunReport) -> None:
           f"{rzp} razorpay · {other} other-rail · {unknown} UNKNOWN (abstained)")
     for rail in sorted(counts):
         print(f"    {rail:<22} {counts[rail]:>4}   {_fmt_inr(t['by_rail_paise'].get(rail, 0))}")
+    if "coverage_curve" in t:
+        key_thresholds = [0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
+        curve_pts = [p for p in t["coverage_curve"] if round(p["threshold"], 2) in key_thresholds]
+        if curve_pts:
+            print("Attribution & Abstention Curve (threshold sweep):")
+            for p in curve_pts:
+                cov = p["coverage"] * 100
+                abst = (1.0 - p["coverage"]) * 100
+                print(f"    τ ≥ {p['threshold']:.2f}: coverage {cov:>5.1f}% · abstention {abst:>5.1f}%")
     print(f"Total credited: {_fmt_inr(t['total_credit_paise'])} across "
           f"{t['n_recon_rows']} recon rows")
     print(f"Reconciled {_fmt_inr(t['reconciled_paise'])} across {t['reconciled_count']} "

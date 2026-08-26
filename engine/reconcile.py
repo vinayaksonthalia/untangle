@@ -17,13 +17,14 @@ Safety (hardened after audit S1):
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from itertools import combinations
 
 from engine.models import BankCreditLine, Rail, RailAttribution, ReconciliationResult, ReconRow
 
 _DRIFT_TOLERANCE_PAISE = 100      # ≤ ₹1 residual counts as balanced (labelled rounding drift)
 _SETSUM_MAX_TERMS = 3
-_SETSUM_MAX_CANDIDATES = 40
+_SETSUM_MAX_CANDIDATES = 200     # candidate pool size up to N=200 per Phase 2
 _DATE_WINDOW_DAYS = 5
 _UTR = re.compile(r"[0-9]{10}[a-z0-9]{6}", re.I)
 
@@ -49,6 +50,10 @@ class SettlementIndex:
         self.net_to_sids: dict[int, list[str]] = {}
         for sid, n in self.net_by_sid.items():
             self.net_to_sids.setdefault(n, []).append(sid)
+        self.ambiguous_lines: set[str] = set()
+        self.duplicate_or_split_lines: set[str] = set()
+        self.unbalanced_lines: dict[str, int] = {}
+        self.uncredited_sids: set[str] = set()
 
     def _within_window(self, sid: str, line: BankCreditLine) -> bool:
         d = self.date_by_sid.get(sid)
@@ -62,23 +67,85 @@ class SettlementIndex:
                 return sid
         return None
 
-    def amount_or_setsum_sids(self, line: BankCreditLine) -> list[str]:
-        """A single settlement net (date-windowed) or a bounded, windowed set-sum, or []."""
-        # single settlement whose net equals the credit amount, within the date window.
-        sids = self.net_to_sids.get(line.amount_paise)
-        if sids and len(sids) == 1 and self._within_window(sids[0], line):
-            return [sids[0]]
-        # bounded set-sum within the value-date window (merge / carry-forward).
+    def amount_or_setsum_sids(
+        self, line: BankCreditLine, used_sids: set[str] | None = None
+    ) -> list[str]:
+        """A single settlement net (date-windowed) or a bounded, windowed set-sum, or [].
+
+        Enumerates ALL satisfying subsets (tolerance 0).
+        If >1 distinct subset of settlement_ids satisfies the amount, abstains (returns [])
+        and records the line in ambiguous_lines (G2/FR-003).
+        """
+        used = used_sids or set()
+        satisfying_subsets: list[list[str]] = []
+        seen_subsets: set[frozenset[str]] = set()
+
+        # 1. Single settlement whose net equals the credit amount, within the date window.
+        single_sids = self.net_to_sids.get(line.amount_paise, [])
+        for sid in single_sids:
+            if sid not in used and self._within_window(sid, line):
+                subset = frozenset([sid])
+                if subset not in seen_subsets:
+                    seen_subsets.add(subset)
+                    satisfying_subsets.append([sid])
+
+        # 2. Bounded set-sum within the value-date window (merge / carry-forward).
         cands = [
             (sid, n)
             for sid, n in self.net_by_sid.items()
-            if 0 < n < line.amount_paise and self._within_window(sid, line)
+            if sid not in used and 0 < n < line.amount_paise and self._within_window(sid, line)
         ]
         if cands and len(cands) <= _SETSUM_MAX_CANDIDATES:
-            for k in range(2, _SETSUM_MAX_TERMS + 1):
-                for combo in combinations(cands, k):
-                    if sum(n for _, n in combo) == line.amount_paise:
-                        return [sid for sid, _ in combo]
+            val_to_sids: dict[int, list[str]] = defaultdict(list)
+            for sid, n in cands:
+                val_to_sids[n].append(sid)
+
+            # 2-term sum
+            for i in range(len(cands)):
+                sid_i, n_i = cands[i]
+                rem = line.amount_paise - n_i
+                if rem in val_to_sids:
+                    for sid_j in val_to_sids[rem]:
+                        if sid_j > sid_i:
+                            sub = frozenset([sid_i, sid_j])
+                            if sub not in seen_subsets:
+                                seen_subsets.add(sub)
+                                satisfying_subsets.append([sid_i, sid_j])
+                                if len(satisfying_subsets) > 1:
+                                    break
+                if len(satisfying_subsets) > 1:
+                    break
+
+            # 3-term sum
+            if len(satisfying_subsets) <= 1:
+                for i in range(len(cands)):
+                    sid_i, n_i = cands[i]
+                    for j in range(i + 1, len(cands)):
+                        sid_j, n_j = cands[j]
+                        rem = line.amount_paise - n_i - n_j
+                        if rem <= 0:
+                            continue
+                        if rem in val_to_sids:
+                            for sid_k in val_to_sids[rem]:
+                                if sid_k > sid_j:
+                                    sub = frozenset([sid_i, sid_j, sid_k])
+                                    if sub not in seen_subsets:
+                                        seen_subsets.add(sub)
+                                        satisfying_subsets.append([sid_i, sid_j, sid_k])
+                                        if len(satisfying_subsets) > 1:
+                                            break
+                        if len(satisfying_subsets) > 1:
+                            break
+                    if len(satisfying_subsets) > 1:
+                        break
+
+        if len(satisfying_subsets) > 1:
+            self.ambiguous_lines.add(line.key)
+            return []
+
+        if len(satisfying_subsets) == 1:
+            return satisfying_subsets[0]
+
         return []
 
 
@@ -108,34 +175,50 @@ def reconcile(
 ) -> tuple[list[ReconciliationResult], list[str], SettlementIndex]:
     """Return (balanced reconciliations, unresolved razorpay line_keys, index).
 
-    Two ordered passes (UTR-decisive first), deterministic, each settlement used once.
+    Reconciles ONLY the proven-Razorpay slice (never an abstained credit),
+    keyed on settlement_id. Two ordered passes (UTR-decisive first), deterministic,
+    each settlement used at most once. Surfaces residuals and partial/duplicate cases (FR-016).
     """
     sindex = SettlementIndex(recon_rows)
-    rzp = [a for a in attributions
-           if a.rail == Rail.RAZORPAY_SETTLEMENT.value and a.line_key in lines_by_key]
+    # Reconcile ONLY the proven-Razorpay slice (never an abstained credit)
+    rzp = [
+        a for a in attributions
+        if a.rail == Rail.RAZORPAY_SETTLEMENT.value and not a.abstained and a.line_key in lines_by_key
+    ]
 
     results: list[ReconciliationResult] = []
     used_sids: set[str] = set()
     resolved: set[str] = set()
 
-    # Pass 1 — UTR-decisive claims. These own their settlement outright.
+    # Pass 1 — UTR-decisive claims.
+    # Group claims to detect settlements claimed by >1 bank credit (FR-016 duplicate / split payout).
+    utr_claims: dict[str, list[str]] = defaultdict(list)
     for a in rzp:
         line = lines_by_key[a.line_key]
         sid = sindex.utr_sid(line)
-        if sid is None or sid in used_sids:
+        if sid is not None:
+            utr_claims[sid].append(a.line_key)
+
+    for sid, claim_keys in utr_claims.items():
+        if len(claim_keys) > 1:
+            # Settlement maps to >1 bank credit (FR-016).
+            # Record all as duplicate/split exceptions; NEVER net them together to force balance.
+            sindex.duplicate_or_split_lines.update(claim_keys)
             continue
+        line_key = claim_keys[0]
+        line = lines_by_key[line_key]
         res = _make_result(line, [sid], sindex)
         if res is not None:
             results.append(res)
             used_sids.add(sid)
-            resolved.add(a.line_key)
+            resolved.add(line_key)
 
     # Pass 2 — amount / set-sum for what's left, against the remaining settlements.
     for a in rzp:
-        if a.line_key in resolved:
+        if a.line_key in resolved or a.line_key in sindex.duplicate_or_split_lines:
             continue
         line = lines_by_key[a.line_key]
-        sids = [s for s in sindex.amount_or_setsum_sids(line) if s not in used_sids]
+        sids = sindex.amount_or_setsum_sids(line, used_sids=used_sids)
         if not sids:
             continue
         res = _make_result(line, sids, sindex)
@@ -143,6 +226,22 @@ def reconcile(
             results.append(res)
             used_sids.update(sids)
             resolved.add(a.line_key)
+
+    # After Pass 1 and Pass 2: classify remaining unresolved lines
+    unresolved = [a.line_key for a in rzp if a.line_key not in resolved]
+    for u in unresolved:
+        line = lines_by_key[u]
+        sid = sindex.utr_sid(line)
+        if sid and sid in sindex.rows_by_sid:
+            covered_net = sum(r.net_paise for r in sindex.rows_by_sid[sid])
+            res = line.amount_paise - covered_net
+            if line.amount_paise < covered_net:
+                sindex.duplicate_or_split_lines.add(u)
+            else:
+                sindex.unbalanced_lines[u] = res
+
+    # Record uncredited settlements (settlement_id in report mapped to zero bank credits)
+    sindex.uncredited_sids = set(sindex.rows_by_sid.keys()) - used_sids
 
     unresolved = [a.line_key for a in rzp if a.line_key not in resolved]
     # Keep output order stable by attribution order.
