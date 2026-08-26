@@ -197,7 +197,7 @@ def test_phase4_gate_benchmark_precision_with_approved_rule():
         pattern_value="billdesk",
         rationale="BillDesk netbanking transactions",
     )
-    approve_rule(rule, approver="lead_auditor")
+    rule = approve_rule(rule, approver="lead_auditor")  # approval returns a new frozen rule
 
     attributions = attribute_all(lines, index, DEFAULT_THRESHOLD, rules=[rule])
 
@@ -242,3 +242,92 @@ def test_rules_never_reclassify_debits():
     out = apply_approved_rules([debit, credit], [rule])
     assert "d1" not in out, "a rule must never reclassify a debit into a credit rail"
     assert "c1" in out, "a rule should still resolve a matching credit"
+
+
+def test_rules_are_immutable_after_approval():
+    """Qodo #8: an approved rule cannot be mutated (retargeted) after the fact."""
+    import dataclasses
+    from engine.models import Rail
+    from engine.rules import approve_rule, propose_rule
+
+    r = propose_rule(target_rail=Rail.OTHER_GATEWAY.value, pattern_value="payu")
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        r.approved = True  # frozen
+    approved = approve_rule(r, "auditor")
+    assert approved.approved and approved.approved_by == "auditor"
+    assert not r.approved, "approval returns a NEW rule; the original stays inert"
+
+
+def test_rules_conflict_abstains_order_independent():
+    """Qodo #1: two approved rules matching one line with different target rails must
+    abstain (never force a pick), and the result must not depend on rule order."""
+    from datetime import date
+    from engine.models import BankCreditLine, Rail
+    from engine.rules import apply_approved_rules, approve_rule, propose_rule
+
+    ln = BankCreditLine("l1", date(2026, 6, 15), 1000, "NEFT CR-PAYU-SETTLEMENT", "", is_credit=True)
+    r1 = approve_rule(propose_rule(target_rail=Rail.OTHER_GATEWAY.value, pattern_value="payu"), "x")
+    r2 = approve_rule(propose_rule(target_rail=Rail.UNRELATED.value, pattern_value="settlement"), "x")
+    # Conflict now yields an EXPLICIT abstention marker (signal 'rule_conflict'), never a forced
+    # rail, and the outcome is identical regardless of rule order.
+    for order in ([r1, r2], [r2, r1]):
+        res = apply_approved_rules([ln], order)
+        assert res["l1"].abstained is True
+        assert res["l1"].rail == Rail.UNKNOWN.value
+        assert any(e.signal == "rule_conflict" for e in res["l1"].evidence)
+
+
+def test_rules_conflict_overrides_soft_base_through_attribute_all():
+    """Qodo #1 (High): a rule conflict must OVERRIDE a confident soft base verdict through the
+    production attribute_all flow — not just abstained lines — while never touching Tier A."""
+    from datetime import date
+    from engine.evidence import ReconIndex
+    from engine.models import BankCreditLine, Rail
+    from engine.rules import approve_rule, propose_rule
+
+    # A line the base engine confidently classifies (distinctive gateway keyword → other_gateway).
+    ln = BankCreditLine("s1", date(2026, 6, 15), 1000, "NEFT CR-PAYU-SETTLEMENT-PAYOUT", "", is_credit=True)
+    index = ReconIndex([])
+    base = attribute_all([ln], index, DEFAULT_THRESHOLD)
+    assert base[0].abstained is False, "precondition: base must give a confident (non-abstained) verdict"
+
+    # Two humans approve contradictory rails for this same line.
+    r1 = approve_rule(propose_rule(target_rail=Rail.OTHER_GATEWAY.value, pattern_value="payu"), "auditor_a")
+    r2 = approve_rule(propose_rule(target_rail=Rail.UNRELATED.value, pattern_value="settlement"), "auditor_b")
+
+    for order in ([r1, r2], [r2, r1]):
+        res = attribute_all([ln], index, DEFAULT_THRESHOLD, rules=order)
+        assert res[0].abstained is True, "conflict must force abstention over the soft base verdict"
+        assert res[0].rail == Rail.UNKNOWN.value
+        assert any(e.signal == "rule_conflict" for e in res[0].evidence)
+
+
+def test_rule_conflict_surfaces_correct_exception_reason():
+    """Qodo #3 (Medium): a rule_conflict must surface as its own exception reason with the right
+    remediation — NOT as 'unattributed_ambiguous / add a narration pattern'."""
+    from engine.exceptions import build_exceptions
+    from engine.models import BankCreditLine, EvidenceItem, Rail, RailAttribution, Tier
+
+    line = BankCreditLine("c1", date(2026, 6, 15), 1000, "NEFT CR-PAYU-SETTLEMENT", "", is_credit=True)
+    conflict = RailAttribution(
+        "c1", Rail.UNKNOWN.value, 0.0, Tier.NONE.value,
+        [EvidenceItem("rule_conflict", "conflicting approved rules target ['other_gateway', 'unrelated']", 0.0)],
+        abstained=True,
+    )
+    excs = build_exceptions([conflict], [], {"c1": line})
+    assert len(excs) == 1
+    assert excs[0].reason_code == "rule_conflict"
+    assert "narration pattern" not in excs[0].suggested_action.lower() or "do not" in excs[0].suggested_action.lower()
+    assert "conflicting" in excs[0].detail.lower() or "contradictory" in excs[0].detail.lower()
+
+
+def test_rules_unknown_pattern_type_never_loose_matches():
+    """Qodo #10: an unknown pattern_type must not fall back to a loose substring match."""
+    from datetime import date
+    from engine.models import BankCreditLine, Rail
+    from engine.rules import ProposedRule, match_rule
+
+    rule = ProposedRule("rid", 1, Rail.OTHER_GATEWAY.value, "weird_type", "pay", "now",
+                        approved=True, approved_by="x")
+    ln = BankCreditLine("l2", date(2026, 6, 15), 1, "PAYMENT RECEIVED", None, is_credit=True)
+    assert match_rule(ln, rule) is False
