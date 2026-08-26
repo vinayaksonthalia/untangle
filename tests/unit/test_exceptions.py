@@ -35,3 +35,14 @@ def test_attributed_razorpay_but_unresolved_is_coverage_not_found():
 def test_resolved_lines_produce_no_exception():
     a = RailAttribution("k4", Rail.OTHER_GATEWAY.value, 0.9, "B", [])
     assert build_exceptions([a], [], {"k4": _line("k4")}) == []
+
+
+def test_multiple_satisfying_subsets_reason_code():
+    a = RailAttribution(
+        "k5", Rail.UNKNOWN.value, 0.0, "none",
+        [EvidenceItem("multiple_satisfying_subsets", "ambiguous set-sum", 0.0)],
+        abstained=True,
+    )
+    exc = build_exceptions([a], [], {"k5": _line("k5")})
+    assert [e.reason_code for e in exc] == ["multiple_satisfying_subsets"]
+    assert "multiple" in exc[0].detail

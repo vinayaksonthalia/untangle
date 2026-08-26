@@ -1,140 +1,273 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"/>
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>untangle — settlement attribution</title>
+<title>untangle — multi-rail attribution & reconciliation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,480;9..144,560&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-:root{--paper:#fbfaf6;--card:#ffffff;--ink:#1b1f24;--mut:#6a7280;--rule:#e7e3d8;
---teal:#0f766e;--amber:#b45309;--blue:#1d4ed8;
---sans:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
---mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;}
+:root{--bg:#f7f7f5;--surface:#fff;--sunken:#fbfbfa;--border:#e6e4df;--border2:#d8d5ce;
+--tp:#14140f;--ts:#6b6b62;--tt:#9b9b90;--acc:#2b5edb;--acc-tint:#eaf0fd;--ok:#1b7a4d;--warn:#b4720a;
+--disp:'Fraunces',Georgia,serif;--ui:'Inter',-apple-system,'Segoe UI',sans-serif;--mono:'IBM Plex Mono',ui-monospace,monospace;
+--max:1120px;--r-lg:12px;--r-md:8px;}
 *{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
--webkit-font-smoothing:antialiased}
-.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 72px}
+body{margin:0;background:var(--bg);color:var(--tp);font-family:var(--ui);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.5}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
-header{display:flex;align-items:baseline;justify-content:space-between;
-border-bottom:2px solid var(--ink);padding-bottom:14px}
-.brand{font-weight:700;font-size:22px;letter-spacing:-.3px}
-.brand b{color:var(--teal)}
-.kicker{font-family:var(--mono);font-size:12px;color:var(--mut);letter-spacing:.5px;text-transform:uppercase}
-.lead{color:#3d434c;max-width:680px;margin:22px 0 26px;font-size:15.5px;line-height:1.55}
-.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:1.4px;text-transform:uppercase;
-color:var(--mut);margin:0 0 12px}
-/* account ribbon — the signature */
-.ribbon{display:flex;height:34px;border-radius:4px;overflow:hidden;border:1px solid var(--rule)}
-.ribbon i{display:block;height:100%;border-right:1px solid rgba(255,255,255,.55)}
-.ribbon i:last-child{border-right:0}
-.ribbon-cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;
-color:var(--mut);margin-top:7px}
-/* figures row */
-.figs{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin:30px 0 8px;
-border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
-.fig{padding:18px 20px 18px 0;border-right:1px solid var(--rule)}
-.fig:last-child{border-right:0}
-.fig .l{font-family:var(--mono);font-size:11.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--mut)}
-.fig .v{font-family:var(--mono);font-weight:600;font-size:25px;letter-spacing:-.5px;margin-top:8px}
-.fig .n{font-size:12.5px;color:var(--mut);margin-top:5px}
-.fig.hero .v{color:var(--teal)}
-.fig .tick{color:var(--teal);font-weight:600}
-section{margin-top:42px}
-h2{font-size:15px;font-weight:600;margin:0 0 4px}
-.sc{color:var(--mut);font-size:13px;margin:0 0 16px}
-table{width:100%;border-collapse:collapse}
-/* tally */
-.tally td{padding:10px 12px;border-bottom:1px solid var(--rule);font-size:14px}
-.tally .rl{white-space:nowrap}
-.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:9px;vertical-align:middle}
-.tally .ct{font-family:var(--mono);color:var(--mut);text-align:right;width:70px}
-.tally .amt{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;
-font-weight:600;width:150px}
-.tally .shb{width:190px}.tally .shb i{display:block;height:6px;border-radius:3px}
-.note{display:flex;gap:26px;flex-wrap:wrap;color:var(--mut);font-size:13px;margin-top:16px;
-padding-top:14px;border-top:1px solid var(--rule)}
-.note b{color:var(--ink);font-family:var(--mono)}
-/* exceptions */
-.exc th{text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.6px;text-transform:uppercase;
-color:var(--mut);font-weight:500;padding:0 12px 10px;border-bottom:1px solid var(--ink)}
-.exc td{padding:12px;border-bottom:1px solid var(--rule);vertical-align:top;font-size:13.5px}
-.exc .dt{color:#3d434c}.exc .ac{color:var(--mut)}
-.chip{display:inline-block;padding:3px 10px;border-radius:3px;font-family:var(--mono);font-size:11.5px;
-font-weight:500;white-space:nowrap}
-.c-razorpay_coverage_not_found{background:#e8eefb;color:#1d4ed8}
-.c-razorpay_uncertain{background:#f6ecd6;color:#8a5a12}
-.c-unattributed_ambiguous{background:#f6e0dd;color:#a23a2a}
-footer{margin-top:44px;padding-top:16px;border-top:2px solid var(--ink);
-display:flex;gap:26px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--mut)}
-footer b{color:var(--ink)}
-@media(max-width:760px){.figs{grid-template-columns:repeat(2,1fr)}.fig:nth-child(2){border-right:0}
-.tally .shb{display:none}}
-</style></head><body><div class="wrap">
-<header><div class="brand">un<b>tangle</b></div><div class="kicker">multi-rail settlement reconciliation</div></header>
+.rs{font-size:.85em;color:var(--ts)}
+.topbar{position:sticky;top:0;z-index:5;background:rgba(247,247,245,.86);backdrop-filter:blur(8px);
+border-bottom:1px solid var(--border);height:56px;display:flex;align-items:center}
+.topbar .in{max-width:var(--max);margin:0 auto;padding:0 48px;width:100%;display:flex;align-items:center;gap:16px}
+.logo{font-family:var(--disp);font-weight:560;font-size:19px;letter-spacing:-.01em;font-optical-sizing:auto}
+.logo b{color:var(--acc);font-weight:560}
+.period{font-family:var(--mono);font-size:12px;color:var(--ts);border:1px solid var(--border);border-radius:var(--r-md);padding:5px 10px}
+.spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:500;background:var(--warn);color:#fff;border-radius:100px;padding:5px 11px}
+.pill .d{width:6px;height:6px;border-radius:50%;background:#fff;opacity:.9}
+.wrap{max-width:var(--max);margin:0 auto;padding:56px 48px 80px}
+.eyebrow{font-weight:600;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--acc);margin:0}
+.hero-fig{font-family:var(--disp);font-weight:480;font-size:56px;line-height:1.05;letter-spacing:-.025em;margin-top:10px;font-optical-sizing:auto}
+.hero-of{font-size:15px;color:var(--ts);margin-top:10px}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:40px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px 22px;min-height:112px;transition:border-color .15s,box-shadow .15s}
+.card:hover{border-color:var(--border2);box-shadow:0 2px 8px rgba(20,20,15,.06)}
+.card.sig{border-left:3px solid var(--ok)}
+.card.warn{border-left:3px solid var(--warn)}
+.card .l{font-weight:600;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ts)}
+.card .v{font-family:var(--mono);font-weight:500;font-size:28px;margin-top:12px;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.card.sig .v{color:var(--ok)}
+.card.warn .v{color:var(--warn)}
+.card .v .u{font-size:13px;color:var(--tt);font-weight:400}
+.card .n{font-size:12.5px;color:var(--tt);margin-top:8px}
+.card .n .tick{color:var(--ok);font-weight:600}
+.grid2{display:grid;grid-template-columns:1.35fr 1.15fr;gap:24px;margin-top:48px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:24px}
+h2{font-family:var(--disp);font-weight:480;font-size:20px;letter-spacing:-.01em;margin:0 0 3px;font-optical-sizing:auto}
+.sc{color:var(--ts);font-size:13px;margin:0 0 20px}
+.rr{display:grid;grid-template-columns:150px 1fr 130px 56px;align-items:center;gap:14px;height:46px;border-bottom:1px solid var(--border)}
+.rr:last-child{border-bottom:0}
+.rr-l{display:flex;align-items:center;gap:9px;font-size:13.5px;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:2px;flex:none}
+.track{height:5px;background:var(--sunken);border-radius:2.5px;overflow:hidden}
+.track i{display:block;height:100%;border-radius:2.5px}
+.rr-a{text-align:right;font-weight:500;font-size:13.5px}
+.rr-c{text-align:right;color:var(--tt);font-size:12px}
 
-<p class="lead">One merchant bank account receives money from many rails at once. untangle sorts every
-credit to its source, reconciles the Razorpay slice to the paise, and surfaces the input tax credit
-hidden inside it — abstaining, never guessing, when a credit can't be proven.</p>
+/* Proven Slice Section (PR-004: below attribution, explicitly labeled) */
+.proven-section{margin-top:64px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:32px}
+.proven-tag{display:inline-block;padding:5px 12px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--acc);background:var(--acc-tint);border-radius:6px;margin-bottom:12px}
+.hero-rec-sub{font-family:var(--disp);font-weight:480;font-size:42px;letter-spacing:-.02em;margin:10px 0 4px}
+.covbar{height:8px;background:var(--border);border-radius:100px;margin:16px 0 8px;max-width:620px;overflow:hidden}
+.covbar i{display:block;height:100%;background:var(--ok);border-radius:100px}
+.covmeta{font-size:12.5px;color:var(--ts)}
 
-<p class="eyebrow">The account, untangled</p>
-<div class="ribbon"><i style="width:73.451%;background:#1d4ed8" title="Razorpay settlement: ₹3,31,28,178"></i><i style="width:6.839%;background:#7c5cbf" title="Other gateway: ₹30,84,358"></i><i style="width:5.927%;background:#c2843b" title="COD remittance: ₹26,73,143"></i><i style="width:5.530%;background:#9aa1ab" title="Unrelated: ₹24,94,048"></i><i style="width:5.205%;background:#2a9d8f" title="Direct UPI: ₹23,47,781"></i><i style="width:3.048%;background:#c0492f" title="Unattributed: ₹13,74,865"></i></div>
-<div class="ribbon-cap"><span>₹4,51,02,532 credited · 294 lines</span><span>one account · six sources</span></div>
+.pac-table{width:100%;border-collapse:collapse;font-size:13px}
+.pac-table th{text-align:left;padding:8px 10px;background:var(--sunken);color:var(--ts);font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border)}
+.pac-table td{padding:10px;border-bottom:1px solid var(--border)}
+.pac-table tr:last-child td{border-bottom:0}
 
-<div class="figs">
-  <div class="fig"><div class="l">Total credited</div><div class="v">₹4,51,02,532</div><div class="n">294 bank credits</div></div>
-  <div class="fig"><div class="l">Razorpay reconciled</div><div class="v">₹2,96,95,124</div>
-    <div class="n"><span class="tick">✓</span> 91/106 to the paise · within 7p</div></div>
-  <div class="fig hero"><div class="l">Recoverable fee-GST</div><div class="v">₹43,201</div>
-    <div class="n">input tax credit · 4560 txns, traceable</div></div>
-  <div class="fig"><div class="l">Flagged for review</div><div class="v">26</div><div class="n">never guessed — see below</div></div>
+.exc-wrap{margin-top:64px}
+.tblwrap{border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;background:var(--surface)}
+table{width:100%;border-collapse:separate;border-spacing:0}
+thead th{background:var(--sunken);text-align:left;font-weight:600;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ts);padding:10px 20px;border-bottom:1px solid var(--border2)}
+tbody td{padding:14px 20px;border-bottom:1px solid var(--border);vertical-align:top;font-size:13px}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--sunken)}
+.sev{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;color:var(--tp);font-size:12.5px}
+.sev::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--d)}
+.dt{color:#3d3d36}.ac{color:var(--ts)}
+footer{max-width:var(--max);margin:64px auto 0;padding:18px 48px 0;border-top:1px solid var(--border);
+font-family:var(--mono);font-size:11.5px;color:var(--tt);display:flex;gap:26px;flex-wrap:wrap}
+footer b{color:var(--ts);font-weight:500}
+@media(max-width:880px){.wrap,.topbar .in,footer{padding-left:24px;padding-right:24px}
+.cards{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}.hero-fig{font-size:40px}}
+</style></head><body>
+<div class="topbar"><div class="in">
+  <span class="logo">un<b>tangle</b></span>
+  <span class="period">attribution-first reconciliation</span>
+  <span class="spacer"></span>
+  <span class="pill"><span class="d"></span>26 to review</span>
+</div></div>
+
+<div class="wrap">
+  <!-- PRIMARY HEADLINE (PR-004: Attribution & Abstention first) -->
+  <p class="eyebrow">Attribution &amp; Calibrated Abstention (Primary Verdict)</p>
+  <div class="hero-fig">283 <span style="font-size:24px;color:var(--ts)">attributed</span> · 11 <span style="font-size:24px;color:var(--warn)">abstained</span></div>
+  <div class="hero-of">Every bank credit attributed to its rail with evidence · 11 ambiguous credits abstained (never force-matched)</div>
+
+  <div class="cards">
+    <div class="card sig"><div class="l">Attribution Precision</div><div class="v">1.000</div>
+      <div class="n"><span class="tick">✓</span> 0 decoy false-positives across non-Razorpay lines</div></div>
+    <div class="card warn"><div class="l">Calibrated Abstention</div><div class="v">11 <span class="u">credits</span></div>
+      <div class="n">abstained with reasons · queue below</div></div>
+    <div class="card"><div class="l">Razorpay credits</div><div class="v"><span class="rs">₹</span> 3,31,28,178</div>
+      <div class="n">106 credits proven Razorpay's</div></div>
+    <div class="card"><div class="l">Other rails</div><div class="v"><span class="rs">₹</span> 1,05,99,329</div>
+      <div class="n">177 credits across UPI/COD/other gateways</div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>Where the money came from</h2>
+      <p class="sc">Every bank credit traced to its rail. Solid thread = attributed; frayed = unattributed.</p>
+      
+      <div class="rr">
+        <div class="rr-l"><span class="dot" style="background:#2B5EDB"></span>Razorpay settlement</div>
+        <div class="track"><i style="width:100.0%;background:#2B5EDB"></i></div>
+        <div class="rr-a mono"><span class="rs">₹</span> 3,31,28,178</div><div class="rr-c mono">× 106</div>
+      </div>
+      <div class="rr">
+        <div class="rr-l"><span class="dot" style="background:#6B5B95"></span>Other gateway</div>
+        <div class="track"><i style="width:9.3%;background:#6B5B95"></i></div>
+        <div class="rr-a mono"><span class="rs">₹</span> 30,84,358</div><div class="rr-c mono">× 39</div>
+      </div>
+      <div class="rr">
+        <div class="rr-l"><span class="dot" style="background:#8A6D3B"></span>COD remittance</div>
+        <div class="track"><i style="width:8.1%;background:#8A6D3B"></i></div>
+        <div class="rr-a mono"><span class="rs">₹</span> 26,73,142</div><div class="rr-c mono">× 28</div>
+      </div>
+      <div class="rr">
+        <div class="rr-l"><span class="dot" style="background:#8C8C82"></span>Unrelated</div>
+        <div class="track"><i style="width:7.5%;background:#8C8C82"></i></div>
+        <div class="rr-a mono"><span class="rs">₹</span> 24,94,047</div><div class="rr-c mono">× 55</div>
+      </div>
+      <div class="rr">
+        <div class="rr-l"><span class="dot" style="background:#4A8B6F"></span>Direct UPI</div>
+        <div class="track"><i style="width:7.1%;background:#4A8B6F"></i></div>
+        <div class="rr-a mono"><span class="rs">₹</span> 23,47,780</div><div class="rr-c mono">× 55</div>
+      </div>
+      <div class="rr">
+        <div class="rr-l"><span class="dot" style="background:#ADABA2"></span>Unattributed</div>
+        <div class="track"><i style="width:4.2%;background:repeating-linear-gradient(90deg,#ADABA2 0 4px,transparent 4px 9px)"></i></div>
+        <div class="rr-a mono"><span class="rs">₹</span> 13,74,865</div><div class="rr-c mono">× 11</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Precision-at-coverage curve</h2>
+      <p class="sc">Operating threshold curve: precision holds at 1.000 across all confidence cutoffs.</p>
+      <table class="pac-table">
+        <thead><tr><th>Cutoff</th><th>Coverage</th><th>Abstention</th><th>Precision</th></tr></thead>
+        <tbody>
+        <tr><td class="mono">τ ≥ 0.50</td><td class="mono">100.0%</td>
+        <td class="mono">0.0%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>
+        <tr><td class="mono">τ ≥ 0.60</td><td class="mono">98.6%</td>
+        <td class="mono">1.4%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>
+        <tr><td class="mono">τ ≥ 0.70</td><td class="mono">86.9%</td>
+        <td class="mono">13.1%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>
+        <tr><td class="mono">τ ≥ 0.80</td><td class="mono">85.5%</td>
+        <td class="mono">14.5%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>
+        <tr><td class="mono">τ ≥ 0.90</td><td class="mono">83.8%</td>
+        <td class="mono">16.2%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>
+        <tr><td class="mono">τ ≥ 0.95</td><td class="mono">83.8%</td>
+        <td class="mono">16.2%</td><td class="mono" style="color:var(--ok)">1.000</td></tr></tbody>
+      </table>
+      <p style="font-size:12px;color:var(--ts);margin-top:14px">Abstention increases smoothly with stricter cutoffs while precision remains 100%.</p>
+    </div>
+  </div>
+
+  <!-- SECONDARY SECTION (PR-004: Reconciliation & ITC below, labeled 'proven slice only') -->
+  <div class="proven-section">
+    <span class="proven-tag">Proven Slice Only</span>
+    <h2>Reconciliation &amp; Recoverable ITC</h2>
+    <p class="sc">Reconciles ONLY the proven-Razorpay slice to the paise. Unattributed or abstained credits are never forced into reconciliation.</p>
+    <div class="hero-rec-sub"><span class="rs">₹</span> 2,96,95,123 <span style="font-size:16px;font-weight:400;color:var(--ts)">reconciled of <span class="mono htot"><span class="rs">₹</span> 3,31,28,178</span> in Razorpay credits (89.6%)</span></div>
+    <div class="covbar"><i style="width:89.6%"></i></div>
+    <div class="covmeta">89.6% of Razorpay credits matched to settlement rows · max residual 7p</div>
+
+    <div class="cards" style="margin-top:28px">
+      <div class="card sig" style="border-left-color:var(--acc)"><div class="l">Recoverable fee-GST</div><div class="v" style="color:var(--acc)"><span class="rs">₹</span> 43,200</div>
+        <div class="n">input tax credit · traceable across 4,560 txns</div></div>
+      <div class="card"><div class="l">Razorpay settlement</div><div class="v">91/106</div>
+        <div class="n"><span class="tick">✓</span> 91 credits reconciled to the paise</div></div>
+      <div class="card"><div class="l">Unresolved Razorpay</div><div class="v">15</div>
+        <div class="n">split legs or partial settlements</div></div>
+      <div class="card"><div class="l">Max residual</div><div class="v">7p</div>
+        <div class="n">within ±₹1 labelled drift tolerance</div></div>
+    </div>
+  </div>
+
+  <div class="exc-wrap">
+    <h2>Exception queue</h2>
+    <p class="sc">26 credits untangle could not resolve confidently — 13 coverage not found · 10 razorpay uncertain · 1 unattributed · 2 unbalanced residual. Each carries a reason, evidence trace, and a next step.</p>
+    <div class="tblwrap"><table><thead><tr><th style="width:170px">Reason</th><th>Detail</th><th style="width:34%">Suggested action</th></tr></thead>
+    <tbody>
+      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
+      <td class="dt">₹315,156.09 on 2026-06-06: partial Razorpay signal but below the confidence threshold (0.30).</td>
+      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹302,768.06 on 2026-06-07: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
+      <td class="dt">₹187,943.90 on 2026-06-07: partial Razorpay signal but below the confidence threshold (0.15).</td>
+      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
+      <td class="dt">₹221,023.52 on 2026-06-08: partial Razorpay signal but below the confidence threshold (0.15).</td>
+      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
+      <td class="dt">₹156,982.10 on 2026-06-08: partial Razorpay signal but below the confidence threshold (0.30).</td>
+      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹125,379.16 on 2026-06-08: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹53,824.04 on 2026-06-09: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹186,730.14 on 2026-06-10: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
+      <td class="dt">₹59,178.30 on 2026-06-11: partial Razorpay signal but below the confidence threshold (0.15).</td>
+      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹216,557.41 on 2026-06-11: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
+      <td class="dt">₹9,631.04 on 2026-06-12: partial Razorpay signal but below the confidence threshold (0.15).</td>
+      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
+      <tr><td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹-29.50 on 2026-06-14: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹163,577.27 on 2026-06-15: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹199,873.33 on 2026-06-15: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
+      <tr><td><span class="sev" style="--d:#B23B3B">unbalanced residual</span></td>
+      <td class="dt">₹270,003.63 on 2026-06-18: unbalanced reconciliation — candidate settlement net differs by ₹336,959.54. No balancing entry forced.</td>
+      <td class="ac">Human review: inspect residual discrepancy between bank statement and settlement report.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹227,140.97 on 2026-06-18: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹215,913.67 on 2026-06-18: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
+      <tr><td><span class="sev" style="--d:#B23B3B">unbalanced residual</span></td>
+      <td class="dt">₹261,122.61 on 2026-06-19: unbalanced reconciliation — candidate settlement net differs by ₹275,585.58. No balancing entry forced.</td>
+      <td class="ac">Human review: inspect residual discrepancy between bank statement and settlement report.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹375,454.38 on 2026-06-21: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
+      <td class="dt">₹168,978.92 on 2026-06-24: partial Razorpay signal but below the confidence threshold (0.25).</td>
+      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹381,421.82 on 2026-06-25: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
+      <td class="dt">₹190,745.85 on 2026-06-27: partial Razorpay signal but below the confidence threshold (0.30).</td>
+      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
+      <td class="dt">₹33,567.16 on 2026-06-28: partial Razorpay signal but below the confidence threshold (0.15).</td>
+      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
+      <td class="dt">₹31,687.78 on 2026-06-29: partial Razorpay signal but below the confidence threshold (0.15).</td>
+      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹269,515.73 on 2026-06-29: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
+      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <td class="dt">₹183,772.29 on 2026-07-01: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr></tbody></table></div>
+  </div>
 </div>
-
-<section>
-  <h2>Where the money came from</h2>
-  <p class="sc">Each bank credit attributed to a payment rail. Amounts are the sum credited on that rail.</p>
-  <table class="tally"><tbody><tr><td class="rl"><span class="sw" style="background:#1d4ed8"></span>Razorpay settlement</td><td class="ct">106</td><td class="amt">₹3,31,28,178</td><td class="shb"><i style="width:100.0%;background:#1d4ed8"></i></td></tr>
-<tr><td class="rl"><span class="sw" style="background:#7c5cbf"></span>Other gateway</td><td class="ct">39</td><td class="amt">₹30,84,358</td><td class="shb"><i style="width:9.3%;background:#7c5cbf"></i></td></tr>
-<tr><td class="rl"><span class="sw" style="background:#c2843b"></span>COD remittance</td><td class="ct">28</td><td class="amt">₹26,73,143</td><td class="shb"><i style="width:8.1%;background:#c2843b"></i></td></tr>
-<tr><td class="rl"><span class="sw" style="background:#9aa1ab"></span>Unrelated</td><td class="ct">55</td><td class="amt">₹24,94,048</td><td class="shb"><i style="width:7.5%;background:#9aa1ab"></i></td></tr>
-<tr><td class="rl"><span class="sw" style="background:#2a9d8f"></span>Direct UPI</td><td class="ct">55</td><td class="amt">₹23,47,781</td><td class="shb"><i style="width:7.1%;background:#2a9d8f"></i></td></tr>
-<tr><td class="rl"><span class="sw" style="background:#c0492f"></span>Unattributed</td><td class="ct">11</td><td class="amt">₹13,74,865</td><td class="shb"><i style="width:4.2%;background:#c0492f"></i></td></tr></tbody></table>
-  <div class="note"><span><b>106</b> attributed Razorpay, <b>0</b> false positives</span>
-  <span><b>11</b> abstained rather than guessed</span>
-  <span><b>86%</b> of the Razorpay slice reconciled to the paise</span></div>
-</section>
-
-<section>
-  <h2>Exception queue</h2>
-  <p class="sc">26 credits untangle could not resolve confidently — each with a reason and a next step. Nothing is force-matched.</p>
-  <table class="exc"><thead><tr><th>Reason</th><th>Detail</th><th>Suggested action</th></tr></thead>
-  <tbody><tr><td><span class="chip c-razorpay_uncertain">razorpay uncertain</span></td><td class="dt">₹315,156.09 on 2026-06-06: partial Razorpay signal but below the confidence threshold (0.30).</td><td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹302,768.06 on 2026-06-07: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_uncertain">razorpay uncertain</span></td><td class="dt">₹187,943.90 on 2026-06-07: partial Razorpay signal but below the confidence threshold (0.15).</td><td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-<tr><td><span class="chip c-razorpay_uncertain">razorpay uncertain</span></td><td class="dt">₹221,023.52 on 2026-06-08: partial Razorpay signal but below the confidence threshold (0.15).</td><td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-<tr><td><span class="chip c-razorpay_uncertain">razorpay uncertain</span></td><td class="dt">₹156,982.10 on 2026-06-08: partial Razorpay signal but below the confidence threshold (0.30).</td><td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹125,379.16 on 2026-06-08: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹53,824.04 on 2026-06-09: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹186,730.14 on 2026-06-10: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_uncertain">razorpay uncertain</span></td><td class="dt">₹59,178.30 on 2026-06-11: partial Razorpay signal but below the confidence threshold (0.15).</td><td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹216,557.41 on 2026-06-11: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_uncertain">razorpay uncertain</span></td><td class="dt">₹9,631.04 on 2026-06-12: partial Razorpay signal but below the confidence threshold (0.15).</td><td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-<tr><td><span class="chip c-unattributed_ambiguous">unattributed</span></td><td class="dt">₹-29.50 on 2026-06-14: no distinctive rail signal in the narration.</td><td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹163,577.27 on 2026-06-15: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹199,873.33 on 2026-06-15: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹270,003.63 on 2026-06-18: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹227,140.97 on 2026-06-18: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹215,913.67 on 2026-06-18: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹261,122.61 on 2026-06-19: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹375,454.38 on 2026-06-21: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_uncertain">razorpay uncertain</span></td><td class="dt">₹168,978.92 on 2026-06-24: partial Razorpay signal but below the confidence threshold (0.25).</td><td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹381,421.82 on 2026-06-25: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_uncertain">razorpay uncertain</span></td><td class="dt">₹190,745.85 on 2026-06-27: partial Razorpay signal but below the confidence threshold (0.30).</td><td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-<tr><td><span class="chip c-razorpay_uncertain">razorpay uncertain</span></td><td class="dt">₹33,567.16 on 2026-06-28: partial Razorpay signal but below the confidence threshold (0.15).</td><td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-<tr><td><span class="chip c-razorpay_uncertain">razorpay uncertain</span></td><td class="dt">₹31,687.78 on 2026-06-29: partial Razorpay signal but below the confidence threshold (0.15).</td><td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹269,515.73 on 2026-06-29: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-<tr><td><span class="chip c-razorpay_coverage_not_found">coverage not found</span></td><td class="dt">₹183,772.29 on 2026-07-01: attributed Razorpay, but no exact settlement coverage was found within bounds.</td><td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr></tbody></table>
-</section>
-
-<footer><span>reproducible · seed <b>42</b></span><span>AI <b>none</b></span>
-<span><b>12,422</b> recon rows</span><span>audit root <b>f4bda73cf308…</b></span></footer>
-</div>
+<footer><span>reproducible · seed <b>42</b></span><span>provider <b>none</b></span>
+<span><b>294</b> bank credits · <b>12,422</b> recon rows</span><span>audit <b>7603431b3f…</b></span></footer>
 </body></html>

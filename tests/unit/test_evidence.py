@@ -91,3 +91,47 @@ def test_settlement_ref_needs_identity_token():
     ev2 = razorpay_signals(_line("NEFT CR-RAZORPAY-1780909200y32okr", ref="1780909200y32okr"),
                            _index())
     assert "settlement_ref" in _signals(ev2)
+
+
+def test_setsum_unique_fires():
+    from engine.attribute import _setsum_evidence
+    # 2 settlements: 60,000 + 40,000 = 100,000
+    idx = _index(nets=[("s1", 60000, date(2026, 6, 10)), ("s2", 40000, date(2026, 6, 10))])
+    line = _line("RAZORPAY SETTLEMENT", amount=100000, vd="2026-06-10")
+    ev = _setsum_evidence(line, idx)
+    assert ev is not None
+    assert len(ev) == 1
+    assert ev[0].signal == "setsum"
+    assert "s1" in ev[0].detail and "s2" in ev[0].detail
+
+
+def test_setsum_ambiguous_returns_multiple_satisfying_subsets():
+    from engine.attribute import _setsum_evidence
+    # Two distinct pairs sum to 100,000: (s1+s2 = 60k+40k) and (s3+s4 = 70k+30k)
+    idx = _index(nets=[
+        ("s1", 60000, date(2026, 6, 10)),
+        ("s2", 40000, date(2026, 6, 10)),
+        ("s3", 70000, date(2026, 6, 10)),
+        ("s4", 30000, date(2026, 6, 10)),
+    ])
+    line = _line("RAZORPAY SETTLEMENT", amount=100000, vd="2026-06-10")
+    ev = _setsum_evidence(line, idx)
+    assert ev is not None
+    assert len(ev) == 1
+    assert ev[0].signal == "multiple_satisfying_subsets"
+
+
+def test_setsum_ambiguity_causes_attribute_line_to_abstain():
+    from engine.attribute import attribute_line
+    # Ambiguous set-sum on a Razorpay-looking line must abstain per G2
+    idx = _index(nets=[
+        ("s1", 60000, date(2026, 6, 10)),
+        ("s2", 40000, date(2026, 6, 10)),
+        ("s3", 70000, date(2026, 6, 10)),
+        ("s4", 30000, date(2026, 6, 10)),
+    ])
+    line = _line("NEFT CR-RATN0000088-SETTLEMENT", amount=100000, vd="2026-06-10")
+    attr = attribute_line(line, idx, threshold=0.55)
+    assert attr.abstained is True
+    assert attr.rail == Rail.UNKNOWN.value
+    assert any(e.signal == "multiple_satisfying_subsets" for e in attr.evidence)

@@ -21,7 +21,7 @@ class Rail(StrEnum):
     DIRECT_UPI = "direct_upi"
     COD_REMITTANCE = "cod_remittance"
     UNRELATED = "unrelated"
-    UNKNOWN = "UNKNOWN"
+    UNKNOWN = "UNKNOWN"          # explicit abstention (FR-003, G1)
 
 
 class Tier(StrEnum):
@@ -29,6 +29,7 @@ class Tier(StrEnum):
     B = "B"          # scored weak-evidence combination
     C = "C"          # bounded set-sum for split/merge/carry-forward
     LLM = "LLM"      # residual narration resolved with LLM assistance
+    RULE = "rule_derived"  # human-approved versioned rule (G5/FR-009)
     NONE = "none"    # abstained / no tier decided
 
 
@@ -161,6 +162,7 @@ class ExceptionRecord:
     reason_code: str
     detail: str
     suggested_action: str
+    evidence: list[EvidenceItem] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
