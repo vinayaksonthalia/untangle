@@ -77,6 +77,11 @@ def resolve_unknowns(
         if attr.rail != Rail.UNKNOWN.value:
             out.append(attr)
             continue
+        # A rule conflict (contradictory human approvals) is a MANDATORY, final abstention:
+        # the edge LLM tier must never turn it back into an attributed rail. It stays UNKNOWN.
+        if any(e.signal == "rule_conflict" for e in attr.evidence):
+            out.append(attr)
+            continue
         line = lines_by_key.get(attr.line_key)
         if line is None or not line.narration:
             out.append(attr)

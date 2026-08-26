@@ -302,6 +302,25 @@ def test_rules_conflict_overrides_soft_base_through_attribute_all():
         assert any(e.signal == "rule_conflict" for e in res[0].evidence)
 
 
+def test_rule_conflict_surfaces_correct_exception_reason():
+    """Qodo #3 (Medium): a rule_conflict must surface as its own exception reason with the right
+    remediation — NOT as 'unattributed_ambiguous / add a narration pattern'."""
+    from engine.exceptions import build_exceptions
+    from engine.models import BankCreditLine, EvidenceItem, Rail, RailAttribution, Tier
+
+    line = BankCreditLine("c1", date(2026, 6, 15), 1000, "NEFT CR-PAYU-SETTLEMENT", "", is_credit=True)
+    conflict = RailAttribution(
+        "c1", Rail.UNKNOWN.value, 0.0, Tier.NONE.value,
+        [EvidenceItem("rule_conflict", "conflicting approved rules target ['other_gateway', 'unrelated']", 0.0)],
+        abstained=True,
+    )
+    excs = build_exceptions([conflict], [], {"c1": line})
+    assert len(excs) == 1
+    assert excs[0].reason_code == "rule_conflict"
+    assert "narration pattern" not in excs[0].suggested_action.lower() or "do not" in excs[0].suggested_action.lower()
+    assert "conflicting" in excs[0].detail.lower() or "contradictory" in excs[0].detail.lower()
+
+
 def test_rules_unknown_pattern_type_never_loose_matches():
     """Qodo #10: an unknown pattern_type must not fall back to a loose substring match."""
     from datetime import date
