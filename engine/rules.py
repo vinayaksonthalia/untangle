@@ -148,8 +148,31 @@ def apply_approved_rules(
         matched = sorted((r for r in approved if match_rule(line, r)), key=lambda r: r.rule_id)
         if not matched:
             continue
-        if len({r.target_rail for r in matched}) > 1:
-            continue  # conflicting approvals → abstain rather than force a rail
+        conflicting_rails = {r.target_rail for r in matched}
+        if len(conflicting_rails) > 1:
+            # Conflicting approvals → abstain rather than force a rail. Emit an EXPLICIT
+            # abstention marker (not a silent omission): a human-approval conflict is the
+            # strongest "this line is contested" signal, and attribute_all uses this marker
+            # to override a soft base guess (Tier B/C/LLM). It never overrides Tier A, since
+            # a clean UTR-exact identifier tie is machine fact, not a human opinion.
+            out[line.key] = RailAttribution(
+                line_key=line.key,
+                rail=Rail.UNKNOWN.value,
+                confidence=0.0,
+                tier=Tier.NONE.value,
+                evidence=[
+                    EvidenceItem(
+                        signal="rule_conflict",
+                        detail=(
+                            "conflicting approved rules target "
+                            f"{sorted(conflicting_rails)}: {sorted(r.rule_id for r in matched)}"
+                        ),
+                        weight=0.0,
+                    )
+                ],
+                abstained=True,
+            )
+            continue
         rule = matched[0]
         evidence = [
             EvidenceItem(

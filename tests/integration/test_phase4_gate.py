@@ -268,8 +268,38 @@ def test_rules_conflict_abstains_order_independent():
     ln = BankCreditLine("l1", date(2026, 6, 15), 1000, "NEFT CR-PAYU-SETTLEMENT", "", is_credit=True)
     r1 = approve_rule(propose_rule(target_rail=Rail.OTHER_GATEWAY.value, pattern_value="payu"), "x")
     r2 = approve_rule(propose_rule(target_rail=Rail.UNRELATED.value, pattern_value="settlement"), "x")
-    assert "l1" not in apply_approved_rules([ln], [r1, r2])
-    assert "l1" not in apply_approved_rules([ln], [r2, r1])
+    # Conflict now yields an EXPLICIT abstention marker (signal 'rule_conflict'), never a forced
+    # rail, and the outcome is identical regardless of rule order.
+    for order in ([r1, r2], [r2, r1]):
+        res = apply_approved_rules([ln], order)
+        assert res["l1"].abstained is True
+        assert res["l1"].rail == Rail.UNKNOWN.value
+        assert any(e.signal == "rule_conflict" for e in res["l1"].evidence)
+
+
+def test_rules_conflict_overrides_soft_base_through_attribute_all():
+    """Qodo #1 (High): a rule conflict must OVERRIDE a confident soft base verdict through the
+    production attribute_all flow — not just abstained lines — while never touching Tier A."""
+    from datetime import date
+    from engine.evidence import ReconIndex
+    from engine.models import BankCreditLine, Rail
+    from engine.rules import approve_rule, propose_rule
+
+    # A line the base engine confidently classifies (distinctive gateway keyword → other_gateway).
+    ln = BankCreditLine("s1", date(2026, 6, 15), 1000, "NEFT CR-PAYU-SETTLEMENT-PAYOUT", "", is_credit=True)
+    index = ReconIndex([])
+    base = attribute_all([ln], index, DEFAULT_THRESHOLD)
+    assert base[0].abstained is False, "precondition: base must give a confident (non-abstained) verdict"
+
+    # Two humans approve contradictory rails for this same line.
+    r1 = approve_rule(propose_rule(target_rail=Rail.OTHER_GATEWAY.value, pattern_value="payu"), "auditor_a")
+    r2 = approve_rule(propose_rule(target_rail=Rail.UNRELATED.value, pattern_value="settlement"), "auditor_b")
+
+    for order in ([r1, r2], [r2, r1]):
+        res = attribute_all([ln], index, DEFAULT_THRESHOLD, rules=order)
+        assert res[0].abstained is True, "conflict must force abstention over the soft base verdict"
+        assert res[0].rail == Rail.UNKNOWN.value
+        assert any(e.signal == "rule_conflict" for e in res[0].evidence)
 
 
 def test_rules_unknown_pattern_type_never_loose_matches():
