@@ -44,3 +44,15 @@ Real failures, written after the fact, by me. Not generated. Each entry: what I 
 **Fix.** The live dashboard now shows only what a run actually produces — attributed vs abstained counts and the real coverage/abstention curve from the engine's own output — and states explicitly that attribution precision (1.000, 0 decoy FP) is measured *only on the labeled sealed benchmark, never on unlabeled uploads*. The sealed-holdout runner's "(sound)/(0 FP)" annotations were also made to derive from the computed values rather than being printed unconditionally. A regression test asserts the dashboard cannot hardcode a precision claim.
 
 **Pattern, again.** The number on the dashboard was true *on the benchmark* — which is exactly what made it easy to leave hardcoded. A true number in the wrong place is still a false claim. Caught by adversarial review before submission, not after.
+
+---
+
+## 003 — Rule conflicts silently deferred to a soft base guess (2026-08-27)
+
+**What happened.** Hardening the human-approved-rules path (PR #5), the conflict case — two humans approving contradictory rails for the same line — was made to *abstain* by having `apply_approved_rules` omit the line. The automated code review (Qodo, High) caught that omission is not abstention: in the production `attribute_all` flow, approved rules only ever *resolve an already-abstained* line, so a dropped line silently keeps whatever the base engine decided. A line the base engine confidently classified (Tier B/C) with two contradictory human approvals on it would still be assigned a rail rather than abstaining.
+
+**Why it's serious.** A contradiction between two human approvals is the strongest possible "this line is contested" signal. Precision-first means the system must not pick when its own approvers disagree. Silently falling back to a weak base guess is the opposite of that.
+
+**Fix.** A conflict now emits an *explicit* abstention marker (evidence signal `rule_conflict`). `attribute_all` uses it to override a soft base verdict (Tier B/C/LLM) and force abstention — but never overrides Tier A, because a clean UTR-exact identifier tie is machine fact, not a human opinion. An end-to-end regression drives `attribute_all` on a line the base engine would otherwise classify and asserts the conflict wins. Benchmark unchanged (no approved rules in the sealed set): precision 1.000, 0 decoy false-positives.
+
+**Pattern.** "Skip the line" read like "abstain" but wasn't, because abstention here is a property of the *merged* result, not the rule map. The review found the gap between the local intent and the whole-pipeline behavior — exactly the seam a single-file reading misses.
