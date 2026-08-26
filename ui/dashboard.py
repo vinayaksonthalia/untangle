@@ -261,7 +261,7 @@ tbody tr.hide{{display:none}}
 .secnav{{display:none}}.search input{{width:100%}}.exc-toolbar{{align-items:stretch}}.search{{width:100%}}}}
 </style></head><body>
 <div class="topbar"><div class="in">
-  <a class="logo" href="/">un<b>tangle</b></a>
+  <span class="logo">un<b>tangle</b></span>
   <span class="period">attribution-first reconciliation</span>
   <nav class="secnav">
     <a href="#sec-attribution">Attribution</a>
@@ -399,6 +399,10 @@ _DASH_JS = """<script>
   function spy(){
     var idx = 0;
     targets.forEach(function(t, i){ if (t && t.getBoundingClientRect().top <= 90) idx = i; });
+    // At the bottom of the page the final section may never reach the 90px line (short/empty
+    // queue); force the last nav item active so it can always be reached (sol/Qodo).
+    var d = document.documentElement;
+    if (window.innerHeight + window.scrollY >= d.scrollHeight - 2) idx = targets.length - 1;
     links.forEach(function(a, i){
       var on = i === idx;
       a.classList.toggle('on', on);
