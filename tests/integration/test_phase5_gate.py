@@ -44,9 +44,14 @@ def test_phase5_gate_dashboard_leads_with_attribution_and_abstention():
     assert attr_idx != -1, "Dashboard must lead with Attribution & Calibrated Abstention"
 
     # 2. Check Precision-at-coverage table position
-    pac_idx = html.find("Precision-at-coverage curve")
-    assert pac_idx != -1, "Dashboard must prominently feature Precision-at-coverage curve"
+    # The live dashboard shows the honest coverage/abstention curve (precision is a
+    # ground-truth metric, reported only on the labeled benchmark, never on uploads).
+    pac_idx = html.find("Coverage vs abstention")
+    assert pac_idx != -1, "Dashboard must feature the coverage/abstention curve"
     assert pac_idx > attr_idx
+    # Integrity guard: the live dashboard must NOT hardcode a precision claim on unlabeled runs.
+    assert "precision holds at 1.000" not in html
+    assert "Attribution Precision</div><div class=\"v\">1.000" not in html
 
     # 3. Check Reconciliation is rendered BELOW and labeled "Proven Slice Only"
     proven_idx = html.find("Proven Slice Only")

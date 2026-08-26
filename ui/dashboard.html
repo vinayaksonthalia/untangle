@@ -93,8 +93,8 @@ footer b{color:var(--ts);font-weight:500}
   <div class="hero-of">Every bank credit attributed to its rail with evidence · 11 ambiguous credits abstained (never force-matched)</div>
 
   <div class="cards">
-    <div class="card sig"><div class="l">Attribution Precision</div><div class="v">1.000</div>
-      <div class="n"><span class="tick">✓</span> 0 decoy false-positives across non-Razorpay lines</div></div>
+    <div class="card sig"><div class="l">Attributed with evidence</div><div class="v">283</div>
+      <div class="n"><span class="tick">✓</span> 11 abstained, not guessed — precision-first</div></div>
     <div class="card warn"><div class="l">Calibrated Abstention</div><div class="v">11 <span class="u">credits</span></div>
       <div class="n">abstained with reasons · queue below</div></div>
     <div class="card"><div class="l">Razorpay credits</div><div class="v"><span class="rs">₹</span> 3,31,28,178</div>
@@ -121,17 +121,17 @@ footer b{color:var(--ts);font-weight:500}
       <div class="rr">
         <div class="rr-l"><span class="dot" style="background:#8A6D3B"></span>COD remittance</div>
         <div class="track"><i style="width:8.1%;background:#8A6D3B"></i></div>
-        <div class="rr-a mono"><span class="rs">₹</span> 26,73,142</div><div class="rr-c mono">× 28</div>
+        <div class="rr-a mono"><span class="rs">₹</span> 26,73,143</div><div class="rr-c mono">× 28</div>
       </div>
       <div class="rr">
         <div class="rr-l"><span class="dot" style="background:#8C8C82"></span>Unrelated</div>
         <div class="track"><i style="width:7.5%;background:#8C8C82"></i></div>
-        <div class="rr-a mono"><span class="rs">₹</span> 24,94,047</div><div class="rr-c mono">× 55</div>
+        <div class="rr-a mono"><span class="rs">₹</span> 24,94,048</div><div class="rr-c mono">× 55</div>
       </div>
       <div class="rr">
         <div class="rr-l"><span class="dot" style="background:#4A8B6F"></span>Direct UPI</div>
         <div class="track"><i style="width:7.1%;background:#4A8B6F"></i></div>
-        <div class="rr-a mono"><span class="rs">₹</span> 23,47,780</div><div class="rr-c mono">× 55</div>
+        <div class="rr-a mono"><span class="rs">₹</span> 23,47,781</div><div class="rr-c mono">× 55</div>
       </div>
       <div class="rr">
         <div class="rr-l"><span class="dot" style="background:#ADABA2"></span>Unattributed</div>
@@ -140,25 +140,25 @@ footer b{color:var(--ts);font-weight:500}
       </div>
     </div>
     <div class="panel">
-      <h2>Precision-at-coverage curve</h2>
-      <p class="sc">Operating threshold curve: precision holds at 1.000 across all confidence cutoffs.</p>
+      <h2>Coverage vs abstention</h2>
+      <p class="sc">How coverage trades against abstention as the confidence cutoff rises, for this run.</p>
       <table class="pac-table">
-        <thead><tr><th>Cutoff</th><th>Coverage</th><th>Abstention</th><th>Precision</th></tr></thead>
+        <thead><tr><th>Cutoff</th><th>Coverage</th><th>Abstention</th></tr></thead>
         <tbody>
         <tr><td class="mono">τ ≥ 0.50</td><td class="mono">100.0%</td>
-        <td class="mono">0.0%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>
+        <td class="mono">0.0%</td></tr>
         <tr><td class="mono">τ ≥ 0.60</td><td class="mono">98.6%</td>
-        <td class="mono">1.4%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>
+        <td class="mono">1.4%</td></tr>
         <tr><td class="mono">τ ≥ 0.70</td><td class="mono">86.9%</td>
-        <td class="mono">13.1%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>
+        <td class="mono">13.1%</td></tr>
         <tr><td class="mono">τ ≥ 0.80</td><td class="mono">85.5%</td>
-        <td class="mono">14.5%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>
+        <td class="mono">14.5%</td></tr>
         <tr><td class="mono">τ ≥ 0.90</td><td class="mono">83.8%</td>
-        <td class="mono">16.2%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>
+        <td class="mono">16.2%</td></tr>
         <tr><td class="mono">τ ≥ 0.95</td><td class="mono">83.8%</td>
-        <td class="mono">16.2%</td><td class="mono" style="color:var(--ok)">1.000</td></tr></tbody>
+        <td class="mono">16.2%</td></tr></tbody>
       </table>
-      <p style="font-size:12px;color:var(--ts);margin-top:14px">Abstention increases smoothly with stricter cutoffs while precision remains 100%.</p>
+      <p style="font-size:12px;color:var(--ts);margin-top:14px">Stricter cutoffs raise abstention and shrink coverage. Attribution precision (1.000, 0 decoy false-positives) is measured only on the labeled sealed benchmark — never claimed on unlabeled uploads.</p>
     </div>
   </div>
 
@@ -167,12 +167,12 @@ footer b{color:var(--ts);font-weight:500}
     <span class="proven-tag">Proven Slice Only</span>
     <h2>Reconciliation &amp; Recoverable ITC</h2>
     <p class="sc">Reconciles ONLY the proven-Razorpay slice to the paise. Unattributed or abstained credits are never forced into reconciliation.</p>
-    <div class="hero-rec-sub"><span class="rs">₹</span> 2,96,95,123 <span style="font-size:16px;font-weight:400;color:var(--ts)">reconciled of <span class="mono htot"><span class="rs">₹</span> 3,31,28,178</span> in Razorpay credits (89.6%)</span></div>
+    <div class="hero-rec-sub"><span class="rs">₹</span> 2,96,95,124 <span style="font-size:16px;font-weight:400;color:var(--ts)">reconciled of <span class="mono htot"><span class="rs">₹</span> 3,31,28,178</span> in Razorpay credits (89.6%)</span></div>
     <div class="covbar"><i style="width:89.6%"></i></div>
     <div class="covmeta">89.6% of Razorpay credits matched to settlement rows · max residual 7p</div>
 
     <div class="cards" style="margin-top:28px">
-      <div class="card sig" style="border-left-color:var(--acc)"><div class="l">Recoverable fee-GST</div><div class="v" style="color:var(--acc)"><span class="rs">₹</span> 43,200</div>
+      <div class="card sig" style="border-left-color:var(--acc)"><div class="l">Recoverable fee-GST</div><div class="v" style="color:var(--acc)"><span class="rs">₹</span> 43,201</div>
         <div class="n">input tax credit · traceable across 4,560 txns</div></div>
       <div class="card"><div class="l">Razorpay settlement</div><div class="v">91/106</div>
         <div class="n"><span class="tick">✓</span> 91 credits reconciled to the paise</div></div>
