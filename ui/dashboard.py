@@ -94,12 +94,10 @@ def render(report: dict) -> str:
             abst_p = (1.0 - pt["coverage"]) * 100
             pac_rows.append(f"""
         <tr><td class="mono">τ ≥ {tau:.2f}</td><td class="mono">{cov_p:.1f}%</td>
-        <td class="mono">{abst_p:.1f}%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>""")
+        <td class="mono">{abst_p:.1f}%</td></tr>""")
     if not pac_rows:
         pac_rows.append("""
-        <tr><td class="mono">τ ≥ 0.55</td><td class="mono">96.3%</td><td class="mono">3.7%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>
-        <tr><td class="mono">τ ≥ 0.70</td><td class="mono">83.7%</td><td class="mono">16.3%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>
-        <tr><td class="mono">τ ≥ 0.85</td><td class="mono">82.3%</td><td class="mono">17.7%</td><td class="mono" style="color:var(--ok)">1.000</td></tr>""")
+        <tr><td class="mono" colspan="3" style="color:var(--ts)">run against data to populate the coverage / abstention curve</td></tr>""")
 
     r = 54; circ = 2 * math.pi * r; off = circ * (1 - cov)
     exc_rows = []
@@ -226,8 +224,8 @@ footer b{{color:var(--ts);font-weight:500}}
   <div class="hero-of">Every bank credit attributed to its rail with evidence · {unk_c} ambiguous credits abstained (never force-matched)</div>
 
   <div class="cards">
-    <div class="card sig"><div class="l">Attribution Precision</div><div class="v">1.000</div>
-      <div class="n"><span class="tick">✓</span> 0 decoy false-positives across non-Razorpay lines</div></div>
+    <div class="card sig"><div class="l">Attributed with evidence</div><div class="v">{attr_c}</div>
+      <div class="n"><span class="tick">✓</span> {unk_c} abstained, not guessed — precision-first</div></div>
     <div class="card warn"><div class="l">Calibrated Abstention</div><div class="v">{unk_c} <span class="u">credits</span></div>
       <div class="n">abstained with reasons · queue below</div></div>
     <div class="card"><div class="l">Razorpay credits</div><div class="v">{rzp_rec}</div>
@@ -243,13 +241,13 @@ footer b{{color:var(--ts);font-weight:500}}
       {rail_rows}
     </div>
     <div class="panel">
-      <h2>Precision-at-coverage curve</h2>
-      <p class="sc">Operating threshold curve: precision holds at 1.000 across all confidence cutoffs.</p>
+      <h2>Coverage vs abstention</h2>
+      <p class="sc">How coverage trades against abstention as the confidence cutoff rises, for this run.</p>
       <table class="pac-table">
-        <thead><tr><th>Cutoff</th><th>Coverage</th><th>Abstention</th><th>Precision</th></tr></thead>
+        <thead><tr><th>Cutoff</th><th>Coverage</th><th>Abstention</th></tr></thead>
         <tbody>{pac_rows}</tbody>
       </table>
-      <p style="font-size:12px;color:var(--ts);margin-top:14px">Abstention increases smoothly with stricter cutoffs while precision remains 100%.</p>
+      <p style="font-size:12px;color:var(--ts);margin-top:14px">Stricter cutoffs raise abstention and shrink coverage. Attribution precision (1.000, 0 decoy false-positives) is measured only on the labeled sealed benchmark — never claimed on unlabeled uploads.</p>
     </div>
   </div>
 

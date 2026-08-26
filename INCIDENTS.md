@@ -32,3 +32,15 @@ Real failures, written after the fact, by me. Not generated. Each entry: what I 
 **What it caught downstream.** Running the enum assertion that came out of this found the `method` enum is Indian (`card`, `netbanking`, `wallet`, `upi`, `emi`) — not the US `card`/`ach` set. UPI, netbanking and wallet rows carry null `card_network`, `card_type` and `card_issuer`, so the planned fee-variance clustering on `(method, card_network, card_type, card_issuer)` would have collapsed most Indian volume into a single null bucket. Clustering is now method-aware. That bug was found before the matcher existed.
 
 **Honest note on the pattern.** Two careful analysts produced three confidently-stated wrong claims within two hours, none of which looked like guesses — they looked like sharp analysis, complete with arithmetic. Plausible-and-wrong is the characteristic output of AI-assisted work under pressure to be useful, and noticing that fact did not stop it happening twice more. Only artifacts stopped it.
+
+---
+
+## 002 — Pre-submission audit caught fabricated precision on the live dashboard (2026-08-26)
+
+**What happened.** Before submission the codebase was put through an independent adversarial audit (two external models + a self hand-audit, reading every correctness-critical file line by line). The most dangerous finding was an integrity defect, not a crash: the live dashboard **hardcoded "Attribution Precision 1.000" and "0 decoy false-positives" as static HTML**, and the same dashboard is served on user-uploaded statements for which no ground truth exists. Any merchant — or judge — uploading their own file would have been shown a measured-looking precision claim that was never computed.
+
+**Why it's serious.** Precision is a ground-truth metric. It is real only on the labeled benchmark. Presenting it as fact on unlabeled uploads is exactly the "plausible-and-wrong presented as measured" failure mode from incident 001, in the UI this time.
+
+**Fix.** The live dashboard now shows only what a run actually produces — attributed vs abstained counts and the real coverage/abstention curve from the engine's own output — and states explicitly that attribution precision (1.000, 0 decoy FP) is measured *only on the labeled sealed benchmark, never on unlabeled uploads*. The sealed-holdout runner's "(sound)/(0 FP)" annotations were also made to derive from the computed values rather than being printed unconditionally. A regression test asserts the dashboard cannot hardcode a precision claim.
+
+**Pattern, again.** The number on the dashboard was true *on the benchmark* — which is exactly what made it easy to leave hardcoded. A true number in the wrong place is still a false claim. Caught by adversarial review before submission, not after.
