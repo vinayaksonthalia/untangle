@@ -177,6 +177,7 @@ class RunReport:
     exceptions: list[ExceptionRecord]
     audit_root: str
     config: dict
+    proof_packets: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -187,4 +188,5 @@ class RunReport:
             "exceptions": [e.to_dict() for e in self.exceptions],
             "audit_root": self.audit_root,
             "config": self.config,
+            "proof_packets": self.proof_packets,
         }
