@@ -48,3 +48,36 @@ def test_embed_json_escapes_script_breakout():
     # still valid JSON when unescaped back
     import json
     assert json.loads(s.replace("\\u003c", "<").replace("\\u003e", ">").replace("\\u0026", "&"))[0]["narration"]
+
+
+def test_pending_gst_not_reported_as_zero():
+    """Qodo #1: an unresolved proven credit (e.g. reconstructed split leg) has UNKNOWN recoverable
+    GST, not ₹0.00 — the packet must say 'pending', never a false ₹0.00."""
+    lines = load_bank("data/bank_statement.csv")
+    recon = load_recon("data/recon_report.json")
+    idx = ReconIndex(recon)
+    attrs = attribute_all(lines, idx, 0.55)
+    res, _u, _s = reconcile({l.key: l for l in lines}, attrs, recon)
+    fg = fee_gst(res, recon)
+    packets = build_proof_packets(lines, attrs, res, recon, fg)
+    unresolved = [p for p in packets if not p["reconciled"]]
+    assert unresolved, "benchmark has reconstructed split legs (unresolved proven credits)"
+    for p in unresolved:
+        assert p["fee_gst_recoverable_inr"] == "pending"
+        assert "₹0.00" not in p["fee_gst_recoverable_inr"]
+
+
+def test_rejected_alternatives_is_accurate_when_a_keyword_is_present():
+    """Qodo #2: a UTR-exact credit that ALSO carries a competing keyword must not claim 'no
+    competing keyword was present' — the statement is derived from the line's actual signals."""
+    from datetime import date
+    idx = ReconIndex([
+        ReconRow("pay_1", "payment", 100000, 0, 0, 0, 100000, "setl_1", "1780498800xp8vma",
+                 datetime(2026, 6, 10), datetime(2026, 6, 9), False, None, None, "upi", None)
+    ])
+    line = BankCreditLine("k", date(2026, 6, 10), 100000, "NEFT 1780498800xp8vma PAYU RAZORPAY", "1780498800xp8vma", True)
+    attrs = attribute_all([line], idx, 0.55)
+    fg = fee_gst([], [])
+    packets = build_proof_packets([line], attrs, [], [], fg)
+    assert packets and "no distinctive competing rail keyword" not in packets[0]["proof"]["rejected_alternatives"].lower()
+    assert "outrank" in packets[0]["proof"]["rejected_alternatives"].lower()

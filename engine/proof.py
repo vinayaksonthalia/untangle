@@ -11,6 +11,7 @@ report already contains. Serializes to JSON and flattens to CSV for a finance te
 
 from __future__ import annotations
 
+from engine.evidence import narration_rail_signals
 from engine.models import (
     BankCreditLine,
     FeeGstRecovery,
@@ -19,6 +20,8 @@ from engine.models import (
     ReconRow,
     Tier,
 )
+
+_PENDING_GST = "pending"
 
 # Signals that constitute a genuine, report-backed tie (the "why it's Razorpay" line).
 _TIE_LABEL = {
@@ -51,7 +54,9 @@ def build_proof_packets(
     """One Proof Packet per credit proven to be Razorpay's (never an abstained credit)."""
     lines_by_key = {ln.key: ln for ln in lines}
     recon_by_key = {r.line_key: r for r in reconciliations}
-    tax_by_entity = {eid: tax for eid, tax in feegst.by_entity}
+    # Key tax by the FULL (type, entity_id) join — the same composite key reconciliation and
+    # fee_gst use — so two entities of different types sharing an id can't collide (Qodo #3).
+    tax_by_entity = {(r.type, r.entity_id): r.tax_paise for r in recon_rows}
 
     packets: list[dict] = []
     for a in attributions:
@@ -76,20 +81,39 @@ def build_proof_packets(
             for e in a.evidence if e.signal not in _TIE_LABEL
         ]
 
+        # Accurate "why not another rail" — derived from the line's ACTUAL competing signals, not
+        # asserted. A hard tie (e.g. exact UTR) outranks a narration keyword, so a competing keyword
+        # may be present; say so honestly rather than claim none existed (Qodo #2).
+        competing = [rail.value for rail in narration_rail_signals(line)]
+        if competing:
+            rejected = (
+                f"A distinctive narration keyword for {', '.join(sorted(competing))} was also present, "
+                "but the report-backed tie(s) above outrank narration resemblance and decide the verdict."
+            )
+        else:
+            rejected = (
+                "No distinctive competing rail keyword was present; the Razorpay verdict rests on the "
+                "report-backed tie(s) above, not on resemblance."
+            )
+
         rec = recon_by_key.get(a.line_key)
         settlement = None
-        fee_gst_paise = 0
         if rec is not None:
             covered = [{"type": t, "entity_id": eid} for t, eid in rec.covered_entity_ids]
             fee_gst_paise = sum(
-                tax_by_entity.get(eid, 0) for _, eid in rec.covered_entity_ids
+                tax_by_entity.get((t, eid), 0) for t, eid in rec.covered_entity_ids
             )
+            fee_gst_display = _inr(fee_gst_paise)
             settlement = {
                 "covered_entities": covered,
                 "covered_net_inr": _inr(rec.covered_net_paise),
                 "residual_paise": rec.residual_paise,
                 "balanced": rec.balanced,
             }
+        else:
+            # Unresolved (e.g. a reconstructed split leg): the recoverable GST is UNKNOWN until
+            # entity-level reconciliation, NOT zero. Never present an unknown as ₹0.00 (Qodo #1).
+            fee_gst_display = _PENDING_GST
 
         packets.append({
             "line_key": a.line_key,
@@ -106,15 +130,10 @@ def build_proof_packets(
             "proof": {
                 "ties": ties,
                 "corroboration": corroboration,
-                # Razorpay only wins with a report tie AND no distinctive competing rail keyword —
-                # so the absence of a competing tie is itself part of the proof.
-                "rejected_alternatives": (
-                    "No distinctive competing rail keyword was present; the Razorpay verdict rests "
-                    "on the report-backed tie(s) above, not on resemblance."
-                ),
+                "rejected_alternatives": rejected,
             },
             "settlement": settlement,
-            "fee_gst_recoverable_inr": _inr(fee_gst_paise),
+            "fee_gst_recoverable_inr": fee_gst_display,
             "reconciled": rec is not None,
         })
     return packets
