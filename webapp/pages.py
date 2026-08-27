@@ -426,6 +426,19 @@ def landing_page() -> str:
       font-weight: 600;
     }
 
+    .bb-source {
+      margin: 14px 0 0;
+      max-width: 820px;
+      font-size: 12px;
+      color: var(--tt);
+      line-height: 1.55;
+    }
+    .bb-source code {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--ts);
+    }
+
     @media (max-width: 640px) {
       .bb-section {
         padding: 52px 0;
@@ -530,6 +543,7 @@ def landing_page() -> str:
   </div>
 
   <p class="bb-close">Every shortcut is fooled by the trap it can't see. <strong>untangle needs a real tie, or it says so.</strong></p>
+  <p class="bb-source">Every figure above is measured on the same labelled 294-line benchmark by <code>generator/difficulty_probe.py</code> — the naive baselines and untangle scored against the identical blind ground truth. Reproduce with <code>python -m generator.difficulty_probe</code>.</p>
 </section>
 
   <h2 class="section-h">How it works</h2>
