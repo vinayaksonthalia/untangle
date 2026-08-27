@@ -1,8 +1,9 @@
 # Deploy untangle
 
 untangle is a single FastAPI app with **zero third-party runtime dependencies** beyond
-`fastapi`/`uvicorn` (everything else is stdlib). It processes uploads in memory and stores
-nothing, so any container host works and no database or secret is required.
+`fastapi`/`uvicorn` (everything else is stdlib). Each upload is written to a **per-request
+temporary directory that is deleted the moment the report is rendered** — nothing is persisted to
+disk or a database, and no secret is required. Any container host works.
 
 ## Fastest path — Render (free tier)
 

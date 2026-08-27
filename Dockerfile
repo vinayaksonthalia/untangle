@@ -27,4 +27,6 @@ USER app
 EXPOSE 8080
 
 # Honour the platform-provided $PORT (Render/Fly/Cloud Run set it); default 8080 locally.
-CMD ["sh", "-c", "uvicorn webapp.app:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# `exec` replaces the shell with uvicorn so it becomes PID 1 and receives SIGTERM directly —
+# graceful shutdown on deploy/scale-down instead of running to the forced-kill timeout.
+CMD ["sh", "-c", "exec uvicorn webapp.app:app --host 0.0.0.0 --port ${PORT:-8080}"]

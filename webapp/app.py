@@ -10,7 +10,9 @@ database, ever. Read-only toward money. The deterministic (--no-ai) path is the 
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
+import threading
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -69,12 +71,38 @@ async def _save(tmp: str, name: str, up: UploadFile | None) -> str:
     return path
 
 
+_SAMPLE_MARKER = "bank_statement.csv"
+_SAMPLE_LOCK = threading.Lock()
+
+
 def _ensure_sample() -> None:
-    """Make sure bundled sample data exists (generate it once if absent)."""
-    if os.path.exists(os.path.join(_SAMPLE, "bank_statement.csv")):
+    """Make sure the bundled sample data exists (generate it once if absent).
+
+    Race-safe: sync endpoints run in a threadpool, so concurrent first hits could otherwise both
+    generate into the same directory and let a reader see half-written inputs. We serialise
+    generation under a lock, generate into a private staging dir, then publish the files with the
+    marker (``bank_statement.csv``) moved LAST via an atomic ``os.replace`` — so a lock-free reader
+    that sees the marker is guaranteed to find every sibling file already in place.
+    """
+    marker = os.path.join(_SAMPLE, _SAMPLE_MARKER)
+    if os.path.exists(marker):
         return
     from generator.generate import main as gen  # web layer may use the generator
-    gen(["--seed", "42", "--scale", "0.4", "--out", _SAMPLE])
+
+    with _SAMPLE_LOCK:
+        if os.path.exists(marker):  # another thread finished while we waited
+            return
+        os.makedirs(_SAMPLE, exist_ok=True)
+        staging = os.path.join(_SAMPLE, f".staging-{os.getpid()}")
+        if os.path.exists(staging):
+            shutil.rmtree(staging)
+        try:
+            gen(["--seed", "42", "--scale", "0.4", "--out", staging])
+            # publish non-marker files first, the marker last (True sorts after False)
+            for name in sorted(os.listdir(staging), key=lambda n: n == _SAMPLE_MARKER):
+                os.replace(os.path.join(staging, name), os.path.join(_SAMPLE, name))
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
 
 @app.get("/", response_class=HTMLResponse)
