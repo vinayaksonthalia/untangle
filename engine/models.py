@@ -111,8 +111,10 @@ class RailAttribution:
     evidence: list[EvidenceItem] = field(default_factory=list)
     abstained: bool = False
     llm_used: bool = False
-    # Feature 004 — adversarial challenger. Set on accepted Razorpay lines (the audited margin) and on
-    # margin-driven abstentions (the strongest competing explanation). None everywhere else.
+    # Feature 004 — adversarial challenger. Populated ONLY when the gate is active (margin_threshold > 0):
+    # on accepted Razorpay lines (the audited margin) and on margin-driven abstentions (the strongest
+    # competing explanation). At the default margin_threshold = 0.0 the challenger does not run, so both
+    # stay None — the fields are omitted from serialization until a calibrated threshold enables them.
     proof_margin: float | None = None
     competing_explanation: dict | None = None
 
