@@ -4,8 +4,8 @@
 > the **proof-gate** (INCIDENTS 005) requires a genuine settlement tie for any Razorpay verdict,
 > and **split reconstruction** (INCIDENTS 006) recovers split-settlement legs whose amounts
 > *provably* sum to a real settlement net. **Current headline (seed 42):** Razorpay precision
-> **1.000**, recall **0.965**, decoy FP **0/181**; sealed holdout precision **1.000**, recall
-> **0.946**, decoy FP **0/173**; 109 Razorpay attributed, 91 reconciled, ECE **0.0775**. The
+> **1.000**, recall **0.911**, decoy FP **0/181**; sealed holdout precision **1.000**, recall
+> **0.946**, decoy FP **0/173**; 103 Razorpay attributed, 91 reconciled, ECE **0.0771**. The
 > reconciled slice and recoverable ITC (₹43,200.99) are unchanged. Re-run `python -m eval.sealed`
 > for live numbers.
 

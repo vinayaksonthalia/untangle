@@ -77,7 +77,7 @@ dominates; capped at 0.99).
 
 ## Why the numbers look the way they do
 
-- **Precision 1.000, recall ~0.95–0.98:** by design the engine only commits when it has a
+- **Precision 1.000, recall ~0.84–0.91:** by design the engine only commits when it has a
   real tie back to the settlement report — a UTR match, a bounded set-sum, a unique
   settlement-net amount, or a provably-unique split reconstruction — and abstains otherwise.
   So it is almost never *wrong* (precision), while still recovering split-settlement legs when

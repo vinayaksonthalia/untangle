@@ -109,10 +109,11 @@ def build_exceptions(
                 out.append(ExceptionRecord(
                     a.line_key, "reconstructed_split_leg",
                     f"{_amount_str(line)}: reconstructed split-settlement leg — {detail}. Attributed "
-                    "Razorpay because its group uniquely sums to a real settlement net; per-leg "
-                    "entity-level reconciliation is pending.",
-                    "Human review: confirm the leg group against the settlement report; the amounts "
-                    "balance to the settlement net to the paise.",
+                    "Razorpay because its group is the unique subset that sums to a real settlement "
+                    "net (within ±₹1 labelled rounding drift); per-leg entity-level reconciliation "
+                    "is pending.",
+                    "Human review: confirm the leg group against the settlement report — the group "
+                    "sum matches the settlement net as stated in the evidence above.",
                     evidence=ev,
                 ))
             else:

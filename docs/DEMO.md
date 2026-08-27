@@ -26,7 +26,7 @@ python -m engine.cli run --bank data/bank_statement.csv --recon data/recon_repor
   --ledger data/order_ledger.csv --out out/ --no-ai --seed 42
 ```
 
-> "109 credits attributed to Razorpay — **zero** false positives. ₹2.97 crore reconciled to
+> "103 credits attributed to Razorpay — **zero** false positives. ₹2.97 crore reconciled to
 > the paise. And **₹43,201 of recoverable fee-GST** surfaced — that's input tax credit the
 > merchant was silently leaving on the table, and every rupee is traceable to a transaction."
 

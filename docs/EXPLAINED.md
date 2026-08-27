@@ -70,7 +70,7 @@ tolerance would match coincidental amounts and create false positives. A bounded
 A: "No — and I had it audited for exactly that. `engine/` never reads the ground truth or
 the generator; a static test enforces it. Precision is 1.000 because the engine only commits
 on a real tie back to the settlement report and abstains otherwise, so it's rarely *wrong*;
-recall is ~0.96 (0.95 on a sealed holdout) because even split-settlement legs are recovered
+recall is ~0.91 (0.84 on a sealed holdout) because even split-settlement legs are recovered
 when their amounts *provably* sum to a real settlement net. I validated on *unseen* seeds —
 precision and zero-decoy-FP hold. Those are out-of-sample numbers, not a memorised benchmark."
 

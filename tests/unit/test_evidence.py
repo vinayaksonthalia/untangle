@@ -301,3 +301,33 @@ def test_split_reconstruction_never_pulls_in_a_competing_keyword_credit():
     attrs = dict(zip(["legA", "legB"], attribute_all([a, b], idx, 0.55)))
     assert attrs["legB"].rail != Rail.RAZORPAY_SETTLEMENT.value
     assert attrs["legA"].abstained, "no valid unique split without the keyword credit → legA abstains"
+
+
+def test_split_reconstruction_rejects_settlement_ref_only_group():
+    """Qodo PR#10 #1: settlement_ref is resemblance (an unverified UTR-shaped token), NOT strong
+    provenance. A pair carrying only brand + settlement_ref (no report-backed tie) must NOT be
+    reconstructed, even if their amounts uniquely sum to a settlement net."""
+    from engine.attribute import attribute_all
+    idx = _index(utr="9999000011zzzz99", nets=[("setl_x", 100000, date(2026, 6, 10))])
+    # Brand + a 16-char UTR-shaped token NOT in the recon report → settlement_ref (weak), no ifsc/suffix.
+    a = _line("NEFT RAZORPAY 1234567890abcdef", amount=60000, vd="2026-06-10")
+    b = _line("NEFT RAZORPAY 234567890abcdef1", amount=40000, vd="2026-06-10")
+    a = a.__class__(**{**a.__dict__, "key": "legA"})
+    b = b.__class__(**{**b.__dict__, "key": "legB"})
+    attrs = {x.line_key: x for x in attribute_all([a, b], idx, 0.55)}
+    assert attrs["legA"].abstained and attrs["legB"].abstained, "settlement_ref-only group must not reconstruct"
+
+
+def test_split_reconstruction_respects_runtime_threshold():
+    """Qodo PR#10 #2: reconstruction confidence is 0.9; a stricter runtime threshold must make the
+    legs abstain like any other sub-threshold verdict (the cutoff governs ALL money decisions)."""
+    from engine.attribute import attribute_all
+    idx = _index(nets=[("setl_x", 100000, date(2026, 6, 10))])
+    legs = []
+    for i, amt in enumerate((60000, 40000)):
+        ln = _line("NEFT CR-RATN0000088-SETTLEMENT", amount=amt, vd="2026-06-10")
+        legs.append(ln.__class__(**{**ln.__dict__, "key": f"leg{i}"}))
+    lo = attribute_all(legs, idx, 0.55)   # under the cutoff → recovered
+    hi = attribute_all(legs, idx, 0.95)   # above the 0.9 confidence → abstain
+    assert all(a.rail == Rail.RAZORPAY_SETTLEMENT.value for a in lo)
+    assert all(a.abstained for a in hi)

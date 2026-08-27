@@ -290,10 +290,12 @@ _RZP_LEANING_SIGNALS = {
     "narration_brand_rzp", "ifsc_ratn", "settlement_ref", "utr_suffix", "utr_suffix_weak",
 }
 # A subset may only be reconstructed if at least one leg carries a STRONG Razorpay-origin signal:
-# the Razorpay RBL settlement-account IFSC (RATN0000088, Razorpay-specific, not a generic bank),
-# a settlement-shaped reference token, or a corroborated UTR suffix. A brand word or a weak
-# (uncorroborated) suffix alone is not enough to make a coincidental sum a Razorpay verdict.
-_STRONG_RZP_SIGNALS = {"settlement_ref", "ifsc_ratn", "utr_suffix"}
+# the Razorpay RBL settlement-account IFSC (RATN0000088, Razorpay-specific, not a generic bank) or
+# a corroborated UTR suffix (a real, verified match to a settlement_utr). settlement_ref is NOT
+# strong — it is a UTR-shaped token that is, by construction, absent from the settlement report, so
+# it is resemblance (the proof-gate's own ruling), never proof. A brand word and a weak
+# (uncorroborated) suffix are likewise not strong. Coincidental sums cannot fabricate a verdict.
+_STRONG_RZP_SIGNALS = {"ifsc_ratn", "utr_suffix"}
 
 
 def _all_sum_subsets(
@@ -312,10 +314,14 @@ def _all_sum_subsets(
     return out
 
 
+_SPLIT_CONFIDENCE = 0.9
+
+
 def reconstruct_splits(
     lines: list[BankCreditLine],
     index: ReconIndex,
     attrs: list[RailAttribution],
+    threshold: float,
 ) -> list[RailAttribution]:
     """Recover split-settlement legs the *provable* way (FR-016): a Razorpay settlement paid out
     across 2–3 bank credits leaves legs whose per-leg UTR is absent from the recon report, so each
@@ -332,6 +338,10 @@ def reconstruct_splits(
     abstains the whole affected group.
     """
     sig_by_key: dict[str, set[str]] = {}
+    # The reconstruction's confidence is fixed; if the runtime cutoff is stricter than that, split
+    # legs must abstain like any other sub-threshold verdict — the threshold governs ALL money calls.
+    if _SPLIT_CONFIDENCE < threshold:
+        return attrs
     candidates: list[BankCreditLine] = []
     for ln, a in zip(lines, attrs, strict=True):
         if not (a.abstained and ln.is_credit and ln.amount_paise > 0 and not narration_rail_signals(ln)):
@@ -373,7 +383,7 @@ def reconstruct_splits(
     from collections import Counter
     per_settlement = Counter(sid for sid, _ in matches)
     per_key = Counter(c.key for _, sub in matches for c in sub)
-    assigned: dict[str, tuple[str, int]] = {}
+    assigned: dict[str, tuple[str, int, int]] = {}  # line.key -> (sid, n_legs, group_residual_paise)
     for sid, sub in matches:
         if per_settlement[sid] != 1:
             continue
@@ -381,22 +391,24 @@ def reconstruct_splits(
             continue
         if not any(_STRONG_RZP_SIGNALS & sig_by_key[c.key] for c in sub):
             continue
+        residual = sum(c.amount_paise for c in sub) - index.settlement_net[sid]
         for c in sub:
-            assigned[c.key] = (sid, len(sub))
+            assigned[c.key] = (sid, len(sub), residual)
 
     if not assigned:
         return attrs
     out: list[RailAttribution] = []
     for ln, a in zip(lines, attrs, strict=True):
         if ln.key in assigned:
-            sid, k = assigned[ln.key]
+            sid, k, residual = assigned[ln.key]
+            balance = "exactly" if residual == 0 else f"within {abs(residual)} paise of"
             ev = [EvidenceItem(
                 "split_reconstruction",
-                f"1 of {k} bank legs that uniquely sum to the settlement net for {sid}",
-                0.9,
+                f"1 of {k} bank legs whose amounts uniquely sum to {balance} the settlement net for {sid}",
+                _SPLIT_CONFIDENCE,
             )]
             out.append(RailAttribution(
-                ln.key, Rail.RAZORPAY_SETTLEMENT.value, 0.9, Tier.C.value, ev, abstained=False
+                ln.key, Rail.RAZORPAY_SETTLEMENT.value, _SPLIT_CONFIDENCE, Tier.C.value, ev, abstained=False
             ))
         else:
             out.append(a)
@@ -410,7 +422,7 @@ def attribute_all(
     rules: list | None = None,
 ) -> list[RailAttribution]:
     base = [attribute_line(ln, index, threshold) for ln in lines]
-    base = reconstruct_splits(lines, index, base)
+    base = reconstruct_splits(lines, index, base, threshold)
     if not rules:
         return base
     from engine.rules import apply_approved_rules
