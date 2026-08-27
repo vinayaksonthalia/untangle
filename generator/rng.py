@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import hashlib
 import random
-from typing import Iterable, List, Sequence, TypeVar
+from collections.abc import Sequence
+from typing import TypeVar
 
 T = TypeVar("T")
 
 
 def _derive_seed(master_seed: int, name: str) -> int:
-    h = hashlib.sha256(f"{master_seed}:{name}".encode("utf-8")).hexdigest()
+    h = hashlib.sha256(f"{master_seed}:{name}".encode()).hexdigest()
     return int(h[:16], 16)
 
 
@@ -43,10 +44,10 @@ class Rng:
     def weighted_choice(self, choices: Sequence[T], weights: Sequence[float]) -> T:
         return self._r.choices(list(choices), weights=list(weights), k=1)[0]
 
-    def sample(self, population: Sequence[T], k: int) -> List[T]:
+    def sample(self, population: Sequence[T], k: int) -> list[T]:
         return self._r.sample(list(population), k)
 
-    def shuffle(self, seq: List[T]) -> None:
+    def shuffle(self, seq: list[T]) -> None:
         self._r.shuffle(seq)
 
     def token(self, length: int) -> str:

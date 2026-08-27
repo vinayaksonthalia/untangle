@@ -18,10 +18,9 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 from engine.attribute import attribute_all
-from engine.config import DEFAULT_THRESHOLD, build_config
+from engine.config import DEFAULT_THRESHOLD
 from engine.evidence import ReconIndex
 from engine.feegst import fee_gst
 from engine.ingest import load_bank, load_recon
@@ -54,7 +53,7 @@ def generate_sealed_holdout(seed: int, out_dir: str) -> dict[str, str]:
         "--out",
         out_dir,
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    subprocess.run(cmd, capture_output=True, text=True, check=True)
     
     # Freeze file hashes
     manifest = {}
@@ -85,7 +84,7 @@ def evaluate_sealed(
 
     # 1. Attribute
     attributions = attribute_all(lines, index, threshold)
-    lines_by_key = {l.key: l for l in lines}
+    lines_by_key = {ln.key: ln for ln in lines}
 
     # 2. Reconcile
     reconciliations, unresolved_rzp, sidx = reconcile(lines_by_key, attributions, recon_rows)
@@ -118,14 +117,14 @@ def evaluate_sealed(
 
 
 def run_sealed_holdout_comparison(seed: int = DEFAULT_SEALED_SEED, sealed_dir: str = DEFAULT_SEALED_DIR) -> int:
-    print(f"\n=== Generator-Blind Sealed Holdout Runner (E3) ===\n")
+    print("\n=== Generator-Blind Sealed Holdout Runner (E3) ===\n")
     print(f"Generating frozen sealed dataset (seed={seed}) in separate process...")
     manifest = generate_sealed_holdout(seed, sealed_dir)
-    print(f"Frozen sealed manifest hashes:")
+    print("Frozen sealed manifest hashes:")
     for fname, sha in manifest.items():
         print(f"  {fname:<22}: {sha[:16]}...")
 
-    print(f"\nScoring sealed holdout in ONE single evaluation run...")
+    print("\nScoring sealed holdout in ONE single evaluation run...")
     sealed_res = evaluate_sealed(sealed_dir)
     sm = sealed_res["metrics"]
     s_rzp = sm["per_rail"]["razorpay_settlement"]
@@ -150,9 +149,9 @@ def run_sealed_holdout_comparison(seed: int = DEFAULT_SEALED_SEED, sealed_dir: s
         except Exception:
             pass
 
-    print(f"\n--- OFFICIAL HEADLINE COMPARISON: SEALED HOLDOUT vs DEV SET ---")
+    print("\n--- OFFICIAL HEADLINE COMPARISON: SEALED HOLDOUT vs DEV SET ---")
     print(f"  Metric                           Dev Set (seed 42)    Sealed Holdout (seed {seed})")
-    print(f"  -----------------------------------------------------------------------------")
+    print("  -----------------------------------------------------------------------------")
     print(f"  Bank Lines (n)                   294                  {sealed_res['totals']['n_bank_lines']}")
     prec_tag = "sound" if s_rzp['precision'] >= 0.9995 else f"PRECISION {s_rzp['precision']:.3f} < 1.000"
     fp_tag = "0 FP" if s_decoy['predicted_razorpay'] == 0 else f"{s_decoy['predicted_razorpay']} FP"
@@ -165,18 +164,18 @@ def run_sealed_holdout_comparison(seed: int = DEFAULT_SEALED_SEED, sealed_dir: s
     print(f"  Reconciled (Paise-Exact)         91 credits           {sealed_res['totals']['reconciled_count']} credits")
     print(f"  Recoverable Fee-GST              ₹43,201              ₹{sealed_res['totals']['fee_gst_recoverable_paise']/100:,.2f}")
 
-    print(f"\n=== Evaluation Scope & Limits (E4 / ER-005) ===")
+    print("\n=== Evaluation Scope & Limits (E4 / ER-005) ===")
     print(f"  • This is an adversarial stress suite (n={sealed_res['totals']['n_bank_lines']}), not an empirical claim about universal real-world performance.")
-    print(f"  • What it establishes:")
+    print("  • What it establishes:")
     if s_decoy['predicted_razorpay'] == 0:
         print(f"      - Zero false-positive auto-attributions (precision {s_rzp['precision']:.3f}) under 14 realistic bank narration corruptions.")
     else:
         print(f"      - {s_decoy['predicted_razorpay']} decoy false-positive auto-attribution(s) (precision {s_rzp['precision']:.3f}) under 14 realistic bank narration corruptions.")
-    print(f"      - Safe abstention: The engine says UNKNOWN instead of guessing on decayed or ambiguous strings.")
-    print(f"      - Mathematical conservation: Exact paise balance and 100% traceable fee-GST input tax credit.")
-    print(f"  • What it does NOT establish:")
-    print(f"      - Universal bank parsing: Validated on 4 primary Indian core-banking formats (HDFC, ICICI, SBI, Axis).")
-    print(f"      - Does not claim universal parsing for unconfigured bank formats without human-approved rules.")
+    print("      - Safe abstention: The engine says UNKNOWN instead of guessing on decayed or ambiguous strings.")
+    print("      - Mathematical conservation: Exact paise balance and 100% traceable fee-GST input tax credit.")
+    print("  • What it does NOT establish:")
+    print("      - Universal bank parsing: Validated on 4 primary Indian core-banking formats (HDFC, ICICI, SBI, Axis).")
+    print("      - Does not claim universal parsing for unconfigured bank formats without human-approved rules.")
 
     return 0
 

@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from eval.sealed import evaluate_sealed, generate_sealed_holdout
+from eval.sealed import evaluate_sealed
 from ui.dashboard import render
 from webapp.app import app
 

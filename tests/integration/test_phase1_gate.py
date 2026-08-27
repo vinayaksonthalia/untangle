@@ -18,8 +18,6 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-import pytest
-
 from engine.attribute import attribute_all
 from engine.config import DEFAULT_THRESHOLD
 from engine.evidence import ReconIndex
@@ -311,7 +309,7 @@ def test_phase1_acceptance_gate_execution():
         assert a.rail == Rail.UNKNOWN.value
 
     # Gate Condition 6: Exception generation maps multiple_satisfying_subsets properly.
-    lines_by_key = {l.key: l for l in lines}
+    lines_by_key = {ln.key: ln for ln in lines}
     exceptions = build_exceptions(attributions, [], lines_by_key)
     ambig_exceptions = [e for e in exceptions if e.reason_code == "multiple_satisfying_subsets"]
     assert len(ambig_exceptions) == len(ambig_keys), (

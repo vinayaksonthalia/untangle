@@ -1,7 +1,7 @@
 """Configuration and secrets loading (constitution IV).
 
 Secrets come ONLY from a gitignored ``.env`` file (never CLI flags). If AI is
-requested (``--no-ai`` absent) but the matching provider key is missing, we fail
+requested (``--ai`` present) but the matching provider key is missing, we fail
 fast with exit code 3 and a clear message — never a bare stack trace.
 """
 

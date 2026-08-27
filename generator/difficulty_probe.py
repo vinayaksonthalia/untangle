@@ -32,7 +32,6 @@ import argparse
 import csv
 import json
 import os
-from typing import Dict, List
 
 BRAND_TOKENS = ("RAZORPAY", "RZPX", "RZP")
 DRIFT_TOL = 7  # paise; matches the generator's max rounding-drift magnitude
@@ -65,7 +64,7 @@ def load(data_dir: str):
     truth_by_id = {t["line_id"]: t for t in truth}
     with open(os.path.join(data_dir, "recon_report.json")) as f:
         recon = json.load(f)
-    lines: List[dict] = []
+    lines: list[dict] = []
     with open(os.path.join(data_dir, "bank_statement.csv")) as f:
         for row in csv.DictReader(f):
             lid = row["line_id"]
@@ -83,7 +82,7 @@ def load(data_dir: str):
 
 # ---- Baselines -----------------------------------------------------------
 def baseline_amount(lines, recon):
-    nets: Dict[str, int] = {}
+    nets: dict[str, int] = {}
     for r in recon:
         sid = r.get("settlement_id")
         if sid is None:
@@ -91,40 +90,40 @@ def baseline_amount(lines, recon):
         nets[sid] = nets.get(sid, 0) + (r["credit"] - r["debit"])
     net_vals = sorted(set(nets.values()))
     pred = {}
-    for l in lines:
-        c = l["credit"]
+    for ln in lines:
+        c = ln["credit"]
         if c <= 0:
-            pred[l["line_id"]] = False
+            pred[ln["line_id"]] = False
             continue
-        pred[l["line_id"]] = any(abs(c - v) <= DRIFT_TOL for v in net_vals)
+        pred[ln["line_id"]] = any(abs(c - v) <= DRIFT_TOL for v in net_vals)
     return pred
 
 
 def baseline_brand(lines, recon):
     pred = {}
-    for l in lines:
-        u = l["narration"].upper()
-        pred[l["line_id"]] = any(tok in u for tok in BRAND_TOKENS)
+    for ln in lines:
+        u = ln["narration"].upper()
+        pred[ln["line_id"]] = any(tok in u for tok in BRAND_TOKENS)
     return pred
 
 
 def baseline_clean_utr(lines, recon):
     utrs = set(r["settlement_utr"] for r in recon if r.get("settlement_utr"))
     pred = {}
-    for l in lines:
-        ref = l["ref_no"]
-        narr = l["narration"]
+    for ln in lines:
+        ref = ln["ref_no"]
+        narr = ln["narration"]
         hit = ref in utrs or any(u in narr for u in utrs)
-        pred[l["line_id"]] = hit
+        pred[ln["line_id"]] = hit
     return pred
 
 
 # ---- Scoring -------------------------------------------------------------
 def pr(lines, pred):
     tp = fp = fn = 0
-    for l in lines:
-        p = pred[l["line_id"]]
-        actual = l["rail"] == RZP
+    for ln in lines:
+        p = pred[ln["line_id"]]
+        actual = ln["rail"] == RZP
         if p and actual:
             tp += 1
         elif p and not actual:
@@ -137,10 +136,10 @@ def pr(lines, pred):
 
 
 def recall_for(lines, pred, predicate):
-    sub = [l for l in lines if predicate(l)]
+    sub = [ln for ln in lines if predicate(ln)]
     if not sub:
         return None, 0
-    hit = sum(1 for l in sub if pred[l["line_id"]])
+    hit = sum(1 for ln in sub if pred[ln["line_id"]])
     return hit / len(sub), len(sub)
 
 
@@ -160,7 +159,7 @@ def main(argv=None):
     print("=" * 72)
     print("ADVERSARIAL DIFFICULTY PROBE — naive single-key baselines vs truth")
     print(f"data: {args.data}   bank lines: {len(lines)}   "
-          f"razorpay lines: {sum(1 for l in lines if l['rail']==RZP)}")
+          f"razorpay lines: {sum(1 for ln in lines if ln['rail']==RZP)}")
     print("=" * 72)
 
     # Overall precision/recall
@@ -171,13 +170,13 @@ def main(argv=None):
         print(f"  {b:<12}{prec:>10.0%}{rec:>9.0%}   ({tp}/{fp}/{fn})")
 
     # Per-hard-case RECALL on razorpay lines (should collapse on the blind class)
-    def is_easy(l):
-        return l["rail"] == RZP and not any(t in l["tags"] for t in HARD_RZP_TAGS)
+    def is_easy(ln):
+        return ln["rail"] == RZP and not any(t in ln["tags"] for t in HARD_RZP_TAGS)
 
     rzp_classes = [("easy_majority (rzp, no hard tag)", is_easy)]
     for tag in HARD_RZP_TAGS:
         rzp_classes.append((f"rzp:{tag}",
-                            lambda l, tag=tag: l["rail"] == RZP and tag in l["tags"]))
+                            lambda ln, tag=tag: ln["rail"] == RZP and tag in ln["tags"]))
 
     print("\nRECALL per razorpay hard-case class  (fraction of true rzp lines a")
     print("baseline still labels razorpay — LOW = that key is blind to the class)")
@@ -196,7 +195,7 @@ def main(argv=None):
     decoy_classes = []
     for tag in DECOY_TAGS:
         decoy_classes.append((f"non-rzp:{tag}",
-                              lambda l, tag=tag: l["rail"] != RZP and tag in l["tags"]))
+                              lambda ln, tag=tag: ln["rail"] != RZP and tag in ln["tags"]))
 
     print("\nFALSE-POSITIVE rate per decoy class  (fraction of these NON-rzp lines")
     print("a baseline WRONGLY labels razorpay — HIGH = that key is fooled)")
