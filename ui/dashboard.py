@@ -126,11 +126,18 @@ def render(report: dict) -> str:
     exc_rows = []
     for e in report["exceptions"]:
         lbl, col = _REASON.get(e["reason_code"], (e["reason_code"], "#6B6B62"))
-        blob = html.escape(f'{lbl} {e["detail"]} {e["suggested_action"]}'.lower(), quote=True)
+        # Render the evidence trace (each exception claims one) — the example/affected ids etc.
+        ev_items = e.get("evidence") or []
+        ev_html = "".join(
+            f'<div class="evln"><span class="evs">{html.escape(it["signal"])}</span> {html.escape(it["detail"])}</div>'
+            for it in ev_items if it.get("detail")
+        )
+        ev_text = " ".join(f'{it.get("signal","")} {it.get("detail","")}' for it in ev_items)
+        blob = html.escape(f'{lbl} {e["detail"]} {e["suggested_action"]} {ev_text}'.lower(), quote=True)
         exc_rows.append(f"""
       <tr class="excrow" data-reason="{html.escape(e["reason_code"])}" data-text="{blob}">
       <td><span class="sev" style="--d:{col}">{html.escape(lbl)}</span></td>
-      <td class="dt">{html.escape(e["detail"])}</td>
+      <td class="dt">{html.escape(e["detail"])}{f'<div class="evwrap">{ev_html}</div>' if ev_html else ''}</td>
       <td class="ac">{html.escape(e["suggested_action"])}</td></tr>""")
 
     cfg = report.get("config", {})
@@ -157,7 +164,7 @@ def render(report: dict) -> str:
             'aria-label="Search exceptions"/></div></div>'
         )
         exc_section_copy = (
-            f"{exc_n} credits untangle could not resolve confidently — {reason_line}. "
+            f"{exc_n} items untangle surfaced for review — {reason_line}. "
             "Each carries a reason, evidence trace, and a next step."
         )
     else:
@@ -258,6 +265,9 @@ tbody tr:hover{{background:var(--sunken)}}
 .sev{{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;color:var(--tp);font-size:12.5px}}
 .sev::before{{content:"";width:7px;height:7px;border-radius:50%;background:var(--d)}}
 .dt{{color:#3d3d36}}.ac{{color:var(--ts)}}
+.evwrap{{margin-top:7px;display:grid;gap:3px}}
+.evln{{font-family:var(--mono);font-size:11px;color:var(--tt);word-break:break-word}}
+.evs{{color:var(--acc)}}
 footer{{max-width:var(--max);margin:64px auto 0;padding:18px 48px 0;border-top:1px solid var(--border);
 font-family:var(--mono);font-size:11.5px;color:var(--tt);display:flex;gap:26px;flex-wrap:wrap}}
 footer b{{color:var(--ts);font-weight:500}}

@@ -67,6 +67,17 @@ def _examples(order_ids: list[str]) -> str:
     return ", ".join(head) + more
 
 
+def _evidence(signal: str, order_ids: list[str], extra: list[EvidenceItem] | None = None) -> list[EvidenceItem]:
+    """Evidence for an aggregated exception: bounded human examples PLUS the COMPLETE machine-readable
+    affected set (never truncated), so downstream consumers can verify/reconcile every affected order."""
+    ids = sorted(order_ids)
+    ev = [
+        EvidenceItem(signal, f"examples: {_examples(ids)}", 0.0),
+        EvidenceItem(f"{signal}_all", ";".join(ids), 0.0),  # full set, not capped
+    ]
+    return ev + (extra or [])
+
+
 def reconcile_ledger(
     ledger: list[OrderLedgerEntry],
     reconciliations: list[ReconciliationResult],
@@ -87,8 +98,11 @@ def reconcile_ledger(
     _rows_by_te: dict[tuple[str, str], list[ReconRow]] = {}
     for r in recon_rows:
         _rows_by_te.setdefault((r.type, r.entity_id), []).append(r)
+    # Only a key that resolves to exactly ONE row is used. A repeated (type, entity_id) — which the
+    # data model forbids, but ingestion does not reject — is EXCLUDED entirely (abstain), so we never
+    # collapse multiplicity that a balanced settlement summed, nor pick an arbitrary row.
     row_by_te: dict[tuple[str, str], ReconRow] = {
-        k: rs[0] for k, rs in _rows_by_te.items() if all(r == rs[0] for r in rs)
+        k: rs[0] for k, rs in _rows_by_te.items() if len(rs) == 1
     }
     # Unique (type, entity_id) keys covered by a BALANCED (proven/reconciled) settlement.
     covered_keys: set[tuple[str, str]] = set()
@@ -180,7 +194,11 @@ def reconcile_ledger(
                 + "; ".join(mismatch_bits) + "."
             ),
             suggested_action="Reconcile these orders in your ledger against the settlement report so the books match.",
-            evidence=[EvidenceItem("mismatched_orders", f"examples: {_examples(list(affected))}", 0.0)],
+            evidence=_evidence("mismatched_orders", list(affected), extra=[
+                EvidenceItem("missing_from_ledger", ";".join(sorted(missing_from_ledger)), 0.0),
+                EvidenceItem("status_conflicts", ";".join(sorted(status_conflicts)), 0.0),
+                EvidenceItem("amount_conflicts", ";".join(sorted(amount_conflicts)), 0.0),
+            ]),
         ))
 
     if duplicates:
@@ -189,7 +207,7 @@ def reconcile_ledger(
             reason_code="duplicate_order_booking",
             detail=f"{len(duplicates)} Razorpay-attributed order ids are booked more than once in your ledger.",
             suggested_action="De-duplicate these orders in your ledger; the same order is recorded multiple times.",
-            evidence=[EvidenceItem("duplicate_orders", f"examples: {_examples(duplicates)}", 0.0)],
+            evidence=_evidence("duplicate_orders", duplicates),
         ))
 
     if refund_unbooked:
@@ -198,7 +216,7 @@ def reconcile_ledger(
             reason_code="refund_not_reflected",
             detail=f"{len(refund_unbooked)} settled orders have a Razorpay refund or dispute your ledger still marks paid.",
             suggested_action="Record the refunds/disputes against these orders so revenue isn't overstated.",
-            evidence=[EvidenceItem("unbooked_refunds", f"examples: {_examples(refund_unbooked)}", 0.0)],
+            evidence=_evidence("unbooked_refunds", refund_unbooked),
         ))
 
     return out
