@@ -33,6 +33,8 @@ _REASON = {
     "partial_or_duplicate_settlement": ("partial / duplicate", "#B4720A"),
     "unbalanced_residual": ("unbalanced residual", "#B23B3B"),
     "uncredited_settlement": ("uncredited settlement", "#8C8C82"),
+    "reconstructed_split_leg": ("reconstructed split leg", "#2B5EDB"),
+    "rule_conflict": ("rule conflict", "#B23B3B"),
 }
 
 

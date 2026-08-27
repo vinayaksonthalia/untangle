@@ -104,6 +104,17 @@ def build_exceptions(
                     "Human review: inspect residual discrepancy between bank statement and settlement report.",
                     evidence=ev,
                 ))
+            elif any(e.signal == "split_reconstruction" for e in a.evidence):
+                detail = next((e.detail for e in a.evidence if e.signal == "split_reconstruction"), "")
+                out.append(ExceptionRecord(
+                    a.line_key, "reconstructed_split_leg",
+                    f"{_amount_str(line)}: reconstructed split-settlement leg — {detail}. Attributed "
+                    "Razorpay because its group uniquely sums to a real settlement net; per-leg "
+                    "entity-level reconciliation is pending.",
+                    "Human review: confirm the leg group against the settlement report; the amounts "
+                    "balance to the settlement net to the paise.",
+                    evidence=ev,
+                ))
             else:
                 out.append(ExceptionRecord(
                     a.line_key, "razorpay_coverage_not_found",

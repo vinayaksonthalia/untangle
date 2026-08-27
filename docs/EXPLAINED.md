@@ -70,9 +70,9 @@ tolerance would match coincidental amounts and create false positives. A bounded
 A: "No — and I had it audited for exactly that. `engine/` never reads the ground truth or
 the generator; a static test enforces it. Precision is 1.000 because the engine only commits
 on a real tie back to the settlement report and abstains otherwise, so it's rarely *wrong*;
-the cost is recall ~0.84 (0.82 on a sealed holdout), which I report honestly. And I validated
-on *unseen* seeds — precision and zero-decoy-FP hold. Those are out-of-sample numbers, not a
-memorised benchmark."
+recall is ~0.96 (0.95 on a sealed holdout) because even split-settlement legs are recovered
+when their amounts *provably* sum to a real settlement net. I validated on *unseen* seeds —
+precision and zero-decoy-FP hold. Those are out-of-sample numbers, not a memorised benchmark."
 
 **Q: "Where do you use AI, and where did you choose not to?"**
 A: "Not in any money decision — matching, arithmetic and the Razorpay verdict are all
@@ -81,11 +81,13 @@ couldn't classify, and even then a deterministic rule confirms it. I can run the
 system with AI switched off and report exactly what the model adds."
 
 **Q: "What breaks it? What's the weakest part?"**
-A: "Split settlements whose per-leg UTR the bank destroyed — the engine now *abstains* on those
-rather than guess from a brand word plus an unverifiable token, so recall on that class is low by
-design and those credits land in the exception queue for a human. (Recovering them *safely* — by
-proving two legs sum to one settlement net — is the next feature.) It never misattributes them. And
-my benchmark shares one generator's narration vocabulary, so true novel-vocabulary generalization is unproven
+A: "Split settlements whose per-leg UTR the bank destroyed used to be my weakest class. I now
+recover them the *provable* way: when two–three abstained bank legs' amounts UNIQUELY sum to a real
+settlement net within the value-date window, that's a genuine tie back to the settlement report, so
+I attribute them Razorpay (Tier C). If more than one distinct subset sums to the net, it's ambiguous
+and I abstain — I never guess a decomposition. That's why recall jumped without touching precision.
+The remaining weakness: my benchmark shares one generator's narration vocabulary, so true
+novel-vocabulary generalization is unproven
 until I test on a real statement — I say that openly rather than hide it."
 
 ## 5. What to be able to draw on a whiteboard

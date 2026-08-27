@@ -17,8 +17,8 @@ be reconciled and the recoverable fee-GST (input tax credit) be surfaced.
 `untangle` leads with attribution precision and honest abstention — never a single bare match rate:
 
 - **Attribution Precision: 1.000 (100%)** on every rail; **0 decoy false-positives** across 181 non-Razorpay lines (naive brand-matching hits 100% false-positives).
-- **Razorpay recall 0.841** (0.821 on the sealed holdout): the engine commits only on a genuine tie back to the settlement report and **abstains on the rest** — including split-settlement legs whose per-leg UTR the bank destroyed. The reconciled slice and recoverable ITC are unaffected; abstained credits are surfaced, never guessed.
-- **Conservative, benchmark-calibrated confidence (ECE = 0.0764 on the labelled benchmark, ≤ 0.10)**: when evidence is ambiguous, the engine explicitly abstains as `UNKNOWN` with named reasons and evidence traces. (This is conservative-confidence calibration measured on the benchmark — not a claim of universally calibrated probabilities.)
+- **Razorpay recall 0.965** (0.946 on the sealed holdout): every Razorpay verdict rests on a genuine tie back to the settlement report — a UTR match, a bounded set-sum, a unique settlement-net amount, or a **provably-unique split reconstruction** (two–three bank legs whose amounts uniquely sum to one settlement net). Credits without such a tie **abstain** and are surfaced, never guessed.
+- **Conservative, benchmark-calibrated confidence (ECE = 0.0775 on the labelled benchmark, ≤ 0.10)**: when evidence is ambiguous, the engine explicitly abstains as `UNKNOWN` with named reasons and evidence traces. (This is conservative-confidence calibration measured on the benchmark — not a claim of universally calibrated probabilities.)
 - **Zero forced set-sum picks**: enumerates all satisfying subsets; where >1 subset satisfies a credit amount, it abstains (forced picks = 0 up to candidate set $N=200$).
 - **Human-proposed rules (G5 / FR-009)**: rules proposed upon human resolution remain inert until approved, apply only on confident matches, and never lower the precision bar.
 
@@ -26,11 +26,11 @@ be reconciled and the recoverable fee-GST (input tax credit) be surfaced.
 
 | Confidence Cutoff | Coverage % | Abstention Rate % | Attributed Credits | Abstained Credits | Razorpay Precision | Decoy FP Rate |
 |---|---|---|---|---|---|---|
-| **$\tau \ge 0.50$** | **92.5%** | **7.5%** | 272 | 22 | **1.000** | 0.000 (0/181) |
-| **$\tau \ge 0.60$** | **91.8%** | **8.2%** | 270 | 24 | **1.000** | 0.000 (0/181) |
-| **$\tau \ge 0.70$** | **83.7%** | **16.3%** | 246 | 48 | **1.000** | 0.000 (0/181) |
-| **$\tau \ge 0.80$** | **82.3%** | **17.7%** | 242 | 52 | **1.000** | 0.000 (0/181) |
-| **$\tau \ge 0.90$** | **80.6%** | **19.4%** | 237 | 57 | **1.000** | 0.000 (0/181) |
+| **$\tau \ge 0.50$** | **97.3%** | **2.7%** | 286 | 8 | **1.000** | 0.000 (0/181) |
+| **$\tau \ge 0.60$** | **96.6%** | **3.4%** | 284 | 10 | **1.000** | 0.000 (0/181) |
+| **$\tau \ge 0.70$** | **88.4%** | **11.6%** | 260 | 34 | **1.000** | 0.000 (0/181) |
+| **$\tau \ge 0.80$** | **87.1%** | **12.9%** | 256 | 38 | **1.000** | 0.000 (0/181) |
+| **$\tau \ge 0.90$** | **85.4%** | **14.6%** | 251 | 43 | **1.000** | 0.000 (0/181) |
 | **$\tau \ge 0.95$** | **80.6%** | **19.4%** | 237 | 57 | **1.000** | 0.000 (0/181) |
 
 ---

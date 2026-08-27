@@ -257,3 +257,47 @@ def test_utr_suffix_prefers_corroborated_and_is_deterministic():
     for _ in range(5):
         sigs = _signals(razorpay_signals(line, idx))
         assert "utr_suffix" in sigs and "utr_suffix_weak" not in sigs
+
+
+def test_split_reconstruction_recovers_unique_leg_pair():
+    """A settlement paid across two bank legs (no per-leg UTR) is recovered when the legs' amounts
+    UNIQUELY sum to a real settlement net within the date window — a provable tie, not a guess."""
+    from engine.attribute import attribute_all
+    idx = _index(nets=[("setl_x", 100000, date(2026, 6, 10))])
+    legs = [
+        _line("NEFT CR-RATN0000088-SETTLEMENT", amount=60000, vd="2026-06-10"),
+        _line("NEFT CR-RATN0000088-SETTLEMENT", amount=40000, vd="2026-06-11"),
+    ]
+    legs[0] = legs[0].__class__(**{**legs[0].__dict__, "key": "legA"})
+    legs[1] = legs[1].__class__(**{**legs[1].__dict__, "key": "legB"})
+    attrs = attribute_all(legs, idx, 0.55)
+    assert all(a.rail == Rail.RAZORPAY_SETTLEMENT.value and not a.abstained for a in attrs)
+    assert all(any(e.signal == "split_reconstruction" for e in a.evidence) for a in attrs)
+
+
+def test_split_reconstruction_abstains_on_ambiguous_decomposition():
+    """If two DISTINCT subsets sum to the settlement net, the split is not unique → abstain."""
+    from engine.attribute import attribute_all
+    idx = _index(nets=[("setl_x", 100000, date(2026, 6, 10))])
+    # 50+50 and 60+40 both sum to 100000 → ambiguous.
+    amts = [50000, 50000, 60000, 40000]
+    legs = []
+    for i, amt in enumerate(amts):
+        ln = _line("NEFT CR-RATN0000088-SETTLEMENT", amount=amt, vd="2026-06-10")
+        legs.append(ln.__class__(**{**ln.__dict__, "key": f"leg{i}"}))
+    attrs = attribute_all(legs, idx, 0.55)
+    assert all(a.abstained for a in attrs), "ambiguous decomposition must not be reconstructed"
+
+
+def test_split_reconstruction_never_pulls_in_a_competing_keyword_credit():
+    """A credit carrying a distinctive non-Razorpay keyword (e.g. PAYU) can never be pulled into a
+    Razorpay split, even if its amount would complete the sum."""
+    from engine.attribute import attribute_all
+    idx = _index(nets=[("setl_x", 100000, date(2026, 6, 10))])
+    a = _line("NEFT CR-RATN0000088-SETTLEMENT", amount=60000, vd="2026-06-10")
+    b = _line("NEFT CR-PAYU-SETTLEMENT", amount=40000, vd="2026-06-10")  # competing keyword
+    a = a.__class__(**{**a.__dict__, "key": "legA"})
+    b = b.__class__(**{**b.__dict__, "key": "legB"})
+    attrs = dict(zip(["legA", "legB"], attribute_all([a, b], idx, 0.55)))
+    assert attrs["legB"].rail != Rail.RAZORPAY_SETTLEMENT.value
+    assert attrs["legA"].abstained, "no valid unique split without the keyword credit → legA abstains"
