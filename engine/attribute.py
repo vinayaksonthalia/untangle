@@ -280,6 +280,141 @@ def attribute_line(line: BankCreditLine, index: ReconIndex, threshold: float) ->
     return RailAttribution(line.key, best_rail, best_conf, tier.value, best_ev)
 
 
+_SPLIT_MAX_LEGS = 3
+_SPLIT_DRIFT_PAISE = 100      # ±₹1 rounding-drift tolerance (matches reconcile)
+_SPLIT_DATE_WINDOW = 5
+_SPLIT_MAX_CANDIDATES = 60    # per settlement; skip (abstain) if the eligible pool is larger
+
+
+_RZP_LEANING_SIGNALS = {
+    "narration_brand_rzp", "ifsc_ratn", "settlement_ref", "utr_suffix", "utr_suffix_weak",
+}
+# A subset may only be reconstructed if at least one leg carries a STRONG Razorpay-origin signal:
+# the Razorpay RBL settlement-account IFSC (RATN0000088, Razorpay-specific, not a generic bank) or
+# a corroborated UTR suffix (a real, verified match to a settlement_utr). settlement_ref is NOT
+# strong — it is a UTR-shaped token that is, by construction, absent from the settlement report, so
+# it is resemblance (the proof-gate's own ruling), never proof. A brand word and a weak
+# (uncorroborated) suffix are likewise not strong. Coincidental sums cannot fabricate a verdict.
+_STRONG_RZP_SIGNALS = {"ifsc_ratn", "utr_suffix"}
+
+
+def _all_sum_subsets(
+    items: list[BankCreditLine], target: int, tol: int, max_legs: int
+) -> list[tuple[BankCreditLine, ...]]:
+    """Every DISTINCT subset of 2..max_legs credits whose amounts sum to `target` (±tol)."""
+    out: list[tuple[BankCreditLine, ...]] = []
+    seen: set[frozenset[str]] = set()
+    for k in range(2, max_legs + 1):
+        for combo in combinations(items, k):
+            if abs(sum(c.amount_paise for c in combo) - target) <= tol:
+                fk = frozenset(c.key for c in combo)
+                if fk not in seen:
+                    seen.add(fk)
+                    out.append(combo)
+    return out
+
+
+_SPLIT_CONFIDENCE = 0.9
+
+
+def reconstruct_splits(
+    lines: list[BankCreditLine],
+    index: ReconIndex,
+    attrs: list[RailAttribution],
+    threshold: float,
+) -> list[RailAttribution]:
+    """Recover split-settlement legs the *provable* way (FR-016): a Razorpay settlement paid out
+    across 2–3 bank credits leaves legs whose per-leg UTR is absent from the recon report, so each
+    leg abstains. The legs' amounts sum to a real settlement net within the value-date window — a
+    genuine tie back to the settlement report. A leg is lifted to razorpay_settlement (Tier C) only
+    when ALL of these hold (precision-first; a coincidental sum must never fabricate a verdict):
+      • it already abstained and carries NO distinctive competing rail keyword;
+      • it carries a Razorpay-origin signal, and its subset has at least one STRONG one (the
+        Razorpay-specific IFSC RATN, a settlement_ref, or a corroborated UTR suffix) — a brand
+        word or an uncorroborated suffix alone can never turn a coincidental sum into a verdict;
+      • its subset is the ONE match for a dated settlement net, and none of its credits appear in
+        ANY other matching subset (global conflict analysis, not greedy per-settlement uniqueness).
+    Any ambiguity — a settlement with >1 matching subset, or a credit shared across subsets —
+    abstains the whole affected group.
+    """
+    sig_by_key: dict[str, set[str]] = {}
+    # The reconstruction's confidence is fixed; if the runtime cutoff is stricter than that, split
+    # legs must abstain like any other sub-threshold verdict — the threshold governs ALL money calls.
+    if _SPLIT_CONFIDENCE < threshold:
+        return attrs
+    candidates: list[BankCreditLine] = []
+    for ln, a in zip(lines, attrs, strict=True):
+        if not (a.abstained and ln.is_credit and ln.amount_paise > 0 and not narration_rail_signals(ln)):
+            continue
+        sigs = {e.signal for e in razorpay_signals(ln, index)}
+        if _RZP_LEANING_SIGNALS & sigs:
+            candidates.append(ln)
+            sig_by_key[ln.key] = sigs
+    if len(candidates) < 2:
+        return attrs
+
+    # Phase 1: collect ALL (settlement, subset) matches over the FULL candidate pool. Settlements
+    # without a verified settled date are skipped (a missing date is not an unbounded window). A
+    # credit eligible for an OVERSIZED pool (one we decline to enumerate) is poisoned: it may never
+    # be assigned to any settlement, so the cap can never make a conflict falsely look unique.
+    matches: list[tuple[str, tuple[BankCreditLine, ...]]] = []
+    poisoned: set[str] = set()
+    for sid in sorted(index.settlement_net):
+        net = index.settlement_net[sid]
+        sdate = index.settlement_date.get(sid)
+        if net <= 0 or sdate is None:
+            continue
+        elig = [
+            c for c in candidates
+            if c.amount_paise < net and abs((c.value_date - sdate).days) <= _SPLIT_DATE_WINDOW
+        ]
+        if len(elig) < 2:
+            continue
+        if len(elig) > _SPLIT_MAX_CANDIDATES:
+            poisoned.update(c.key for c in elig)
+            continue
+        for sub in _all_sum_subsets(elig, net, _SPLIT_DRIFT_PAISE, _SPLIT_MAX_LEGS):
+            matches.append((sid, sub))
+
+    # Phase 2: global conflict/ambiguity analysis. Assign a subset only when its settlement has
+    # exactly one matching subset, every credit in it appears in no other matching subset, none is
+    # poisoned, AND at least one leg carries a STRONG Razorpay-origin signal (a coincidental sum of
+    # brand-only credits must never fabricate a verdict).
+    from collections import Counter
+    per_settlement = Counter(sid for sid, _ in matches)
+    per_key = Counter(c.key for _, sub in matches for c in sub)
+    assigned: dict[str, tuple[str, int, int]] = {}  # line.key -> (sid, n_legs, group_residual_paise)
+    for sid, sub in matches:
+        if per_settlement[sid] != 1:
+            continue
+        if any(per_key[c.key] != 1 or c.key in poisoned for c in sub):
+            continue
+        if not any(_STRONG_RZP_SIGNALS & sig_by_key[c.key] for c in sub):
+            continue
+        residual = sum(c.amount_paise for c in sub) - index.settlement_net[sid]
+        for c in sub:
+            assigned[c.key] = (sid, len(sub), residual)
+
+    if not assigned:
+        return attrs
+    out: list[RailAttribution] = []
+    for ln, a in zip(lines, attrs, strict=True):
+        if ln.key in assigned:
+            sid, k, residual = assigned[ln.key]
+            balance = "exactly" if residual == 0 else f"within {abs(residual)} paise of"
+            ev = [EvidenceItem(
+                "split_reconstruction",
+                f"1 of {k} bank legs whose amounts uniquely sum to {balance} the settlement net for {sid}",
+                _SPLIT_CONFIDENCE,
+            )]
+            out.append(RailAttribution(
+                ln.key, Rail.RAZORPAY_SETTLEMENT.value, _SPLIT_CONFIDENCE, Tier.C.value, ev, abstained=False
+            ))
+        else:
+            out.append(a)
+    return out
+
+
 def attribute_all(
     lines: list[BankCreditLine],
     index: ReconIndex,
@@ -287,6 +422,7 @@ def attribute_all(
     rules: list | None = None,
 ) -> list[RailAttribution]:
     base = [attribute_line(ln, index, threshold) for ln in lines]
+    base = reconstruct_splits(lines, index, base, threshold)
     if not rules:
         return base
     from engine.rules import apply_approved_rules

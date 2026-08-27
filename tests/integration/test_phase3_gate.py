@@ -179,14 +179,15 @@ def test_phase3_gate_on_benchmark_294_lines():
     reconciled_keys = {r.line_key for r in results}
     assert abstained_keys.isdisjoint(reconciled_keys)
 
-    # 2. Partition: exactly 91 reconciled, 4 unresolved out of 95 attributed Razorpay.
-    # (Proof-gate: split-settlement legs whose per-leg UTR is absent from the recon report are
-    # no longer *claimed* Razorpay on brand + an unverified UTR-shaped token — they abstain into
-    # the exception queue. This removes guesses only: the proven, reconciled slice — 91 credits
-    # and the recoverable ITC — is unchanged; those legs were 'unresolved Razorpay' before, never
-    # reconciled. See INCIDENTS 005.)
+    # 2. Partition: exactly 91 reconciled, 12 unresolved out of 103 attributed Razorpay.
+    # Split reconstruction (INCIDENTS 006) lifts split-settlement legs back to razorpay_settlement
+    # via a PROVABLE unique tie (their amounts uniquely sum to a real settlement net), so recall
+    # rises to 0.982 — above even the old guessing recall — with precision still 1.000. Those 16
+    # legs are attributed but not yet entity-level reconciled (the per-credit reconcile model can't
+    # net a group), so they show as 'reconstructed_split_leg' unresolved. Reconciled slice (91) and
+    # recoverable ITC are unchanged. Partition still holds: 91 reconciled + 12 unresolved = 103.
     assert len(results) == 91
-    assert len(unresolved) == 4
+    assert len(unresolved) == 12
     rzp_keys = {a.line_key for a in attributions if a.rail == Rail.RAZORPAY_SETTLEMENT.value and not a.abstained}
     assert reconciled_keys | set(unresolved) == rzp_keys
     assert reconciled_keys.isdisjoint(set(unresolved))

@@ -107,6 +107,8 @@ def test_phase4_gate_exception_queue_evidence_trace():
             "razorpay_uncertain",
             "unattributed_ambiguous",
             "razorpay_coverage_not_found",
+            "reconstructed_split_leg",
+            "rule_conflict",
         }
         assert exc.detail
         assert exc.suggested_action
