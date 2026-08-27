@@ -13,8 +13,6 @@ manifest can report exact per-case counts and a reviewer can verify.
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
-
 from . import config as C
 from .rng import Rng
 
@@ -37,12 +35,12 @@ def _mangle_order_id(oid: str, rng: Rng) -> str:
     return "order_" + body
 
 
-def corrupt_ledger(cfg: C.Config, orders: List[dict]) -> Tuple[List[dict], Dict[str, int]]:
+def corrupt_ledger(cfg: C.Config, orders: list[dict]) -> tuple[list[dict], dict[str, int]]:
     rng = Rng(cfg.seed, "ledger_noise")
     nr = cfg.noise
     counts = {"order_id_missing": 0, "order_id_mangled": 0, "order_id_duplicate": 0}
 
-    out: List[dict] = []
+    out: list[dict] = []
     for o in orders:
         row = dict(o)
         r = rng.rand()

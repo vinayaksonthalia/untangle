@@ -17,7 +17,6 @@ Safety (hardened after audit S1):
 from __future__ import annotations
 
 from collections import defaultdict
-from itertools import combinations
 
 from engine.evidence import extract_utr_tokens
 from engine.models import BankCreditLine, Rail, RailAttribution, ReconciliationResult, ReconRow

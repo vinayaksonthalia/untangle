@@ -16,6 +16,7 @@ import csv
 import hashlib
 import json
 from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from engine.models import BankCreditLine, OrderLedgerEntry, ReconRow
 
@@ -39,17 +40,15 @@ def _line_key(value_date: str, amount_paise: int, narration: str, bank_ref: str 
 
 
 def _rupees_to_paise(raw: str, *, ctx: str) -> int:
+    """Parse a rupee string to integer paise. Rounds (never truncates) sub-paise fractions using
+    banker's-safe half-up, so 12345.789 → 1234579 paise, not 1234578. Decimal keeps it exact."""
     raw = (raw or "").strip().replace(",", "")
     if not raw:
         return 0
     try:
-        # Bank statements carry rupees with 2 decimals; convert exactly via Decimal-free rounding.
-        whole, _, frac = raw.partition(".")
-        frac = (frac + "00")[:2]
-        sign = -1 if whole.startswith("-") else 1
-        whole = whole.lstrip("+-")
-        return sign * (int(whole or "0") * 100 + int(frac))
-    except ValueError as exc:
+        paise = (Decimal(raw) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        return int(paise)
+    except (InvalidOperation, ValueError) as exc:
         raise InputError(
             f"Bank statement: could not parse amount {raw!r} in {ctx}. "
             f"Expected a rupee value like 12345.67."

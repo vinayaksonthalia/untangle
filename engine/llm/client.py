@@ -75,8 +75,12 @@ class LLMClient:
                 ],
             }
         ).encode()
+        # Only ever speak HTTP(S) to a configured provider — never file:// or a custom scheme,
+        # even if a base URL is misconfigured (defence in depth; also satisfies bandit B310).
+        if not url.lower().startswith(("https://", "http://")):
+            return None
         req = urllib.request.Request(
-            url,
+            url,  # noqa: S310 — scheme validated above
             data=body,
             headers={
                 "Authorization": f"Bearer {self._api_key}",
@@ -85,7 +89,7 @@ class LLMClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+            with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # nosec B310 — scheme validated to http(s) above
                 data = json.loads(resp.read().decode())
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
             return None

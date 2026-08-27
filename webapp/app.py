@@ -107,8 +107,8 @@ async def reconcile_upload(
     with tempfile.TemporaryDirectory(prefix="untangle_") as tmp:
         b = await _save(tmp, "bank_statement.csv", bank)
         r = await _save(tmp, "recon_report.json", recon)
-        l = await _save(tmp, "order_ledger.csv", ledger)
-        report = _run_safely(tmp, b, r, l)
+        ln = await _save(tmp, "order_ledger.csv", ledger)
+        report = _run_safely(tmp, b, r, ln)
         return render_dashboard(report)
     # temp dir (and every uploaded byte) is deleted here — nothing is kept.
 
@@ -123,8 +123,8 @@ async def api_reconcile(
     with tempfile.TemporaryDirectory(prefix="untangle_api_") as tmp:
         b = await _save(tmp, "bank_statement.csv", bank)
         r = await _save(tmp, "recon_report.json", recon)
-        l = await _save(tmp, "order_ledger.csv", ledger)
-        report = _run_safely(tmp, b, r, l)
+        ln = await _save(tmp, "order_ledger.csv", ledger)
+        report = _run_safely(tmp, b, r, ln)
         return JSONResponse(report)
 
 

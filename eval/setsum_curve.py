@@ -17,7 +17,6 @@ import random
 from collections import defaultdict
 from datetime import date, datetime
 from itertools import combinations
-import sys
 
 from engine.attribute import _setsum_evidence
 from engine.evidence import ReconIndex

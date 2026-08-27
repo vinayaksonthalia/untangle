@@ -25,7 +25,8 @@ def _report():
 
 
 def test_render_deterministic_with_key_figures():
-    a = render(_report()); b = render(_report())
+    a = render(_report())
+    b = render(_report())
     assert a == b
     assert "43,201" in a                    # fee-GST headline (₹ is a styled span)
     assert "max residual 7p" in a           # precision proof (max residual)

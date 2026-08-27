@@ -63,7 +63,8 @@ def test_oversize_rejected_413():
 
 
 def test_missing_file_422():
-    files = _files(); files.pop("ledger")
+    files = _files()
+    files.pop("ledger")
     r = client.post("/api/reconcile", files=files)
     assert r.status_code == 422
 

@@ -21,11 +21,11 @@ from engine.abstain import coverage_curve, required_precision
 from engine.attribute import attribute_all
 from engine.config import ConfigError, build_config
 from engine.evidence import ReconIndex
+from engine.exceptions import build_exceptions
+from engine.feegst import fee_gst
 from engine.ingest import InputError, load_bank, load_ledger, load_recon
 from engine.llm.client import LLMClient
 from engine.llm.narrate import resolve_unknowns
-from engine.exceptions import build_exceptions
-from engine.feegst import fee_gst
 from engine.models import Rail, RunReport
 from engine.reconcile import reconcile
 
@@ -48,7 +48,7 @@ def _fmt_inr(paise: int) -> str:
     return ("-" if neg else "") + "₹" + s
 
 
-def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
+def build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
     ledger = audit_mod.AuditLedger()
     ledger.append("run_start", {"engine_version": _ENGINE_VERSION, "seed": cfg.seed,
                                 "provider": cfg.provider_or_none(), "threshold": cfg.threshold,
@@ -148,7 +148,7 @@ def _cmd_run(args) -> int:
         lines_by_key = {ln.key: ln for ln in lines}
         attributions = resolve_unknowns(attributions, lines_by_key, index, client)
 
-    report, _ledger = _build_report(cfg, lines, recon_rows, index, attributions)
+    report, _ledger = build_report(cfg, lines, recon_rows, index, attributions)
 
     os.makedirs(args.out, exist_ok=True)
     report_path = os.path.join(args.out, "report.json")

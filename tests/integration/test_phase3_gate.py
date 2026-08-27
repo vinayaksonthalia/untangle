@@ -16,8 +16,6 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 
-import pytest
-
 from engine.attribute import attribute_all
 from engine.config import DEFAULT_THRESHOLD
 from engine.evidence import ReconIndex
@@ -25,7 +23,7 @@ from engine.exceptions import build_exceptions
 from engine.feegst import fee_gst
 from engine.ingest import load_bank, load_recon
 from engine.models import BankCreditLine, Rail, ReconRow
-from engine.reconcile import _DRIFT_TOLERANCE_PAISE, SettlementIndex, reconcile
+from engine.reconcile import _DRIFT_TOLERANCE_PAISE, reconcile
 from tests.integration.test_phase1_gate import _make_pinned_20_rows, _make_recon_rows
 
 
@@ -35,7 +33,7 @@ def test_phase3_gate_on_pinned_sample():
     index = ReconIndex(recon_rows)
     sample = _make_pinned_20_rows()
     lines = [line for line, _ in sample]
-    lines_by_key = {l.key: l for l in lines}
+    lines_by_key = {ln.key: ln for ln in lines}
 
     # 1. Attribute lines
     attributions = attribute_all(lines, index, threshold=DEFAULT_THRESHOLD)
@@ -125,7 +123,7 @@ def test_phase3_gate_fr016_duplicate_partial_unbalanced():
         BankCreditLine("line_part", base_date, 150000, "RAZORPAY 1780498800prt001", "1780498800prt001", True),
         BankCreditLine("line_unbal", base_date, 350000, "RAZORPAY 1780498800unb001", "1780498800unb001", True),
     ]
-    lines_by_key = {l.key: l for l in lines}
+    lines_by_key = {ln.key: ln for ln in lines}
     index = ReconIndex(rows)
     attrs = attribute_all(lines, index, threshold=DEFAULT_THRESHOLD)
 
@@ -168,7 +166,7 @@ def test_phase3_gate_on_benchmark_294_lines():
     """Verify all Phase 3 gate conditions on the full 294-line benchmark."""
     lines = load_bank("data/bank_statement.csv")
     recon_rows = load_recon("data/recon_report.json")
-    lines_by_key = {l.key: l for l in lines}
+    lines_by_key = {ln.key: ln for ln in lines}
     index = ReconIndex(recon_rows)
 
     attributions = attribute_all(lines, index, threshold=DEFAULT_THRESHOLD)
