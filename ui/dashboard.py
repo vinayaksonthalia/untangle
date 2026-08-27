@@ -171,6 +171,77 @@ def render(report: dict) -> str:
         exc_toolbar = ""
         exc_section_copy = "No exceptions — every credit was attributed with evidence or abstained cleanly."
 
+    recov = report.get("recovery_plan") or {}
+    actions = recov.get("actions", [])
+    recoverable_p = recov.get("recoverable_if_actioned_paise", 0)
+    note = recov.get("note")
+    recovery_rows = []
+    for i, a in enumerate(actions, 1):
+        act_type = a.get("action_type", "")
+        cost = a.get("cost", 1.0)
+        rec_paise = a.get("recoverable_paise", 0)
+        resolves = a.get("resolves", [])
+        desc = a.get("description") or f"Action {act_type} — up to {_amt(rec_paise)} recoverable if confirmed"
+        resolves_str = f"{len(resolves)} credit{'s' if len(resolves) != 1 else ''}"
+        resolves_keys = ", ".join(resolves[:3]) + (f" ... +{len(resolves)-3} more" if len(resolves) > 3 else "")
+        recovery_rows.append(f"""
+      <tr class="recov-row">
+        <td class="mono" style="font-weight:600;color:var(--acc)">#{i}</td>
+        <td>
+          <div style="font-weight:600;font-size:14px;color:var(--tp)">{html.escape(act_type.replace('_', ' ').title())}</div>
+          <div style="font-size:13px;color:var(--ts);margin-top:2px">{html.escape(desc)}</div>
+        </td>
+        <td>
+          <div class="mono" style="font-size:13px">{html.escape(resolves_str)}</div>
+          <div style="font-size:11px;color:var(--ts);font-family:var(--mono)">{html.escape(resolves_keys)}</div>
+        </td>
+        <td class="mono" style="text-align:right">
+          <div style="font-weight:600;color:var(--acc)">{_amt(rec_paise)}</div>
+          <div style="font-size:11px;color:var(--ts)">up to · if confirmed</div>
+        </td>
+        <td class="mono" style="text-align:right;font-size:12px;color:var(--ts)">
+          {cost:.1f}
+        </td>
+      </tr>""")
+
+    if not recovery_rows:
+        recovery_rows.append("""
+      <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--ts)">
+        All bank credits resolved — no recovery actions needed.
+      </td></tr>""")
+
+    note_html = f'<div style="font-size:12px;color:var(--warn);margin:10px 0">{html.escape(note)}</div>' if note else ''
+    recovery_section = f"""
+  <div class="exc-wrap" id="sec-recovery" style="margin-top:40px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:12px">
+      <div>
+        <span class="proven-tag">Next-Best Actions</span>
+        <h2 style="margin-top:6px">Active Recovery Plan</h2>
+        <p class="sc">Ranked next-best actions by expected impact per unit cost. Recommends actions to resolve ambiguous credits or missing settlements — never asserts money is owed.</p>
+      </div>
+      <div class="mono" style="font-size:13px;color:var(--ts)">
+        {len(actions)} recommended action(s) · up to <span style="font-weight:600;color:var(--tp)">{_amt(recoverable_p)}</span> recoverable if confirmed
+      </div>
+    </div>
+    {note_html}
+    <div class="tblwrap" style="margin-top:16px">
+      <table id="recovTable">
+        <thead>
+          <tr>
+            <th style="width:50px">Rank</th>
+            <th>Action &amp; Recommendation</th>
+            <th style="width:180px">Target Credits</th>
+            <th style="width:160px;text-align:right">Recoverable</th>
+            <th style="width:70px;text-align:right">Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(recovery_rows)}
+        </tbody>
+      </table>
+    </div>
+  </div>"""
+
     prov = cfg.get("provider")
     footer_ai = f"provider <b>{html.escape(str(prov))}</b>" if prov else "matching <b>deterministic</b>"
     attr_c = t.get("attributed", sum(bc.get(k, 0) for k in bc if k != "UNKNOWN"))
@@ -183,6 +254,7 @@ def render(report: dict) -> str:
         pac_rows="".join(pac_rows),
         exc_rows="".join(exc_rows), footer_ai=footer_ai,
         exc_toolbar=exc_toolbar, exc_section_copy=exc_section_copy, script=_DASH_JS,
+        recovery_section=recovery_section,
         proof_json=_embed_json(report.get("proof_packets", [])),
         proof_count=len(report.get("proof_packets", [])),
         seed=cfg.get("seed", "?"), n_recon=f'{t["n_recon_rows"]:,}',
@@ -324,6 +396,7 @@ tr.pk-row.open td{{background:var(--sunken)}}
     <a href="#sec-attribution">Attribution</a>
     <a href="#sec-reconciliation">Reconciliation</a>
     <a href="#sec-exceptions">Exceptions</a>
+    <a href="#sec-recovery">Recovery</a>
     <a href="#sec-proof">Proof</a>
   </nav>
   <span class="spacer"></span>
@@ -395,6 +468,8 @@ tr.pk-row.open td{{background:var(--sunken)}}
     </div>
     <p class="exc-count mono" id="excCount" role="status" aria-live="polite"></p>
   </div>
+
+  {recovery_section}
 
   <div class="proof-wrap" id="sec-proof">
     <div class="proof-head">
