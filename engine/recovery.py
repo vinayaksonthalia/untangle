@@ -30,7 +30,7 @@ BLOCKING_BRAND_NO_TIE = "brand_no_tie"
 BLOCKING_WEAK_UTR_SUFFIX = "weak_utr_suffix"
 BLOCKING_AMBIGUOUS_SETSUM = "ambiguous_setsum"
 BLOCKING_UNKNOWN_SENDER = "unknown_sender"
-BLOCKING_LEDGER_EXCEPTION = "ledger_exception"
+BLOCKING_RECON_FAILURE = "recon_failure"
 BLOCKING_RULE_CONFLICT = "rule_conflict"
 
 # Action types & fixed operational costs
@@ -38,23 +38,26 @@ ACTION_EXPORT_SETTLEMENT_REPORT = "export_settlement_report"
 ACTION_CONFIRM_UTR_WITH_BANK = "confirm_utr_with_bank"
 ACTION_PROVIDE_SETTLEMENT_IDS = "provide_settlement_ids"
 ACTION_CLASSIFY_COUNTERPARTY = "classify_counterparty"
-ACTION_RECONCILE_ORDER_LEDGER = "reconcile_order_ledger"
 
 ACTION_COSTS: dict[str, float] = {
     ACTION_EXPORT_SETTLEMENT_REPORT: 1.0,
     ACTION_CONFIRM_UTR_WITH_BANK: 2.0,
     ACTION_PROVIDE_SETTLEMENT_IDS: 1.5,
     ACTION_CLASSIFY_COUNTERPARTY: 0.5,
-    ACTION_RECONCILE_ORDER_LEDGER: 1.0,
 }
 
 _RZP_SIGNAL_PREFIXES = ("utr", "amount_corr", "narration_brand", "ifsc", "settlement", "setsum")
-# The REAL ledger-class reason codes the engine emits (engine/ledger.py, Feature 003). Verified against
-# the codebase — do not add codes the engine never produces (uncredited_order was dropped in 003).
-_LEDGER_EXCEPTION_CODES = {
-    "ledger_mismatch",
-    "duplicate_order_booking",
-    "refund_not_reflected",
+# Credit-keyed RECONCILIATION-FAILURE codes: a Razorpay-leaning credit that could not be reconciled, so
+# the fix is to get the correct/missing settlement data. Emitted (positionally) by engine/exceptions.py
+# — verified against the codebase. NOTE: the aggregated ORDER-LEDGER exceptions (ledger_mismatch,
+# duplicate_order_booking, refund_not_reflected) are keyed by synthetic `ledger:*` keys, not bank-credit
+# keys — they are book-integrity issues surfaced in the exception queue, intentionally OUT OF SCOPE for
+# per-credit recovery here (see PHASE_PLAN — recovery is credit-centric).
+_RECON_FAILURE_CODES = {
+    "partial_or_duplicate_settlement",
+    "unbalanced_residual",
+    "reconstructed_split_leg",
+    "razorpay_coverage_not_found",
 }
 
 
@@ -123,11 +126,6 @@ class RecoveryAction:
                 f"Classify counterparty{dt_str} — "
                 f"up to {inr_str} recoverable across {credit_plural} if confirmed"
             )
-        if self.action_type == ACTION_RECONCILE_ORDER_LEDGER:
-            return (
-                f"Reconcile order ledger — "
-                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
-            )
         return (
             f"Action {self.action_type} — "
             f"up to {inr_str} recoverable across {credit_plural} if confirmed"
@@ -187,8 +185,8 @@ def _derive_blocking_reason(
         return BLOCKING_AMBIGUOUS_SETSUM
 
     # 3. Ledger exceptions
-    if exception is not None and exception.reason_code in _LEDGER_EXCEPTION_CODES:
-        return BLOCKING_LEDGER_EXCEPTION
+    if exception is not None and exception.reason_code in _RECON_FAILURE_CODES:
+        return BLOCKING_RECON_FAILURE
 
     # 4. Razorpay-leaning signals
     rzp_ev = razorpay_signals(line, index)
@@ -342,11 +340,14 @@ def _map_blocking_to_action(
             ACTION_COSTS[ACTION_CLASSIFY_COUNTERPARTY],
         )
 
-    if blocking_reason == BLOCKING_LEDGER_EXCEPTION:
+    if blocking_reason == BLOCKING_RECON_FAILURE:
+        # a Razorpay credit that could not be reconciled → get the correct/missing settlement report
+        d_from = (line.value_date - timedelta(days=_SPLIT_DATE_WINDOW)).isoformat()
+        d_to = (line.value_date + timedelta(days=_SPLIT_DATE_WINDOW)).isoformat()
         return (
-            ACTION_RECONCILE_ORDER_LEDGER,
-            {"date": line.value_date.isoformat(), "amount_paise": line.amount_paise},
-            ACTION_COSTS[ACTION_RECONCILE_ORDER_LEDGER],
+            ACTION_EXPORT_SETTLEMENT_REPORT,
+            {"date_from": d_from, "date_to": d_to},
+            ACTION_COSTS[ACTION_EXPORT_SETTLEMENT_REPORT],
         )
 
     # Fallback default
@@ -474,3 +475,86 @@ def build_recovery_plan(
         recoverable_if_actioned_paise=recoverable_if_actioned_paise,
         note=note,
     )
+
+
+def resolve_delta(
+    before_report: dict,
+    after_report: dict,
+) -> dict:
+    """Compute the resolution delta between an initial run report and a rerun report.
+
+    Pure function: deterministic, safe on identical inputs (returns empty delta),
+    never mutates inputs, and never executes any pipeline steps.
+
+    Returns:
+        {
+            "newly_resolved": list[str],     # sorted line_keys newly resolved (abstained->attributed or newly reconciled)
+            "newly_reconciled": list[str],   # sorted line_keys newly reconciled against settlement rows
+            "recovered_paise": int,          # total paise recovered across newly resolved credits
+        }
+    """
+    before_attrs = {
+        a["line_key"]: a for a in before_report.get("attributions", []) if isinstance(a, dict) and "line_key" in a
+    }
+    after_attrs = {
+        a["line_key"]: a for a in after_report.get("attributions", []) if isinstance(a, dict) and "line_key" in a
+    }
+
+    # Unresolved in before: abstained=True or rail is UNKNOWN
+    before_unresolved = {
+        k for k, a in before_attrs.items()
+        if a.get("abstained") or a.get("rail") in {"UNKNOWN", Rail.UNKNOWN.value}
+    }
+
+    # Resolved in after: not abstained and rail is not UNKNOWN
+    after_resolved = {
+        k for k, a in after_attrs.items()
+        if not a.get("abstained") and a.get("rail") not in (None, "", "UNKNOWN", Rail.UNKNOWN.value)
+    }
+
+    newly_attributed = before_unresolved & after_resolved
+
+    # Reconciliations
+    before_reconciled = {
+        r["line_key"] for r in before_report.get("reconciliations", [])
+        if isinstance(r, dict) and "line_key" in r
+    }
+    after_reconciled = {
+        r["line_key"] for r in after_report.get("reconciliations", [])
+        if isinstance(r, dict) and "line_key" in r
+    }
+
+    newly_reconciled = sorted(after_reconciled - before_reconciled)
+
+    # Combined newly_resolved: lines newly attributed or newly reconciled
+    newly_resolved = sorted(newly_attributed | set(newly_reconciled))
+
+    # Amounts lookup. Only RECONCILED credits carry a per-credit amount in the serialized report
+    # (`credit_amount_paise` on reconciliations); RailAttribution.to_dict() has NO amount field. So
+    # recovered_paise is measured over newly-reconciled credits. Attribution-only resolutions (e.g. a
+    # credit newly classified direct_upi) still appear in `newly_resolved`, but are not valued here
+    # because the report does not serialize a per-credit amount for them.
+    amounts_by_key: dict[str, int] = {}
+    for r in after_report.get("reconciliations", []):
+        if isinstance(r, dict) and "line_key" in r and "credit_amount_paise" in r:
+            amounts_by_key[r["line_key"]] = r["credit_amount_paise"]
+    for r in before_report.get("reconciliations", []):
+        if (isinstance(r, dict) and "line_key" in r and "credit_amount_paise" in r
+                and r["line_key"] not in amounts_by_key):
+            amounts_by_key[r["line_key"]] = r["credit_amount_paise"]
+
+    recovered_paise = sum(amounts_by_key.get(k, 0) for k in newly_resolved)
+
+    # Fallback to reconciled_paise totals delta if line amounts were not itemized
+    if recovered_paise == 0 and newly_reconciled:
+        before_tot = before_report.get("totals", {}).get("reconciled_paise", 0)
+        after_tot = after_report.get("totals", {}).get("reconciled_paise", 0)
+        if after_tot > before_tot:
+            recovered_paise = after_tot - before_tot
+
+    return {
+        "newly_resolved": newly_resolved,
+        "newly_reconciled": newly_reconciled,
+        "recovered_paise": recovered_paise,
+    }
+

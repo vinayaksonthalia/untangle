@@ -20,10 +20,9 @@ from engine.recovery import (
     ACTION_CONFIRM_UTR_WITH_BANK,
     ACTION_EXPORT_SETTLEMENT_REPORT,
     ACTION_PROVIDE_SETTLEMENT_IDS,
-    ACTION_RECONCILE_ORDER_LEDGER,
     BLOCKING_AMBIGUOUS_SETSUM,
     BLOCKING_BRAND_NO_TIE,
-    BLOCKING_LEDGER_EXCEPTION,
+    BLOCKING_RECON_FAILURE,
     BLOCKING_UNKNOWN_SENDER,
     BLOCKING_WEAK_UTR_SUFFIX,
     Hypothesis,
@@ -31,6 +30,7 @@ from engine.recovery import (
     RecoveryPlan,
     build_recovery_plan,
     diagnose,
+    resolve_delta,
 )
 
 
@@ -157,25 +157,29 @@ def test_diagnose_unknown_sender():
     assert h.blocking_reason == BLOCKING_UNKNOWN_SENDER
 
 
-@pytest.mark.parametrize("code", ["ledger_mismatch", "duplicate_order_booking", "refund_not_reflected"])
-def test_diagnose_ledger_exception(code):
-    """A REAL ledger-class exception (engine/ledger.py) -> ledger_exception. Uses only codes the engine
-    actually emits — not invented ones."""
+# The REAL credit-keyed reconciliation-failure codes emitted (positionally) by engine/exceptions.py.
+@pytest.mark.parametrize("code", [
+    "partial_or_duplicate_settlement", "unbalanced_residual",
+    "reconstructed_split_leg", "razorpay_coverage_not_found",
+])
+def test_diagnose_recon_failure(code):
+    """A Razorpay credit that could not be reconciled -> recon_failure (needs the settlement report).
+    Uses only reconciliation-failure codes the engine actually emits — not invented ones."""
     line = _line("k5", narr="RAZORPAY SETTLEMENT 1780498800xp8vma", ref="1780498800xp8vma")
     ev = [EvidenceItem("utr_exact", "exact tie", 0.95)]
     attr = RailAttribution("k5", Rail.RAZORPAY_SETTLEMENT.value, 0.95, "A", ev, abstained=False)
     exc = ExceptionRecord(
         line_key="k5",
         reason_code=code,
-        detail="ledger discrepancy",
-        suggested_action="reconcile against the order ledger",
+        detail="reconciliation failure",
+        suggested_action="obtain the correct settlement report",
         evidence=ev,
     )
 
     hyps = diagnose(line, attr, _empty_index(), exc)
     rzp_hyp = next((h for h in hyps if h.rail == Rail.RAZORPAY_SETTLEMENT.value), None)
     assert rzp_hyp is not None
-    assert rzp_hyp.blocking_reason == BLOCKING_LEDGER_EXCEPTION
+    assert rzp_hyp.blocking_reason == BLOCKING_RECON_FAILURE
     assert rzp_hyp.weight == 0.95
 
 
@@ -400,25 +404,26 @@ def test_build_recovery_plan_all_resolved():
 
 
 def test_build_recovery_plan_action_types():
-    """Verify provide_settlement_ids and reconcile_order_ledger actions are generated."""
+    """provide_settlement_ids (ambiguous set-sum) and export_settlement_report (recon failure)."""
     line_setsum = _line("k_setsum", narr="RZP SPLIT", amount=500000)
     ev_setsum = [EvidenceItem("multiple_satisfying_subsets", "ambiguous", 0.0)]
     attr_setsum = RailAttribution("k_setsum", Rail.UNKNOWN.value, 0.0, "none", ev_setsum, abstained=True)
     exc_setsum = ExceptionRecord("k_setsum", "multiple_satisfying_subsets", "detail", "act", evidence=ev_setsum)
 
-    line_ledger = _line("k_ledger", narr="RZP SETTLEMENT", amount=250000)
-    attr_ledger = RailAttribution("k_ledger", Rail.RAZORPAY_SETTLEMENT.value, 0.95, "A", [], abstained=False)
-    exc_ledger = ExceptionRecord("k_ledger", "ledger_mismatch", "mismatch", "reconcile", evidence=[])
+    # a Razorpay credit whose reconciliation FAILED (real credit-keyed code) → export the settlement report
+    line_recon = _line("k_recon", narr="RZP SETTLEMENT", amount=250000)
+    attr_recon = RailAttribution("k_recon", Rail.RAZORPAY_SETTLEMENT.value, 0.95, "A", [], abstained=False)
+    exc_recon = ExceptionRecord("k_recon", "razorpay_coverage_not_found", "no coverage", "get report", evidence=[])
 
     plan = build_recovery_plan(
-        [line_setsum, line_ledger],
-        [attr_setsum, attr_ledger],
+        [line_setsum, line_recon],
+        [attr_setsum, attr_recon],
         _empty_index(),
-        [exc_setsum, exc_ledger],
+        [exc_setsum, exc_recon],
     )
     action_types = {a.action_type for a in plan.actions}
     assert ACTION_PROVIDE_SETTLEMENT_IDS in action_types
-    assert ACTION_RECONCILE_ORDER_LEDGER in action_types
+    assert ACTION_EXPORT_SETTLEMENT_REPORT in action_types
 
 
 def test_recovery_action_honest_description():
@@ -435,5 +440,148 @@ def test_recovery_action_honest_description():
     assert "up to ₹3,500.00" in desc
     assert "if confirmed" in desc
     assert "owed" not in desc.lower()
+
+
+def test_resolve_delta_identical_reports_empty_delta():
+    """Two identical reports return empty delta (0 newly resolved, 0 newly reconciled, 0 paise)."""
+    report = {
+        "attributions": [
+            {"line_key": "k1", "rail": "razorpay_settlement", "abstained": False, "confidence": 0.95},
+        ],
+        "reconciliations": [
+            {"line_key": "k1", "credit_amount_paise": 150000, "covered_net_paise": 150000, "balanced": True},
+        ],
+        "totals": {"reconciled_paise": 150000},
+    }
+    delta = resolve_delta(report, report)
+    assert delta == {
+        "newly_resolved": [],
+        "newly_reconciled": [],
+        "recovered_paise": 0,
+    }
+
+
+def test_resolve_delta_newly_reconciled():
+    """A credit that was abstained in before and is reconciled in after is in newly_resolved & newly_reconciled."""
+    before = {
+        "attributions": [
+            {"line_key": "k1", "rail": "UNKNOWN", "abstained": True, "confidence": 0.0},
+        ],
+        "reconciliations": [],
+        "totals": {"reconciled_paise": 0},
+    }
+    after = {
+        "attributions": [
+            {"line_key": "k1", "rail": "razorpay_settlement", "abstained": False, "confidence": 0.95},
+        ],
+        "reconciliations": [
+            {"line_key": "k1", "credit_amount_paise": 200000, "covered_net_paise": 200000, "balanced": True},
+        ],
+        "totals": {"reconciled_paise": 200000},
+    }
+    delta = resolve_delta(before, after)
+    assert delta["newly_resolved"] == ["k1"]
+    assert delta["newly_reconciled"] == ["k1"]
+    assert delta["recovered_paise"] == 200000
+
+
+def test_resolve_delta_multiple_credits():
+    """Batch rerun where 2 credits reconcile and 1 remains abstained."""
+    before = {
+        "attributions": [
+            {"line_key": "k1", "rail": "UNKNOWN", "abstained": True, "confidence": 0.0},
+            {"line_key": "k2", "rail": "UNKNOWN", "abstained": True, "confidence": 0.0},
+            {"line_key": "k3", "rail": "UNKNOWN", "abstained": True, "confidence": 0.0},
+        ],
+        "reconciliations": [],
+        "totals": {"reconciled_paise": 0},
+    }
+    after = {
+        "attributions": [
+            {"line_key": "k1", "rail": "razorpay_settlement", "abstained": False, "confidence": 0.95},
+            {"line_key": "k2", "rail": "razorpay_settlement", "abstained": False, "confidence": 0.95},
+            {"line_key": "k3", "rail": "UNKNOWN", "abstained": True, "confidence": 0.0},
+        ],
+        "reconciliations": [
+            {"line_key": "k1", "credit_amount_paise": 100000, "covered_net_paise": 100000, "balanced": True},
+            {"line_key": "k2", "credit_amount_paise": 300000, "covered_net_paise": 300000, "balanced": True},
+        ],
+        "totals": {"reconciled_paise": 400000},
+    }
+    delta = resolve_delta(before, after)
+    assert delta["newly_resolved"] == ["k1", "k2"]
+    assert delta["newly_reconciled"] == ["k1", "k2"]
+    assert delta["recovered_paise"] == 400000
+
+
+def test_resolve_delta_attribution_only_resolution():
+    """Credit resolved to a non-reconciled rail (e.g. direct_upi) is in newly_resolved."""
+    before = {
+        "attributions": [
+            {"line_key": "k_upi", "rail": "UNKNOWN", "abstained": True, "confidence": 0.0},
+        ],
+        "reconciliations": [],
+    }
+    # NOTE: the real RailAttribution.to_dict() has NO amount field, so an attribution-only resolution
+    # carries no per-credit amount in the report — it appears in newly_resolved but is not valued.
+    after = {
+        "attributions": [
+            {"line_key": "k_upi", "rail": "direct_upi", "abstained": False, "confidence": 0.85},
+        ],
+        "reconciliations": [],
+    }
+    delta = resolve_delta(before, after)
+    assert delta["newly_resolved"] == ["k_upi"]
+    assert delta["newly_reconciled"] == []
+    assert delta["recovered_paise"] == 0  # attribution-only: not valued (no amount serialized)
+
+
+def test_resolve_delta_preserves_existing_reconciliations():
+    """Credits already reconciled in before are not reported in newly_reconciled or counted in recovered_paise."""
+    before = {
+        "attributions": [
+            {"line_key": "k_old", "rail": "razorpay_settlement", "abstained": False, "confidence": 0.95},
+            {"line_key": "k_new", "rail": "UNKNOWN", "abstained": True, "confidence": 0.0},
+        ],
+        "reconciliations": [
+            {"line_key": "k_old", "credit_amount_paise": 500000, "covered_net_paise": 500000, "balanced": True},
+        ],
+        "totals": {"reconciled_paise": 500000},
+    }
+    after = {
+        "attributions": [
+            {"line_key": "k_old", "rail": "razorpay_settlement", "abstained": False, "confidence": 0.95},
+            {"line_key": "k_new", "rail": "razorpay_settlement", "abstained": False, "confidence": 0.95},
+        ],
+        "reconciliations": [
+            {"line_key": "k_old", "credit_amount_paise": 500000, "covered_net_paise": 500000, "balanced": True},
+            {"line_key": "k_new", "credit_amount_paise": 250000, "covered_net_paise": 250000, "balanced": True},
+        ],
+        "totals": {"reconciled_paise": 750000},
+    }
+    delta = resolve_delta(before, after)
+    assert delta["newly_resolved"] == ["k_new"]
+    assert delta["newly_reconciled"] == ["k_new"]
+    assert delta["recovered_paise"] == 250000
+
+
+def test_resolve_delta_immutability_and_empty_safe():
+    """resolve_delta never mutates input dicts and handles empty dicts safely."""
+    empty_delta = resolve_delta({}, {})
+    assert empty_delta == {
+        "newly_resolved": [],
+        "newly_reconciled": [],
+        "recovered_paise": 0,
+    }
+
+    report_a = {"attributions": [{"line_key": "k1", "rail": "UNKNOWN", "abstained": True}]}
+    report_b = {"attributions": [{"line_key": "k1", "rail": "direct_upi", "abstained": False}]}
+    # Verify inputs are not modified
+    copy_a = dict(report_a)
+    copy_b = dict(report_b)
+    resolve_delta(report_a, report_b)
+    assert report_a == copy_a
+    assert report_b == copy_b
+
 
 
