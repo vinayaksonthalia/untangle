@@ -27,19 +27,23 @@ from engine.evidence import (
 from engine.models import BankCreditLine, EvidenceItem, Rail, RailAttribution, Tier
 
 _HARD_RZP_SIGNALS = {"utr_exact", "utr_suffix", "setsum"}
-# Amount/date agreement is CORROBORATING only, never sole proof (audit SERIOUS-2):
-# a coincidental amount match must not auto-attribute Razorpay.
-_RZP_COINCIDENTAL = {"amount_corr", "value_date_proximity"}
+# Signals that constitute a genuine TIE back to the settlement report — the only signals that
+# may DECIDE a Razorpay verdict. amount_corr (credit equals an actual settlement net) is a real
+# tie; a brand word, the Razorpay IFSC, a UTR-shaped-but-unlisted token (settlement_ref), and
+# value_date_proximity are corroboration only and can never decide the verdict alone.
+_RZP_TIE_SIGNALS = {"utr_exact", "utr_suffix", "setsum", "amount_corr"}
 _SETSUM_MAX_TERMS = 3
 _SETSUM_MAX_CANDIDATES = 200  # candidate pool size up to N=200 per Phase 2
 
 _SIGNAL_CHANNELS = {
     "utr_exact": "identifier",
     "utr_suffix": "identifier",
+    "utr_suffix_weak": "identifier",
     "settlement_ref": "identifier",
     "narration_brand_rzp": "narration",
     "ifsc_ratn": "narration",
     "amount_corr": "amount_time",
+    "amount_corr_multi": "amount_time",
     "value_date_proximity": "amount_time",
     "setsum": "amount_time",
 }
@@ -238,10 +242,15 @@ def attribute_line(line: BankCreditLine, index: ReconIndex, threshold: float) ->
     # when it has a hard recon tie.
     if non_rzp and not rzp_hard:
         rzp_score = 0.0
-    # Coincidental-amount guard (audit SERIOUS-2): a Razorpay verdict needs at least one
-    # substantive signal (UTR tie / set-sum / Razorpay identity token) — amount+date
-    # agreement alone abstains rather than risk a false 'this is Razorpay's'.
-    if not any(e.signal not in _RZP_COINCIDENTAL for e in rzp_ev):
+    # PROOF-GATE INVARIANT: a Razorpay verdict requires at least one genuine tie back to the
+    # settlement report — a UTR identifier tie (utr_exact/utr_suffix), a bounded set-sum, or an
+    # amount that equals an actual settlement net (amount_corr). Signals that merely *resemble*
+    # Razorpay are corroboration only and can NEVER decide the verdict on their own:
+    #   • narration brand words / the Razorpay IFSC — resemblance, not a tie;
+    #   • settlement_ref — a UTR-SHAPED token that is, by construction, NOT in the settlement
+    #     report, so it proves nothing; brand + such a token is exactly the decoy trap.
+    # value_date_proximity alone is not a tie either. Without a tie the line abstains.
+    if not any(e.signal in _RZP_TIE_SIGNALS for e in rzp_ev):
         rzp_score = 0.0
     if rzp_score > 0.0:
         scores[Rail.RAZORPAY_SETTLEMENT.value] = (

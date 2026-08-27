@@ -76,29 +76,55 @@ tbody tr:hover{background:var(--sunken)}
 footer{max-width:var(--max);margin:64px auto 0;padding:18px 48px 0;border-top:1px solid var(--border);
 font-family:var(--mono);font-size:11.5px;color:var(--tt);display:flex;gap:26px;flex-wrap:wrap}
 footer b{color:var(--ts);font-weight:500}
+a.logo{text-decoration:none;color:var(--tp)}
+.secnav{display:flex;gap:20px;margin-left:26px}
+.secnav a{font-size:13px;color:var(--ts);text-decoration:none;padding:4px 0;border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+.secnav a:hover{color:var(--tp)}
+.secnav a.on{color:var(--tp);border-color:var(--acc)}
+a.pill{text-decoration:none}
+[id^="sec-"]{scroll-margin-top:74px}
+.exc-toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{font-family:var(--ui);font-size:12.5px;color:var(--ts);background:var(--surface);border:1px solid var(--border);border-radius:100px;padding:6px 13px;cursor:pointer;transition:all .13s;display:inline-flex;align-items:center;gap:7px}
+.chip:hover{border-color:var(--border2);color:var(--tp)}
+.chip.active{background:var(--tp);color:#fff;border-color:var(--tp)}
+.chip .ct{font-family:var(--mono);font-size:11px;opacity:.7}
+.chip.active .ct{opacity:.85}
+.search input{font-family:var(--ui);font-size:13px;color:var(--tp);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:8px 13px;width:250px;max-width:60vw;outline:none;transition:border-color .13s}
+.search input:focus{border-color:var(--acc)}
+tbody tr.hide{display:none}
+.noresults{padding:26px 20px;text-align:center;color:var(--ts);font-size:13px}
+.linkbtn{background:none;border:0;color:var(--acc);cursor:pointer;font-size:13px;font-family:var(--ui);text-decoration:underline;padding:0}
+.exc-count{font-size:12px;color:var(--tt);margin:12px 2px 0;font-family:var(--mono)}
 @media(max-width:880px){.wrap,.topbar .in,footer{padding-left:24px;padding-right:24px}
-.cards{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}.hero-fig{font-size:40px}}
+.cards{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}.hero-fig{font-size:40px}
+.secnav{display:none}.search input{width:100%}.exc-toolbar{align-items:stretch}.search{width:100%}}
 </style></head><body>
 <div class="topbar"><div class="in">
   <span class="logo">un<b>tangle</b></span>
   <span class="period">attribution-first reconciliation</span>
+  <nav class="secnav">
+    <a href="#sec-attribution">Attribution</a>
+    <a href="#sec-reconciliation">Reconciliation</a>
+    <a href="#sec-exceptions">Exceptions</a>
+  </nav>
   <span class="spacer"></span>
-  <span class="pill"><span class="d"></span>26 to review</span>
+  <a class="pill" href="#sec-exceptions"><span class="d"></span>26 to review</a>
 </div></div>
 
 <div class="wrap">
   <!-- PRIMARY HEADLINE (PR-004: Attribution & Abstention first) -->
-  <p class="eyebrow">Attribution &amp; Calibrated Abstention (Primary Verdict)</p>
-  <div class="hero-fig">283 <span style="font-size:24px;color:var(--ts)">attributed</span> · 11 <span style="font-size:24px;color:var(--warn)">abstained</span></div>
-  <div class="hero-of">Every bank credit attributed to its rail with evidence · 11 ambiguous credits abstained (never force-matched)</div>
+  <p class="eyebrow" id="sec-attribution">Attribution &amp; Calibrated Abstention (Primary Verdict)</p>
+  <div class="hero-fig">272 <span style="font-size:24px;color:var(--ts)">attributed</span> · 22 <span style="font-size:24px;color:var(--warn)">abstained</span></div>
+  <div class="hero-of">Every bank credit attributed to its rail with evidence · 22 ambiguous credits abstained (never force-matched)</div>
 
   <div class="cards">
-    <div class="card sig"><div class="l">Attributed with evidence</div><div class="v">283</div>
-      <div class="n"><span class="tick">✓</span> 11 abstained, not guessed — precision-first</div></div>
-    <div class="card warn"><div class="l">Calibrated Abstention</div><div class="v">11 <span class="u">credits</span></div>
+    <div class="card sig"><div class="l">Attributed with evidence</div><div class="v">272</div>
+      <div class="n"><span class="tick">✓</span> 22 abstained, not guessed — precision-first</div></div>
+    <div class="card warn"><div class="l">Calibrated Abstention</div><div class="v">22 <span class="u">credits</span></div>
       <div class="n">abstained with reasons · queue below</div></div>
-    <div class="card"><div class="l">Razorpay credits</div><div class="v"><span class="rs">₹</span> 3,31,28,178</div>
-      <div class="n">106 credits proven Razorpay's</div></div>
+    <div class="card"><div class="l">Razorpay credits</div><div class="v"><span class="rs">₹</span> 3,07,85,477</div>
+      <div class="n">95 credits proven Razorpay's</div></div>
     <div class="card"><div class="l">Other rails</div><div class="v"><span class="rs">₹</span> 1,05,99,329</div>
       <div class="n">177 credits across UPI/COD/other gateways</div></div>
   </div>
@@ -111,32 +137,32 @@ footer b{color:var(--ts);font-weight:500}
       <div class="rr">
         <div class="rr-l"><span class="dot" style="background:#2B5EDB"></span>Razorpay settlement</div>
         <div class="track"><i style="width:100.0%;background:#2B5EDB"></i></div>
-        <div class="rr-a mono"><span class="rs">₹</span> 3,31,28,178</div><div class="rr-c mono">× 106</div>
+        <div class="rr-a mono"><span class="rs">₹</span> 3,07,85,477</div><div class="rr-c mono">× 95</div>
+      </div>
+      <div class="rr">
+        <div class="rr-l"><span class="dot" style="background:#ADABA2"></span>Unattributed</div>
+        <div class="track"><i style="width:12.1%;background:repeating-linear-gradient(90deg,#ADABA2 0 4px,transparent 4px 9px)"></i></div>
+        <div class="rr-a mono"><span class="rs">₹</span> 37,17,567</div><div class="rr-c mono">× 22</div>
       </div>
       <div class="rr">
         <div class="rr-l"><span class="dot" style="background:#6B5B95"></span>Other gateway</div>
-        <div class="track"><i style="width:9.3%;background:#6B5B95"></i></div>
+        <div class="track"><i style="width:10.0%;background:#6B5B95"></i></div>
         <div class="rr-a mono"><span class="rs">₹</span> 30,84,358</div><div class="rr-c mono">× 39</div>
       </div>
       <div class="rr">
         <div class="rr-l"><span class="dot" style="background:#8A6D3B"></span>COD remittance</div>
-        <div class="track"><i style="width:8.1%;background:#8A6D3B"></i></div>
+        <div class="track"><i style="width:8.7%;background:#8A6D3B"></i></div>
         <div class="rr-a mono"><span class="rs">₹</span> 26,73,143</div><div class="rr-c mono">× 28</div>
       </div>
       <div class="rr">
         <div class="rr-l"><span class="dot" style="background:#8C8C82"></span>Unrelated</div>
-        <div class="track"><i style="width:7.5%;background:#8C8C82"></i></div>
+        <div class="track"><i style="width:8.1%;background:#8C8C82"></i></div>
         <div class="rr-a mono"><span class="rs">₹</span> 24,94,048</div><div class="rr-c mono">× 55</div>
       </div>
       <div class="rr">
         <div class="rr-l"><span class="dot" style="background:#4A8B6F"></span>Direct UPI</div>
-        <div class="track"><i style="width:7.1%;background:#4A8B6F"></i></div>
+        <div class="track"><i style="width:7.6%;background:#4A8B6F"></i></div>
         <div class="rr-a mono"><span class="rs">₹</span> 23,47,781</div><div class="rr-c mono">× 55</div>
-      </div>
-      <div class="rr">
-        <div class="rr-l"><span class="dot" style="background:#ADABA2"></span>Unattributed</div>
-        <div class="track"><i style="width:4.2%;background:repeating-linear-gradient(90deg,#ADABA2 0 4px,transparent 4px 9px)"></i></div>
-        <div class="rr-a mono"><span class="rs">₹</span> 13,74,865</div><div class="rr-c mono">× 11</div>
       </div>
     </div>
     <div class="panel">
@@ -145,129 +171,227 @@ footer b{color:var(--ts);font-weight:500}
       <table class="pac-table">
         <thead><tr><th>Cutoff</th><th>Coverage</th><th>Abstention</th></tr></thead>
         <tbody>
-        <tr><td class="mono">τ ≥ 0.50</td><td class="mono">100.0%</td>
-        <td class="mono">0.0%</td></tr>
-        <tr><td class="mono">τ ≥ 0.60</td><td class="mono">98.6%</td>
-        <td class="mono">1.4%</td></tr>
-        <tr><td class="mono">τ ≥ 0.70</td><td class="mono">86.9%</td>
-        <td class="mono">13.1%</td></tr>
-        <tr><td class="mono">τ ≥ 0.80</td><td class="mono">85.5%</td>
-        <td class="mono">14.5%</td></tr>
-        <tr><td class="mono">τ ≥ 0.90</td><td class="mono">83.8%</td>
-        <td class="mono">16.2%</td></tr>
-        <tr><td class="mono">τ ≥ 0.95</td><td class="mono">83.8%</td>
-        <td class="mono">16.2%</td></tr></tbody>
+        <tr><td class="mono">τ ≥ 0.50</td><td class="mono">92.5%</td>
+        <td class="mono">7.5%</td></tr>
+        <tr><td class="mono">τ ≥ 0.60</td><td class="mono">91.8%</td>
+        <td class="mono">8.2%</td></tr>
+        <tr><td class="mono">τ ≥ 0.70</td><td class="mono">83.7%</td>
+        <td class="mono">16.3%</td></tr>
+        <tr><td class="mono">τ ≥ 0.80</td><td class="mono">82.3%</td>
+        <td class="mono">17.7%</td></tr>
+        <tr><td class="mono">τ ≥ 0.90</td><td class="mono">80.6%</td>
+        <td class="mono">19.4%</td></tr>
+        <tr><td class="mono">τ ≥ 0.95</td><td class="mono">80.6%</td>
+        <td class="mono">19.4%</td></tr></tbody>
       </table>
       <p style="font-size:12px;color:var(--ts);margin-top:14px">Stricter cutoffs raise abstention and shrink coverage. Attribution precision (1.000, 0 decoy false-positives) is measured only on the labeled sealed benchmark — never claimed on unlabeled uploads.</p>
     </div>
   </div>
 
   <!-- SECONDARY SECTION (PR-004: Reconciliation & ITC below, labeled 'proven slice only') -->
-  <div class="proven-section">
+  <div class="proven-section" id="sec-reconciliation">
     <span class="proven-tag">Proven Slice Only</span>
     <h2>Reconciliation &amp; Recoverable ITC</h2>
     <p class="sc">Reconciles ONLY the proven-Razorpay slice to the paise. Unattributed or abstained credits are never forced into reconciliation.</p>
-    <div class="hero-rec-sub"><span class="rs">₹</span> 2,96,95,124 <span style="font-size:16px;font-weight:400;color:var(--ts)">reconciled of <span class="mono htot"><span class="rs">₹</span> 3,31,28,178</span> in Razorpay credits (89.6%)</span></div>
-    <div class="covbar"><i style="width:89.6%"></i></div>
-    <div class="covmeta">89.6% of Razorpay credits matched to settlement rows · max residual 7p</div>
+    <div class="hero-rec-sub"><span class="rs">₹</span> 2,96,95,124 <span style="font-size:16px;font-weight:400;color:var(--ts)">reconciled of <span class="mono htot"><span class="rs">₹</span> 3,07,85,477</span> in Razorpay credits (96.5%)</span></div>
+    <div class="covbar"><i style="width:96.5%"></i></div>
+    <div class="covmeta">96.5% of Razorpay credits matched to settlement rows · max residual 7p</div>
 
     <div class="cards" style="margin-top:28px">
       <div class="card sig" style="border-left-color:var(--acc)"><div class="l">Recoverable fee-GST</div><div class="v" style="color:var(--acc)"><span class="rs">₹</span> 43,201</div>
         <div class="n">input tax credit · traceable across 4,560 txns</div></div>
-      <div class="card"><div class="l">Razorpay settlement</div><div class="v">91/106</div>
+      <div class="card"><div class="l">Razorpay settlement</div><div class="v">91/95</div>
         <div class="n"><span class="tick">✓</span> 91 credits reconciled to the paise</div></div>
-      <div class="card"><div class="l">Unresolved Razorpay</div><div class="v">15</div>
+      <div class="card"><div class="l">Unresolved Razorpay</div><div class="v">4</div>
         <div class="n">split legs or partial settlements</div></div>
       <div class="card"><div class="l">Max residual</div><div class="v">7p</div>
         <div class="n">within ±₹1 labelled drift tolerance</div></div>
     </div>
   </div>
 
-  <div class="exc-wrap">
+  <div class="exc-wrap" id="sec-exceptions">
     <h2>Exception queue</h2>
-    <p class="sc">26 credits untangle could not resolve confidently — 13 coverage not found · 10 razorpay uncertain · 1 unattributed · 2 unbalanced residual. Each carries a reason, evidence trace, and a next step.</p>
-    <div class="tblwrap"><table><thead><tr><th style="width:170px">Reason</th><th>Detail</th><th style="width:34%">Suggested action</th></tr></thead>
+    <p class="sc">26 credits untangle could not resolve confidently — 2 coverage not found · 22 unattributed · 2 unbalanced residual. Each carries a reason, evidence trace, and a next step.</p>
+    <div class="exc-toolbar"><div class="chips" role="group" aria-label="Filter by reason"><button type="button" class="chip active" data-all="1" aria-pressed="true">All <span class="ct">26</span></button><button type="button" class="chip" data-reason="razorpay_coverage_not_found" aria-pressed="false">coverage not found <span class="ct">2</span></button><button type="button" class="chip" data-reason="unattributed_ambiguous" aria-pressed="false">unattributed <span class="ct">22</span></button><button type="button" class="chip" data-reason="unbalanced_residual" aria-pressed="false">unbalanced residual <span class="ct">2</span></button></div><div class="search"><input id="excSearch" type="search" placeholder="Search reason, detail, action…" autocomplete="off" aria-label="Search exceptions"/></div></div>
+    <div class="tblwrap"><table id="excTable"><thead><tr><th style="width:180px">Reason</th><th>Detail</th><th style="width:34%">Suggested action</th></tr></thead>
     <tbody>
-      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
-      <td class="dt">₹315,156.09 on 2026-06-06: partial Razorpay signal but below the confidence threshold (0.30).</td>
-      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
-      <td class="dt">₹302,768.06 on 2026-06-07: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
-      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
-      <td class="dt">₹187,943.90 on 2026-06-07: partial Razorpay signal but below the confidence threshold (0.15).</td>
-      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
-      <td class="dt">₹221,023.52 on 2026-06-08: partial Razorpay signal but below the confidence threshold (0.15).</td>
-      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
-      <td class="dt">₹156,982.10 on 2026-06-08: partial Razorpay signal but below the confidence threshold (0.30).</td>
-      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
-      <td class="dt">₹125,379.16 on 2026-06-08: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
-      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
-      <td class="dt">₹53,824.04 on 2026-06-09: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
-      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
-      <td class="dt">₹186,730.14 on 2026-06-10: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
-      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
-      <td class="dt">₹59,178.30 on 2026-06-11: partial Razorpay signal but below the confidence threshold (0.15).</td>
-      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
-      <td class="dt">₹216,557.41 on 2026-06-11: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
-      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
-      <td class="dt">₹9,631.04 on 2026-06-12: partial Razorpay signal but below the confidence threshold (0.15).</td>
-      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-      <tr><td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹315,156.09 on 2026-06-06: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹315,156.09 on 2026-06-06: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹302,768.06 on 2026-06-07: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹302,768.06 on 2026-06-07: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹187,943.90 on 2026-06-07: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹187,943.90 on 2026-06-07: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹221,023.52 on 2026-06-08: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹221,023.52 on 2026-06-08: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹156,982.10 on 2026-06-08: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹156,982.10 on 2026-06-08: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹125,379.16 on 2026-06-08: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹125,379.16 on 2026-06-08: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹53,824.04 on 2026-06-09: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹53,824.04 on 2026-06-09: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹186,730.14 on 2026-06-10: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹186,730.14 on 2026-06-10: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹59,178.30 on 2026-06-11: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹59,178.30 on 2026-06-11: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹216,557.41 on 2026-06-11: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹216,557.41 on 2026-06-11: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹9,631.04 on 2026-06-12: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹9,631.04 on 2026-06-12: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹-29.50 on 2026-06-14: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
       <td class="dt">₹-29.50 on 2026-06-14: no distinctive rail signal in the narration.</td>
       <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
-      <td class="dt">₹163,577.27 on 2026-06-15: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
-      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
-      <td class="dt">₹199,873.33 on 2026-06-15: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
-      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-      <tr><td><span class="sev" style="--d:#B23B3B">unbalanced residual</span></td>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹163,577.27 on 2026-06-15: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹163,577.27 on 2026-06-15: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹199,873.33 on 2026-06-15: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹199,873.33 on 2026-06-15: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unbalanced_residual" data-text="unbalanced residual ₹270,003.63 on 2026-06-18: unbalanced reconciliation — candidate settlement net differs by ₹336,959.54. no balancing entry forced. human review: inspect residual discrepancy between bank statement and settlement report.">
+      <td><span class="sev" style="--d:#B23B3B">unbalanced residual</span></td>
       <td class="dt">₹270,003.63 on 2026-06-18: unbalanced reconciliation — candidate settlement net differs by ₹336,959.54. No balancing entry forced.</td>
       <td class="ac">Human review: inspect residual discrepancy between bank statement and settlement report.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
-      <td class="dt">₹227,140.97 on 2026-06-18: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
-      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
-      <td class="dt">₹215,913.67 on 2026-06-18: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
-      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-      <tr><td><span class="sev" style="--d:#B23B3B">unbalanced residual</span></td>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹227,140.97 on 2026-06-18: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹227,140.97 on 2026-06-18: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹215,913.67 on 2026-06-18: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹215,913.67 on 2026-06-18: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unbalanced_residual" data-text="unbalanced residual ₹261,122.61 on 2026-06-19: unbalanced reconciliation — candidate settlement net differs by ₹275,585.58. no balancing entry forced. human review: inspect residual discrepancy between bank statement and settlement report.">
+      <td><span class="sev" style="--d:#B23B3B">unbalanced residual</span></td>
       <td class="dt">₹261,122.61 on 2026-06-19: unbalanced reconciliation — candidate settlement net differs by ₹275,585.58. No balancing entry forced.</td>
       <td class="ac">Human review: inspect residual discrepancy between bank statement and settlement report.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <tr class="excrow" data-reason="razorpay_coverage_not_found" data-text="coverage not found ₹375,454.38 on 2026-06-21: attributed razorpay, but no exact settlement coverage was found within bounds. human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.">
+      <td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
       <td class="dt">₹375,454.38 on 2026-06-21: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
       <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
-      <td class="dt">₹168,978.92 on 2026-06-24: partial Razorpay signal but below the confidence threshold (0.25).</td>
-      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
-      <td class="dt">₹381,421.82 on 2026-06-25: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
-      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
-      <td class="dt">₹190,745.85 on 2026-06-27: partial Razorpay signal but below the confidence threshold (0.30).</td>
-      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
-      <td class="dt">₹33,567.16 on 2026-06-28: partial Razorpay signal but below the confidence threshold (0.15).</td>
-      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">razorpay uncertain</span></td>
-      <td class="dt">₹31,687.78 on 2026-06-29: partial Razorpay signal but below the confidence threshold (0.15).</td>
-      <td class="ac">Human review: likely Razorpay but not provable — confirm against the settlement report before booking.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
-      <td class="dt">₹269,515.73 on 2026-06-29: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
-      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr>
-      <tr><td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹168,978.92 on 2026-06-24: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹168,978.92 on 2026-06-24: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹381,421.82 on 2026-06-25: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹381,421.82 on 2026-06-25: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹190,745.85 on 2026-06-27: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹190,745.85 on 2026-06-27: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹33,567.16 on 2026-06-28: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹33,567.16 on 2026-06-28: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹31,687.78 on 2026-06-29: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹31,687.78 on 2026-06-29: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="unattributed_ambiguous" data-text="unattributed ₹269,515.73 on 2026-06-29: no distinctive rail signal in the narration. human review: assign the rail manually; consider adding its narration pattern to the rules.">
+      <td><span class="sev" style="--d:#B23B3B">unattributed</span></td>
+      <td class="dt">₹269,515.73 on 2026-06-29: no distinctive rail signal in the narration.</td>
+      <td class="ac">Human review: assign the rail manually; consider adding its narration pattern to the rules.</td></tr>
+      <tr class="excrow" data-reason="razorpay_coverage_not_found" data-text="coverage not found ₹183,772.29 on 2026-07-01: attributed razorpay, but no exact settlement coverage was found within bounds. human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.">
+      <td><span class="sev" style="--d:#B4720A">coverage not found</span></td>
       <td class="dt">₹183,772.29 on 2026-07-01: attributed Razorpay, but no exact settlement coverage was found within bounds.</td>
-      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr></tbody></table></div>
+      <td class="ac">Human review: likely a split leg, partial settlement, or carry-forward — match against the settlement report by hand.</td></tr></tbody></table>
+    <div class="noresults" id="excEmpty" hidden>No exceptions match this filter. <button type="button" class="linkbtn" id="excClear">Clear filters</button></div>
+    </div>
+    <p class="exc-count mono" id="excCount" role="status" aria-live="polite"></p>
   </div>
 </div>
+<script>
+(function(){
+  var rows = Array.prototype.slice.call(document.querySelectorAll('#excTable tbody tr.excrow'));
+  var chips = Array.prototype.slice.call(document.querySelectorAll('.chip'));
+  var search = document.getElementById('excSearch');
+  var empty = document.getElementById('excEmpty');
+  var count = document.getElementById('excCount');
+  var clear = document.getElementById('excClear');
+  var total = rows.length;
+  var reason = null; // null = all; never a data-reason sentinel, so no collision with real codes
+
+  function setActive(chip){
+    chips.forEach(function(x){
+      var on = x === chip;
+      x.classList.toggle('active', on);
+      x.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  function apply(){
+    var q = (search && search.value || '').trim().toLowerCase();
+    var shown = 0;
+    rows.forEach(function(tr){
+      var okR = (reason === null) || (tr.getAttribute('data-reason') === reason);
+      var okQ = !q || (tr.getAttribute('data-text') || '').indexOf(q) !== -1;
+      var vis = okR && okQ;
+      tr.classList.toggle('hide', !vis);
+      if (vis) shown++;
+    });
+    if (empty) empty.hidden = !(total > 0 && shown === 0);
+    if (count) count.textContent = shown === total
+      ? total + ' exceptions'
+      : 'Showing ' + shown + ' of ' + total + ' exceptions';
+  }
+  chips.forEach(function(c){
+    c.addEventListener('click', function(){
+      setActive(c);
+      reason = c.hasAttribute('data-all') ? null : c.getAttribute('data-reason');
+      apply();
+    });
+  });
+  if (search) search.addEventListener('input', apply);
+  if (clear) clear.addEventListener('click', function(){
+    reason = null; if (search) search.value = '';
+    var all = chips.filter(function(x){ return x.hasAttribute('data-all'); })[0];
+    if (all) setActive(all);
+    apply();
+  });
+  apply();
+
+  // Section-nav scroll-spy (rect-based; robust to positioned ancestors — sol review LOW)
+  var links = Array.prototype.slice.call(document.querySelectorAll('.secnav a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  function spy(){
+    var idx = 0;
+    targets.forEach(function(t, i){ if (t && t.getBoundingClientRect().top <= 90) idx = i; });
+    // At the bottom of the page the final section may never reach the 90px line (short/empty
+    // queue); force the last nav item active so it can always be reached (sol/Qodo).
+    var d = document.documentElement;
+    if (window.innerHeight + window.scrollY >= d.scrollHeight - 2) idx = targets.length - 1;
+    links.forEach(function(a, i){
+      var on = i === idx;
+      a.classList.toggle('on', on);
+      if (on) a.setAttribute('aria-current', 'location'); else a.removeAttribute('aria-current');
+    });
+  }
+  if (links.length && 'onscroll' in window) { window.addEventListener('scroll', spy, {passive:true}); spy(); }
+})();
+</script>
 <footer><span>reproducible · seed <b>42</b></span><span>provider <b>none</b></span>
-<span><b>294</b> bank credits · <b>12,422</b> recon rows</span><span>audit <b>7603431b3f…</b></span></footer>
+<span><b>294</b> bank credits · <b>12,422</b> recon rows</span><span>audit <b>ccebe99547…</b></span></footer>
 </body></html>

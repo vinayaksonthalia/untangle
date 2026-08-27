@@ -1,8 +1,8 @@
 # untangle — Architecture
 
-Status: **attribution + reconciliation + fee-GST + exceptions + eval** (User Stories 1–3)
-are built, measured, and independently audited. The demo UI is the remaining phase.
-This document describes what exists in code today.
+Status: **attribution + reconciliation + fee-GST + exceptions + eval + web UI** (User Stories 1–3)
+are built, measured, and independently audited, with a server-rendered landing page and an
+interactive results dashboard. This document describes what exists in code today.
 
 ## The one-paragraph mental model
 
@@ -77,9 +77,10 @@ dominates; capped at 0.99).
 
 ## Why the numbers look the way they do
 
-- **Precision 1.000, recall ~0.86–0.94:** by design the engine only commits when it has a
-  real tie, and abstains otherwise. So it is almost never *wrong* (precision), but it leaves
-  a genuine tail as UNKNOWN (recall < 1). That tail is the honest exception queue.
+- **Precision 1.000, recall ~0.82–0.84:** by design the engine only commits when it has a
+  real tie back to the settlement report, and abstains otherwise. So it is almost never
+  *wrong* (precision), but it leaves a genuine tail as UNKNOWN (recall < 1) — including
+  split-settlement legs it cannot prove. That tail is the honest exception queue.
 - **Zero decoy false-positives across 5 seeds:** the exact adversarial cases a naive brand
   grep fails (100% FP in the difficulty probe) — the tiered evidence + decoy veto handle.
 

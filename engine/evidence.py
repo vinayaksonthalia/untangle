@@ -19,8 +19,11 @@ from datetime import date
 from engine.models import BankCreditLine, EvidenceItem, Rail, ReconRow
 
 # A Razorpay settlement UTR is 10 digits + 6 lowercase alnum (verified: all 112 in the
-# sample recon report match this shape).
-_UTR = re.compile(r"[0-9]{10}[a-z0-9]{6}", re.I)
+# sample recon report match this shape). Anchored on non-alphanumeric boundaries so it does
+# NOT slice a 16-char window out of a longer numeric run (e.g. a 20-digit account/reference
+# number), which could otherwise manufacture a bogus utr_exact/settlement_ref token. On the
+# benchmark this is match-for-match identical to the unanchored form (142 = 142).
+_UTR = re.compile(r"(?<![0-9a-z])[0-9]{10}[a-z0-9]{6}(?![0-9a-z])", re.I)
 # Generic alphanumeric run, used to test whether a bank token is the SUFFIX of a UTR
 # whose prefix the bank destroyed (hard case: prefix_destroyed).
 _ALNUM = re.compile(r"[a-z0-9]{5,}", re.I)
@@ -65,12 +68,15 @@ class ReconIndex:
     def __init__(self, rows: list[ReconRow]) -> None:
         self.settlement_utrs: set[str] = set()
         self._utr_by_len: dict[int, set[str]] = {}
+        self.utr_to_sid: dict[str, str] = {}
         net: dict[str, int] = {}
         sdate: dict[str, date | None] = {}
         for r in rows:
             if r.settlement_utr:
                 u = r.settlement_utr.lower()
                 self.settlement_utrs.add(u)
+                if r.settlement_id:
+                    self.utr_to_sid.setdefault(u, r.settlement_id)
             sid = r.settlement_id
             if sid:
                 net[sid] = net.get(sid, 0) + r.net_paise
@@ -89,13 +95,17 @@ class ReconIndex:
         return token.lower() in self.settlement_utrs
 
     def utr_suffix_match(self, token: str) -> str | None:
+        """Return the settlement_utr this token is the suffix of — ONLY if that match is unique.
+
+        A token that is the tail of two or more different settlement_utrs identifies none of them,
+        so it is not a usable tie (returns None). Uniqueness is a precondition; the caller further
+        requires date/amount corroboration before treating a suffix as a deciding tie.
+        """
         t = token.lower()
         if len(t) < 6:
             return None
-        for u in self.settlement_utrs:
-            if u.endswith(t) and u != t:
-                return u
-        return None
+        matches = [u for u in self.settlement_utrs if u.endswith(t) and u != t]
+        return matches[0] if len(matches) == 1 else None
 
 
 def extract_utr_tokens(text: str) -> list[str]:
@@ -139,27 +149,51 @@ def razorpay_signals(line: BankCreditLine, index: ReconIndex) -> list[EvidenceIt
     if matched_exact:
         ev.append(EvidenceItem("utr_exact", f"UTR {matched_exact} matches a settlement_utr", 0.95))
 
-    # Destroyed-prefix UTR: a >=6-char token that is the suffix of a real settlement_utr.
+    # Destroyed-prefix UTR: a >=6-char token that is the UNIQUE suffix of a real settlement_utr.
+    # A suffix is only a DECIDING tie ("utr_suffix") when it uniquely identifies one settlement AND
+    # is corroborated against that same settlement by value-date proximity or an exact amount match
+    # — otherwise a short (e.g. 6-char) token could coincidentally tail a real UTR and manufacture a
+    # false tie. An uncorroborated unique suffix is downgraded to "utr_suffix_weak" (corroboration
+    # only; never decides a verdict). (Benchmark: all 12 real suffix cases are unique + corroborated.)
     if not matched_exact:
         for tok in {m.group(0) for m in _ALNUM.finditer(text)}:
             u = index.utr_suffix_match(tok)
             if u:
-                ev.append(
-                    EvidenceItem(
-                        "utr_suffix",
-                        f"token {tok!r} is the suffix of settlement_utr {u}",
-                        0.5,
+                sid = index.utr_to_sid.get(u)
+                sdate = index.settlement_date.get(sid) if sid else None
+                snet = index.settlement_net.get(sid) if sid else None
+                date_ok = sdate is not None and abs((line.value_date - sdate).days) <= _DATE_WINDOW_DAYS
+                amt_ok = line.is_credit and snet is not None and line.amount_paise == snet
+                if date_ok or amt_ok:
+                    how = "value-date" if date_ok else "amount"
+                    ev.append(
+                        EvidenceItem(
+                            "utr_suffix",
+                            f"token {tok!r} is the unique suffix of settlement_utr {u}, corroborated by {how}",
+                            0.5,
+                        )
                     )
-                )
+                else:
+                    ev.append(
+                        EvidenceItem(
+                            "utr_suffix_weak",
+                            f"token {tok!r} tails settlement_utr {u} but is uncorroborated (date/amount)",
+                            0.2,
+                        )
+                    )
                 break
 
-    # Amount ties to a settlement net, corroborated by value-date proximity.
+    # Amount ties to a settlement net, corroborated by value-date proximity. Only a UNIQUE net
+    # match (exactly one settlement has this net) is a deciding tie ("amount_corr"); if several
+    # settlements share the net the amount no longer identifies one settlement, so it is emitted
+    # as "amount_corr_multi" — corroboration only, never a signal that can decide a razorpay
+    # verdict by itself. (On the benchmark every amount match is unique, so this is defensive.)
     if line.is_credit and line.amount_paise in index.net_to_settlements:
         sids = index.net_to_settlements[line.amount_paise]
         near = _date_near(line.value_date, [index.settlement_date.get(s) for s in sids])
         ev.append(
             EvidenceItem(
-                "amount_corr",
+                "amount_corr" if len(sids) == 1 else "amount_corr_multi",
                 f"credit equals settlement net for {len(sids)} settlement(s)"
                 + (" within value-date window" if near else ""),
                 0.5 if near else 0.3,

@@ -1,5 +1,14 @@
 # MVP Attribution — Measured Results (2026-08-23)
 
+> **⚠️ Superseded (2026-08-27).** The tables below are the *pre-proof-gate* snapshot. After the
+> proof-gate hardening (INCIDENTS 005), a Razorpay verdict requires a genuine tie back to the
+> settlement report, so split-settlement legs that were previously attributed on brand + an
+> unverified UTR-shaped token now **abstain**. **Current headline (seed 42):** Razorpay precision
+> **1.000**, recall **0.841**, decoy FP **0/181**; sealed holdout precision **1.000**, recall
+> **0.821**, decoy FP **0/173**; 95 Razorpay attributed, 91 reconciled, ECE **0.0764**. The
+> reconciled slice and recoverable ITC (₹43,200.99) are unchanged. Re-run `python -m eval.sealed`
+> for live numbers.
+
 Deterministic path (`--no-ai`), scored against blind ground truth (`eval/` is the
 only reader of ground truth; `engine/` never sees it). Reproduce: see quickstart.md.
 
