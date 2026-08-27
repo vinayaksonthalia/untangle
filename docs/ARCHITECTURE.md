@@ -77,10 +77,11 @@ dominates; capped at 0.99).
 
 ## Why the numbers look the way they do
 
-- **Precision 1.000, recall ~0.82–0.84:** by design the engine only commits when it has a
-  real tie back to the settlement report, and abstains otherwise. So it is almost never
-  *wrong* (precision), but it leaves a genuine tail as UNKNOWN (recall < 1) — including
-  split-settlement legs it cannot prove. That tail is the honest exception queue.
+- **Precision 1.000, recall ~0.84–0.91:** by design the engine only commits when it has a
+  real tie back to the settlement report — a UTR match, a bounded set-sum, a unique
+  settlement-net amount, or a provably-unique split reconstruction — and abstains otherwise.
+  So it is almost never *wrong* (precision), while still recovering split-settlement legs when
+  their amounts uniquely sum to a settlement net. The residual tail is the honest exception queue.
 - **Zero decoy false-positives across 5 seeds:** the exact adversarial cases a naive brand
   grep fails (100% FP in the difficulty probe) — the tiered evidence + decoy veto handle.
 

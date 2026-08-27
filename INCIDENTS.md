@@ -90,3 +90,15 @@ Real failures, written after the fact, by me. Not generated. Each entry: what I 
 **Cost, measured honestly.** Razorpay attribution recall moved 0.938 → 0.841 (0.821 sealed): 11 split-settlement legs that were being *attributed* on brand + an unverified token now **abstain** into the exception queue. Crucially the **proven slice is unchanged** — 91 credits reconciled to the paise, recoverable ITC ₹43,200.99 identical — because those legs were "unresolved Razorpay" (never reconciled) before. This removed guesses, not proven attributions. Precision stays 1.000, decoy false-positives 0.
 
 **Pattern.** A number that is true *on the benchmark* is not the same as an invariant that *holds*. The benchmark's silence about the decoy shape was mistaken for safety. Recovering the abstained split legs the right way — proving two legs sum to one settlement net — is tracked as the next feature, not smuggled back in as a guess.
+
+---
+
+## 006 — Split-settlement legs recovered by provable reconstruction, not a guess (2026-08-27)
+
+**What happened.** The proof-gate (005) correctly stopped *guessing* split-settlement legs from a brand word plus an unverified UTR-shaped token, which honestly dropped Razorpay recall to 0.841 — those legs abstained. But a split leg is not truly unprovable: a Razorpay settlement paid out across two or three bank credits leaves legs whose amounts, together, equal the settlement's net. That sum **is** a genuine tie back to the settlement report.
+
+**Fix.** A cross-line pass (`reconstruct_splits`) recovers them the provable way. Over the credits the engine already abstained on — and never one carrying a distinctive competing rail keyword — it searches, per settlement net and within the value-date window, for a subset of 2–3 legs whose amounts sum to that net (±₹1 drift). It attributes them Razorpay (Tier C) **only when that decomposition is unique**; if two distinct subsets sum to the net, it stays abstained (never guesses which). Legs that are recovered but not yet entity-level reconciled surface as a dedicated `reconstructed_split_leg` exception with the proven-sum detail.
+
+**Measured.** Razorpay recall 0.841 → **0.911** (0.821 → **0.839** sealed), precision still **1.000**, decoy false-positives still **0**. 103 Razorpay attributed (up from 95), abstentions down to 14. The recall approaches the pre-proof-gate 0.938 — but every point of it rests on a real settlement tie, not resemblance. The reconciled slice (91) and recoverable ITC (₹43,200.99) are unchanged; full entity-level reconciliation of split groups (the per-credit reconcile model can't net a group yet) is the tracked next step.
+
+**Pattern.** "Abstain rather than guess" and "high recall" are not in tension when the recovery is *provable*. The proof-gate removed a guess; reconstruction added back the same credits through a real, unique tie — precision never moved.
