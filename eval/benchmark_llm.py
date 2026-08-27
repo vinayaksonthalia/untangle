@@ -19,14 +19,11 @@ from __future__ import annotations
 import argparse
 import time
 
-from engine.attribute import attribute_all
-from engine.config import DEFAULT_THRESHOLD, load_dotenv
-from engine.evidence import ReconIndex
+from engine.config import load_dotenv
 from engine.ingest import load_bank, load_recon
 from engine.llm.client import LLMClient
 from engine.llm.mask import Masker
 from engine.llm.narrate import _SYSTEM, _parse_rail
-from engine.models import Rail
 from eval.metrics import build_key_to_lineid
 
 # (label, provider, model). All openrouter models use one key; gemini uses its own.
@@ -60,9 +57,9 @@ def run(sample_per_rail: int, out_path: str) -> None:
     import json
     env = load_dotenv()
     bank = load_bank("data/bank_statement.csv")
-    recon = load_recon("data/recon_report.json")
+    _ = load_recon("data/recon_report.json")
     truth = json.load(open("data/ground_truth.json"))
-    labels = {l["line_id"]: l for l in truth["labels"]}
+    labels = {ln["line_id"]: ln for ln in truth["labels"]}
     key2lid = build_key_to_lineid("data/bank_statement.csv")
     masker = Masker()
 
@@ -73,7 +70,8 @@ def run(sample_per_rail: int, out_path: str) -> None:
     for label, provider, model in _MODELS:
         key = env.get(_KEY_ENV[provider])
         if not key:
-            rows.append((label, model, "skipped — no key", None, None, None, None)); continue
+            rows.append((label, model, "skipped — no key", None, None, None, None))
+            continue
         client = LLMClient(enabled=True, provider=provider, model=model, api_key=key, timeout=40)
         correct = total = errs = 0
         t0 = time.perf_counter()
@@ -81,14 +79,16 @@ def run(sample_per_rail: int, out_path: str) -> None:
             masked = masker.mask(ln.raw_text())
             resp = client.complete(_SYSTEM, masked)
             if resp is None:
-                errs += 1; continue
+                errs += 1
+                continue
             pred = _parse_rail(resp.text)
             total += 1
             if pred == true_rail:
                 correct += 1
         dt = time.perf_counter() - t0
         if total == 0:
-            rows.append((label, model, "unreachable (all calls failed)", None, None, None, None)); continue
+            rows.append((label, model, "unreachable (all calls failed)", None, None, None, None))
+            continue
         acc = correct / total
         avg_ms = dt / max(1, total) * 1000
         rows.append((label, model, "ok", acc, total, avg_ms, client.prompt_tokens + client.completion_tokens))

@@ -44,7 +44,8 @@ def _grp(n: int) -> str:
         head, tail = s[:-3], s[-3:]
         parts = []
         while len(head) > 2:
-            parts.insert(0, head[-2:]); head = head[:-2]
+            parts.insert(0, head[-2:])
+            head = head[:-2]
         parts.insert(0, head)
         s = ",".join(parts) + "," + tail
     return s
@@ -68,13 +69,17 @@ def _embed_json(obj) -> str:
 
 def render(report: dict) -> str:
     t = report["totals"]
-    bp = t["by_rail_paise"]; bc = t["by_rail_count"]
-    rzp_p = bp.get("razorpay_settlement", 0); rzp_c = bc.get("razorpay_settlement", 0)
+    bp = t["by_rail_paise"]
+    bc = t["by_rail_count"]
+    rzp_p = bp.get("razorpay_settlement", 0)
+    rzp_c = bc.get("razorpay_settlement", 0)
     unk_c = bc.get("UNKNOWN", 0)
     other_p = sum(v for k, v in bp.items() if k not in ("razorpay_settlement", "UNKNOWN"))
     other_c = sum(v for k, v in bc.items() if k not in ("razorpay_settlement", "UNKNOWN"))
-    rec_p = t["reconciled_paise"]; rec_c = t["reconciled_count"]
-    fee = t["fee_gst_recoverable_paise"]; fee_n = len(report["fee_gst"]["by_entity"])
+    rec_p = t["reconciled_paise"]
+    rec_c = t["reconciled_count"]
+    fee = t["fee_gst_recoverable_paise"]
+    fee_n = len(report["fee_gst"]["by_entity"])
     exc_n = t["exception_count"]
     cov = rec_p / rzp_p if rzp_p else 0
     cov_pct = f"{cov*100:.1f}"
@@ -112,7 +117,9 @@ def render(report: dict) -> str:
         pac_rows.append("""
         <tr><td class="mono" colspan="3" style="color:var(--ts)">run against data to populate the coverage / abstention curve</td></tr>""")
 
-    r = 54; circ = 2 * math.pi * r; off = circ * (1 - cov)
+    r = 54
+    circ = 2 * math.pi * r
+    off = circ * (1 - cov)
     exc_rows = []
     for e in report["exceptions"]:
         lbl, col = _REASON.get(e["reason_code"], (e["reason_code"], "#6B6B62"))

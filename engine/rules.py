@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from engine.models import BankCreditLine, EvidenceItem, Rail, RailAttribution, Tier
 
@@ -66,7 +66,7 @@ def propose_rule(
         raise ValueError(f"Invalid target rail: {target_rail}. Must be one of {valid_rails}")
 
     rid = rule_id or f"rule_{uuid.uuid4().hex[:8]}"
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     return ProposedRule(
         rule_id=rid,
         version=version,
@@ -89,7 +89,7 @@ def approve_rule(rule: ProposedRule, approver: str) -> ProposedRule:
     """
     if not approver or not approver.strip():
         raise ValueError("Approver identifier must be provided")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     # Immutable: approval returns a NEW frozen rule; an approved rule cannot be mutated
     # after the fact (e.g. its target_rail retargeted) — the approval is a fixed record.
     return replace(rule, approved=True, approved_by=approver.strip(), approved_at=now)

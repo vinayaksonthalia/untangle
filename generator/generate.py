@@ -21,15 +21,13 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
-import io
 import json
 import os
 import time
-from typing import Dict, List
 
-from . import config as C
-from . import build as B
 from . import bank as BANK
+from . import build as B
+from . import config as C
 from . import noise as NOISE
 from . import selfcheck as SELFCHECK
 
@@ -71,7 +69,7 @@ def _sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-def _write_recon(path: str, rows: List[dict]) -> None:
+def _write_recon(path: str, rows: list[dict]) -> None:
     ordered = []
     for r in rows:
         # preserve schema order; adjustment rows legitimately omit credit_type (V10)
@@ -81,7 +79,7 @@ def _write_recon(path: str, rows: List[dict]) -> None:
         json.dump(ordered, f, indent=2, ensure_ascii=False)
 
 
-def _write_order_ledger(path: str, ledger: List[dict]) -> None:
+def _write_order_ledger(path: str, ledger: list[dict]) -> None:
     cols = ["order_id", "amount_paise", "gst_rate_pct", "gst_amount_paise",
             "status", "created_at", "receipt", "payment_method"]
     with open(path, "w", encoding="utf-8", newline="") as f:
@@ -95,23 +93,23 @@ def _write_order_ledger(path: str, ledger: List[dict]) -> None:
             ])
 
 
-def _write_bank_statement(path: str, lines: List[dict]) -> None:
+def _write_bank_statement(path: str, lines: list[dict]) -> None:
     cols = ["line_id", "value_date", "txn_date", "narration", "ref_no",
             "debit", "credit", "balance"]
     with open(path, "w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(cols)
-        for l in lines:
+        for ln in lines:
             w.writerow([
-                l["line_id"], _iso(l["value_date"]), _iso(l["txn_date"]),
-                l["narration"], l["ref_no"],
-                _rupees(l["debit_paise"]) if l["debit_paise"] else "",
-                _rupees(l["credit_paise"]) if l["credit_paise"] else "",
-                _rupees(l["_balance_paise"]),
+                ln["line_id"], _iso(ln["value_date"]), _iso(ln["txn_date"]),
+                ln["narration"], ln["ref_no"],
+                _rupees(ln["debit_paise"]) if ln["debit_paise"] else "",
+                _rupees(ln["credit_paise"]) if ln["credit_paise"] else "",
+                _rupees(ln["_balance_paise"]),
             ])
 
 
-def _write_truth(path: str, truth: List[dict], cfg: C.Config) -> None:
+def _write_truth(path: str, truth: list[dict], cfg: C.Config) -> None:
     payload = {
         "_meta": {
             "generator_version": GENERATOR_VERSION,
@@ -126,7 +124,7 @@ def _write_truth(path: str, truth: List[dict], cfg: C.Config) -> None:
         json.dump(payload, f, indent=2, ensure_ascii=False)
 
 
-def run(cfg: C.Config, out_dir: str) -> Dict:
+def run(cfg: C.Config, out_dir: str) -> dict:
     os.makedirs(out_dir, exist_ok=True)
 
     built = B.build(cfg)
@@ -148,11 +146,11 @@ def run(cfg: C.Config, out_dir: str) -> Dict:
     _write_truth(truth_path, truth, cfg)
 
     # ---- counts ----
-    rail_counts: Dict[str, int] = {}
+    rail_counts: dict[str, int] = {}
     for t in truth:
         rail_counts[t["rail"]] = rail_counts.get(t["rail"], 0) + 1
 
-    type_counts: Dict[str, int] = {}
+    type_counts: dict[str, int] = {}
     for r in built["recon_rows"]:
         type_counts[r["type"]] = type_counts.get(r["type"], 0) + 1
 

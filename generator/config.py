@@ -22,16 +22,14 @@ seeded RNG in rng.py.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Tuple
-
+from dataclasses import asdict, dataclass, field
 
 # ---------------------------------------------------------------------------
 # Payment-method mix (Indian enum — verified: fixtures show method ∈
 # {card, netbanking, wallet, upi, emi}; card_* fields NULL for non-card).
 # Weights are a plausible Indian SMB mix; UPI-dominant.
 # ---------------------------------------------------------------------------
-METHOD_WEIGHTS: Dict[str, float] = {
+METHOD_WEIGHTS: dict[str, float] = {
     "upi": 0.52,
     "card": 0.24,
     "netbanking": 0.12,
@@ -42,11 +40,11 @@ METHOD_WEIGHTS: Dict[str, float] = {
 # Card networks / types / issuers observed or plausible. Fixture served
 # MasterCard / KARB / credit under the IN variant; a reviewer got AMEX under
 # the US variant (V4). We include a realistic Indian spread.
-CARD_NETWORKS: List[str] = ["MasterCard", "Visa", "RuPay", "AMEX", "Diners"]
-CARD_TYPES: List[str] = ["credit", "debit"]
-CARD_ISSUERS: List[str] = ["KARB", "HDFC", "ICIC", "SBIN", "UTIB", "KKBK", "PUNB"]
-NETBANKING_BANKS: List[str] = ["KKBK", "HDFC", "ICIC", "SBIN", "UTIB", "PUNB", "YESB"]
-WALLETS: List[str] = ["paytm", "phonepe", "freecharge", "mobikwik"]
+CARD_NETWORKS: list[str] = ["MasterCard", "Visa", "RuPay", "AMEX", "Diners"]
+CARD_TYPES: list[str] = ["credit", "debit"]
+CARD_ISSUERS: list[str] = ["KARB", "HDFC", "ICIC", "SBIN", "UTIB", "KKBK", "PUNB"]
+NETBANKING_BANKS: list[str] = ["KKBK", "HDFC", "ICIC", "SBIN", "UTIB", "PUNB", "YESB"]
+WALLETS: list[str] = ["paytm", "phonepe", "freecharge", "mobikwik"]
 
 # ---------------------------------------------------------------------------
 # Fee model. Verified fact (V4): `tax` is 18% GST ON the fee and is INCLUDED
@@ -64,7 +62,7 @@ GST_ON_FEE_RATE = 0.18
 # A fixed pricing catalog, not an injection rate. RuPay DEBIT is zero-rated
 # (RBI zero-MDR on RuPay debit + BHIM-UPI, effective Jan-2020), so it is
 # deliberately 0.0000 — mirroring the UPI zero-MDR treatment below.
-MODAL_RATE_CARD: Dict[Tuple[str, str], float] = {
+MODAL_RATE_CARD: dict[tuple[str, str], float] = {
     # (network, type) -> base MDR fraction
     ("MasterCard", "credit"): 0.0200,
     ("Visa", "credit"): 0.0200,
@@ -83,7 +81,7 @@ MODAL_RATE_UPI = 0.0000  # zero-MDR P2M
 MODAL_RATE_EMI = 0.0300
 
 # GST slabs on the MERCHANT's goods (order ledger), unrelated to the fee GST.
-GST_SLABS: List[float] = [0.05, 0.12, 0.18]
+GST_SLABS: list[float] = [0.05, 0.12, 0.18]
 
 # ---------------------------------------------------------------------------
 # Bank-rail commingling mix. Per every `razorpay_per_block` razorpay lines we

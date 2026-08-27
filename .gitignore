@@ -31,3 +31,4 @@ out/
 data_large/
 out_large/
 data/sealed/
+!.env.example

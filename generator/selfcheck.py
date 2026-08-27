@@ -29,8 +29,6 @@ Raises AssertionError on any violation; returns a small report dict on success.
 
 from __future__ import annotations
 
-from typing import Dict, List
-
 BRAND_TOKENS = ("RAZORPAY", "RZPX", "RZP")
 
 
@@ -39,7 +37,7 @@ def _has_brand(narration: str) -> bool:
     return any(tok in u for tok in BRAND_TOKENS)
 
 
-def run(recon_rows: List[dict], bank_lines: List[dict], truth: List[dict]) -> Dict:
+def run(recon_rows: list[dict], bank_lines: list[dict], truth: list[dict]) -> dict:
     row_index = {(r["type"], r["entity_id"]): r for r in recon_rows}
     truth_by_id = {t["line_id"]: t for t in truth}
     bank_by_id = {b["line_id"]: b for b in bank_lines}
@@ -50,7 +48,7 @@ def run(recon_rows: List[dict], bank_lines: List[dict], truth: List[dict]) -> Di
         f"(bank={len(bank_by_id)}, truth={len(truth_by_id)})"
     )
 
-    coverage_count: Dict[tuple, int] = {}
+    coverage_count: dict[tuple, int] = {}
     checked = 0
     for t in truth:
         if t["rail"] != "razorpay_settlement":
@@ -86,7 +84,7 @@ def run(recon_rows: List[dict], bank_lines: List[dict], truth: List[dict]) -> Di
 
     # ---- Adversarial-hardening invariants (I6-I10) ----
     # credit amount -> set of rails that have a bank line with that exact amount
-    amount_rails: Dict[int, set] = {}
+    amount_rails: dict[int, set] = {}
     for b in bank_lines:
         if b["credit_paise"]:
             amount_rails.setdefault(b["credit_paise"], set()).add(b["_rail"])

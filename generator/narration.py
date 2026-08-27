@@ -10,8 +10,6 @@ trust blindly; that is the point.
 
 from __future__ import annotations
 
-from typing import Tuple
-
 from .rng import Rng
 
 # ---- Razorpay: references RAZORPAY / RZPX; carries the (maybe mangled) UTR ----
@@ -128,7 +126,7 @@ _OTHER_GW = [
 ]
 
 
-def other_gateway_narration(rng: Rng) -> Tuple[str, str]:
+def other_gateway_narration(rng: Rng) -> tuple[str, str]:
     tmpl, tag = rng.choice(_OTHER_GW)
     ref = f"{tag}{rng.digits(12)}"
     return tmpl.format(ref=ref), ref
@@ -143,7 +141,7 @@ _UPI = [
 ]
 
 
-def direct_upi_narration(rng: Rng) -> Tuple[str, str]:
+def direct_upi_narration(rng: Rng) -> tuple[str, str]:
     ref = rng.digits(12)
     return rng.choice(_UPI).format(ref=ref), ref
 
@@ -157,7 +155,7 @@ _COD = [
 ]
 
 
-def cod_narration(rng: Rng) -> Tuple[str, str]:
+def cod_narration(rng: Rng) -> tuple[str, str]:
     ref = f"COD{rng.digits(10)}"
     return rng.choice(_COD).format(ref=ref), ref
 
@@ -172,7 +170,7 @@ _UNRELATED_CREDIT = [
 ]
 
 
-def unrelated_narration(rng_narr: Rng, rng_amt: Rng) -> Tuple[str, str, int, int]:
+def unrelated_narration(rng_narr: Rng, rng_amt: Rng) -> tuple[str, str, int, int]:
     tmpl, _ = rng_narr.choice(_UNRELATED_CREDIT)
     ref = rng_narr.digits(10)
     narr = tmpl.format(ref=ref)
@@ -187,7 +185,7 @@ def unrelated_narration(rng_narr: Rng, rng_amt: Rng) -> Tuple[str, str, int, int
     return narr, ref, credit, 0
 
 
-def bank_charge_narration(rng: Rng) -> Tuple[str, str]:
+def bank_charge_narration(rng: Rng) -> tuple[str, str]:
     ref = rng.digits(8)
     tmpl = rng.choice([
         "NEFT CHARGES + GST {ref}",

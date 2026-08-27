@@ -14,7 +14,7 @@ import argparse
 import json
 import sys
 
-from eval.metrics import build_key_to_lineid, score
+from eval.metrics import score
 
 
 def render_reliability_diagram(calib: list[dict], ece: float, threshold: float = 0.55) -> str:

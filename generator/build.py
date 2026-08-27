@@ -17,8 +17,6 @@ fixtures/recon_sdk_node_2026-08-21.md. Key verified facts honored here:
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
-
 from . import config as C
 from . import ids
 from .rng import Rng
@@ -35,7 +33,7 @@ PAYMENT_DESCRIPTIONS = [
 # --------------------------------------------------------------------------
 # Fee model (verified V4: tax is 18% GST on fee, included WITHIN fee).
 # --------------------------------------------------------------------------
-def _modal_rate(method: str, network: Optional[str], ctype: Optional[str]) -> float:
+def _modal_rate(method: str, network: str | None, ctype: str | None) -> float:
     if method in ("card", "emi"):
         if method == "emi":
             return C.MODAL_RATE_EMI
@@ -48,7 +46,7 @@ def _modal_rate(method: str, network: Optional[str], ctype: Optional[str]) -> fl
 
 
 def compute_fee(amount: int, method: str, network, ctype, deviate: bool,
-                direction_up: bool = True) -> Dict[str, int]:
+                direction_up: bool = True) -> dict[str, int]:
     """Return {base_fee, tax, fee}. tax is inside fee. UPI stays zero even if
     a deviation was requested (PROJECT_SPEC 4b: never manufacture UPI variance).
 
@@ -90,8 +88,8 @@ def _amount(rng: Rng) -> int:
 # --------------------------------------------------------------------------
 # Settlement batch skeletons
 # --------------------------------------------------------------------------
-def build_batches(cfg: C.Config, rng: Rng) -> List[dict]:
-    batches: List[dict] = []
+def build_batches(cfg: C.Config, rng: Rng) -> list[dict]:
+    batches: list[dict] = []
     for day in range(2, cfg.n_days):
         for slot in range(cfg.settlements_per_day):
             settled_at = cfg.base_epoch + day * DAY + (9 + slot * 3) * 3600  # 09:00/12:00/15:00/18:00
@@ -107,7 +105,7 @@ def build_batches(cfg: C.Config, rng: Rng) -> List[dict]:
     return batches
 
 
-def _batches_on_or_after(batches: List[dict], day: int) -> List[dict]:
+def _batches_on_or_after(batches: list[dict], day: int) -> list[dict]:
     return [b for b in batches if b["day"] >= day]
 
 
@@ -128,7 +126,7 @@ def build(cfg: C.Config) -> dict:
     rng_carry = Rng(cfg.seed, "carry")
 
     batches = build_batches(cfg, rng_id)
-    by_day: Dict[int, List[dict]] = {}
+    by_day: dict[int, list[dict]] = {}
     for b in batches:
         by_day.setdefault(b["day"], []).append(b)
 
@@ -143,25 +141,25 @@ def build(cfg: C.Config) -> dict:
     safe_days = [d for d in sorted(by_day) if 3 <= d <= cfg.n_days - 3
                  and len(by_day[d]) >= 2]
     carry_days = rng_carry.sample(safe_days, min(n_carry, len(safe_days)))
-    carry_batches: List[dict] = []
+    carry_batches: list[dict] = []
     reserved = set()
     for d in carry_days:
         b = rng_carry.choice(by_day[d])
         carry_batches.append(b)
         reserved.add(b["settlement_id"])
-    by_day_assignable: Dict[int, List[dict]] = {
+    by_day_assignable: dict[int, list[dict]] = {
         d: [b for b in bs if b["settlement_id"] not in reserved]
         for d, bs in by_day.items()
     }
 
-    recon_rows: List[dict] = []
-    orders: List[dict] = []
-    fee_variance_ids: List[str] = []
-    on_hold_ids: List[str] = []
-    dispute_ids: List[str] = []
+    recon_rows: list[dict] = []
+    orders: list[dict] = []
+    fee_variance_ids: list[str] = []
+    on_hold_ids: list[str] = []
+    dispute_ids: list[str] = []
 
-    payments: List[dict] = []  # keep parent refs for refunds/transfers/disputes
-    cross_cycle_refund_ids: List[str] = []
+    payments: list[dict] = []  # keep parent refs for refunds/transfers/disputes
+    cross_cycle_refund_ids: list[str] = []
 
     # ---- Payments + their orders ----
     for _ in range(cfg.n_payments):

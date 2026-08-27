@@ -131,7 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     try:
-        report = json.load(open(args.run, encoding="utf-8"))
+        with open(args.run, encoding="utf-8") as fh:
+            report = json.load(fh)
     except FileNotFoundError:
         print(f"Input error: report not found: {args.run}. Run `untangle run` first.",
               file=sys.stderr)

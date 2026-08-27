@@ -67,7 +67,7 @@ def _combine(items: list[EvidenceItem]) -> float:
         by_channel.setdefault(ch, []).append(max(0.0, min(1.0, it.weight)))
 
     channel_weights: list[float] = []
-    for ch, weights in by_channel.items():
+    for _ch, weights in by_channel.items():
         if len(weights) == 1:
             channel_weights.append(weights[0])
         else:

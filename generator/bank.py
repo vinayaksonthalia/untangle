@@ -19,11 +19,9 @@ Ground-truth conservation contract (asserted by selfcheck.py):
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
-
 from . import config as C
-from .rng import Rng
 from . import narration as N
+from .rng import Rng
 
 DAY = 86_400
 
@@ -34,7 +32,7 @@ def _paise_to_rupees(paise: int) -> str:
     return f"{sign}{p // 100}.{p % 100:02d}"
 
 
-def _net_of_rows(row_index: dict, rows: List[List[str]]) -> int:
+def _net_of_rows(row_index: dict, rows: list[list[str]]) -> int:
     net = 0
     for (t, eid) in rows:
         r = row_index[(t, eid)]
@@ -42,7 +40,7 @@ def _net_of_rows(row_index: dict, rows: List[List[str]]) -> int:
     return net
 
 
-def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[dict]]:
+def build_bank_and_truth(cfg: C.Config, built: dict) -> tuple[list[dict], list[dict]]:
     row_index = built["row_index"]
 
     rng_hard = Rng(cfg.seed, "bank_hardcase")
@@ -63,10 +61,10 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
     # one bank line, and tag the carry so it is labeled/counted honestly. ----
     ordered = sorted([b for b in built["batches"] if b["rows"]],
                      key=lambda b: (b["settled_at"], b["settlement_id"]))
-    eff: List[dict] = []
-    carry_rows: List[List[str]] = []
-    carry_ids: List[str] = []
-    carry_utrs: List[str] = []
+    eff: list[dict] = []
+    carry_rows: list[list[str]] = []
+    carry_ids: list[str] = []
+    carry_utrs: list[str] = []
     carry_count = 0
     for b in ordered:
         rows = carry_rows + list(b["rows"])
@@ -91,12 +89,12 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
         carry_count += 1
 
     # ---- Decide merges: pair up same-day effective settlements ----
-    merged_pairs: List[Tuple[dict, dict]] = []
+    merged_pairs: list[tuple[dict, dict]] = []
     used = set()
-    by_day: Dict[int, List[dict]] = {}
+    by_day: dict[int, list[dict]] = {}
     for b in eff:
         by_day.setdefault(b["day"], []).append(b)
-    for day, day_batches in by_day.items():
+    for _day, day_batches in by_day.items():
         i = 0
         while i + 1 < len(day_batches):
             b1, b2 = day_batches[i], day_batches[i + 1]
@@ -109,7 +107,7 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
                 i += 1
 
     # ---- Assemble "settlement events": each becomes 1 or 2 bank lines ----
-    events: List[dict] = []
+    events: list[dict] = []
     for (b1, b2) in merged_pairs:
         events.append({
             "kind": "merge",
@@ -132,8 +130,8 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
         })
 
     # ---- Turn events into razorpay bank lines (with split/drift/mangling) ----
-    rzp_lines: List[dict] = []
-    truth: List[dict] = []
+    rzp_lines: list[dict] = []
+    truth: list[dict] = []
     hard_counts = {
         "split_settlement_events": 0, "split_settlement_legs": 0,
         "merge_settlements": len(merged_pairs),
@@ -143,7 +141,7 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
         "carry_forward": carry_count,
     }
     # razorpay lines chosen to get a same-amount decoy on another rail (SERIOUS-1a)
-    collision_targets: List[dict] = []
+    collision_targets: list[dict] = []
 
     def _bank_leg_utr(settled_at: int) -> str:
         """A bank-assigned UTR for a split leg: UTR-shaped but NOT the recon
@@ -247,7 +245,7 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
             rng_hard.shuffle(rows)
             cut = len(rows) // 2
             groups = [rows[:cut], rows[cut:]]
-            for leg, grp in enumerate(groups):
+            for _leg, grp in enumerate(groups):
                 # ensure each leg is a positive credit; if not, fold into other leg
                 if _net_of_rows(row_index, grp) <= 0:
                     do_split = False
@@ -268,7 +266,7 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
                       ev["settled_at"], ev["day"], list(base_tags))
 
     # ---- Non-razorpay commingled lines, interleaved by block ratio ----
-    other_lines: List[dict] = []
+    other_lines: list[dict] = []
 
     def emit_other(rail: str, day: int, hour: int, credit_paise: int,
                    debit_paise: int, narration: str, ref: str, hard=None):
@@ -359,11 +357,11 @@ def build_bank_and_truth(cfg: C.Config, built: dict) -> Tuple[List[dict], List[d
 
     # ---- Merge, sort chronologically, compute running balance ----
     all_lines = rzp_lines + other_lines
-    all_lines.sort(key=lambda l: (l["value_date"], l["line_id"]))
+    all_lines.sort(key=lambda ln: (ln["value_date"], ln["line_id"]))
     balance = 500000  # opening balance Rs.5000.00 (paise)
-    for l in all_lines:
-        balance += l["credit_paise"] - l["debit_paise"]
-        l["_balance_paise"] = balance
+    for ln in all_lines:
+        balance += ln["credit_paise"] - ln["debit_paise"]
+        ln["_balance_paise"] = balance
 
     built["_hard_counts"] = hard_counts
     return all_lines, truth

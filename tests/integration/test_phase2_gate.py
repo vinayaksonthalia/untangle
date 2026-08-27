@@ -9,10 +9,7 @@ Gate requirements:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-
-import pytest
 
 from eval.calibration import run_calibration
 from eval.setsum_curve import run_setsum_curve_experiment
@@ -48,7 +45,7 @@ def test_phase2_setsum_zero_forced_picks_gate():
 
     for r in exp["results"]:
         N = r["N"]
-        assert r["engine_forced_picks"] == 0, f"Engine forced {r[engine_forced_picks]} picks at N={N}!"
+        assert r["engine_forced_picks"] == 0, f"Engine forced {r['engine_forced_picks']} picks at N={N}!"
         assert r["engine_forced_pick_rate"] == 0.0
 
         # When N is large (e.g. >= 100), coincidental collisions naturally occur

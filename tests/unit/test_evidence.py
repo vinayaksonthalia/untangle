@@ -298,7 +298,7 @@ def test_split_reconstruction_never_pulls_in_a_competing_keyword_credit():
     b = _line("NEFT CR-PAYU-SETTLEMENT", amount=40000, vd="2026-06-10")  # competing keyword
     a = a.__class__(**{**a.__dict__, "key": "legA"})
     b = b.__class__(**{**b.__dict__, "key": "legB"})
-    attrs = dict(zip(["legA", "legB"], attribute_all([a, b], idx, 0.55)))
+    attrs = dict(zip(["legA", "legB"], attribute_all([a, b], idx, 0.55), strict=True))
     assert attrs["legB"].rail != Rail.RAZORPAY_SETTLEMENT.value
     assert attrs["legA"].abstained, "no valid unique split without the keyword credit → legA abstains"
 

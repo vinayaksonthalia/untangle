@@ -13,7 +13,6 @@ Gate requirements:
 
 from __future__ import annotations
 
-import json
 from datetime import date
 from pathlib import Path
 
@@ -81,7 +80,7 @@ def test_phase4_gate_exception_queue_evidence_trace():
     lines = load_bank("data/bank_statement.csv")
     recon_rows = load_recon("data/recon_report.json")
     index = ReconIndex(recon_rows)
-    lines_by_key = {l.key: l for l in lines}
+    lines_by_key = {ln.key: ln for ln in lines}
     attributions = attribute_all(lines, index, DEFAULT_THRESHOLD)
 
     # Reconcile to find unresolved
@@ -233,6 +232,7 @@ def test_phase4_engine_isolation_g7():
 def test_rules_never_reclassify_debits():
     """FR-015 / Qodo: an approved rule (even razorpay-target) must never attribute a debit."""
     from datetime import date
+
     from engine.models import BankCreditLine, Rail
     from engine.rules import apply_approved_rules, approve_rule, propose_rule
 
@@ -249,6 +249,7 @@ def test_rules_never_reclassify_debits():
 def test_rules_are_immutable_after_approval():
     """Qodo #8: an approved rule cannot be mutated (retargeted) after the fact."""
     import dataclasses
+
     from engine.models import Rail
     from engine.rules import approve_rule, propose_rule
 
@@ -264,6 +265,7 @@ def test_rules_conflict_abstains_order_independent():
     """Qodo #1: two approved rules matching one line with different target rails must
     abstain (never force a pick), and the result must not depend on rule order."""
     from datetime import date
+
     from engine.models import BankCreditLine, Rail
     from engine.rules import apply_approved_rules, approve_rule, propose_rule
 
@@ -283,6 +285,7 @@ def test_rules_conflict_overrides_soft_base_through_attribute_all():
     """Qodo #1 (High): a rule conflict must OVERRIDE a confident soft base verdict through the
     production attribute_all flow — not just abstained lines — while never touching Tier A."""
     from datetime import date
+
     from engine.evidence import ReconIndex
     from engine.models import BankCreditLine, Rail
     from engine.rules import approve_rule, propose_rule
@@ -308,7 +311,7 @@ def test_rule_conflict_surfaces_correct_exception_reason():
     """Qodo #3 (Medium): a rule_conflict must surface as its own exception reason with the right
     remediation — NOT as 'unattributed_ambiguous / add a narration pattern'."""
     from engine.exceptions import build_exceptions
-    from engine.models import BankCreditLine, EvidenceItem, Rail, RailAttribution, Tier
+    from engine.models import BankCreditLine, Rail, RailAttribution, Tier
 
     line = BankCreditLine("c1", date(2026, 6, 15), 1000, "NEFT CR-PAYU-SETTLEMENT", "", is_credit=True)
     conflict = RailAttribution(
@@ -326,8 +329,9 @@ def test_rule_conflict_surfaces_correct_exception_reason():
 def test_rules_unknown_pattern_type_never_loose_matches():
     """Qodo #10: an unknown pattern_type must not fall back to a loose substring match."""
     from datetime import date
+
     from engine.models import BankCreditLine, Rail
-    from engine.rules import ProposedRule, match_rule
+    from engine.rules import match_rule
 
     rule = ProposedRule("rid", 1, Rail.OTHER_GATEWAY.value, "weird_type", "pay", "now",
                         approved=True, approved_by="x")
