@@ -26,9 +26,26 @@ through **#3** (this feature). sol (gpt-5.6-sol via AgentRouter) is the design/r
 Verified behaviour: clean exact-UTR → large margin (accept); one real tie buried in brand/IFSC/
 settlement_ref resemblance → small margin (fragile); a near-tie competing gateway → small margin.
 
-## TO DO (resume here)
-1. **Conformal calibration** — NOT written yet (this is where we stopped; a half-started import in
-   `eval/calibration.py` was reverted, so the file is clean). Add to `eval/calibration.py`:
+## UPDATE 2026-08-27 (later) — calibration + README done; PR #17 open
+- **Conformal calibration DONE** — `eval/margin_calibration.py` (Clopper-Pearson + Bonferroni +
+  recall guard + fail-closed) with 9 unit tests. Honest run result: 95 Razorpay candidates, **0
+  false-positives → precision already 1.000**, so no positive threshold certified; challenger stays
+  **surface-only** (`margin_threshold=0.0`). Reported truthfully, not forced.
+- **Professional README DONE** — house-style rewrite; Phase-5 README gate updated. Full suite **138 green**.
+- **PR [#17](https://github.com/vinayaksonthalia/untangle/pull/17) open** (challenger + gate + calibration
+  + tests + README). Qodo reviewing.
+- **AgentRouter note:** premium pool (Opus/sol/GPT) is on a *batched daily quota* and currently exhausted
+  (402, affecting everyone); DeepSeek/GLM work but are heavy reasoning models. Do the work directly; use
+  workers only when they clearly help. Don't poll the premium pool or run concurrent duplicate calls
+  (usage policy).
+
+## STILL TO DO (after PR #17)
+1. Gate the **split-reconstruction** acceptance path (second machine Razorpay path, design D3) — not done.
+2. **Surface** `proof_margin` in proof packets + a dashboard exception line from the structured fields.
+3. Then roadmap **#2 (active recovery controller)**, then **#1 (global solver)**.
+
+## (historical) original resume notes
+1. **Conformal calibration** — Add to `eval/calibration.py`:
    - `@dataclass(frozen=True) MarginCalibration{threshold, precision, precision_lower_bound,
      candidate_coverage, overall_coverage, razorpay_recall, accepted, errors}`.
    - `_clopper_pearson_upper(k, n, alpha)` — exact one-sided upper bound on the error rate via
