@@ -16,17 +16,16 @@ Safety (hardened after audit S1):
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from itertools import combinations
 
+from engine.evidence import extract_utr_tokens
 from engine.models import BankCreditLine, Rail, RailAttribution, ReconciliationResult, ReconRow
 
 _DRIFT_TOLERANCE_PAISE = 100      # ≤ ₹1 residual counts as balanced (labelled rounding drift)
 _SETSUM_MAX_TERMS = 3
 _SETSUM_MAX_CANDIDATES = 200     # candidate pool size up to N=200 per Phase 2
 _DATE_WINDOW_DAYS = 5
-_UTR = re.compile(r"[0-9]{10}[a-z0-9]{6}", re.I)
 
 
 class SettlementIndex:
@@ -61,7 +60,7 @@ class SettlementIndex:
 
     def utr_sid(self, line: BankCreditLine) -> str | None:
         """A settlement whose settlement_utr appears verbatim in the credit — decisive."""
-        for tok in _UTR.findall(line.raw_text()):
+        for tok in extract_utr_tokens(line.raw_text()):
             sid = self.utr_to_sid.get(tok.lower())
             if sid is not None:
                 return sid

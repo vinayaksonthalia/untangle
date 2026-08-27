@@ -69,9 +69,10 @@ tolerance would match coincidental amounts and create false positives. A bounded
 **Q: "Precision 1.000 is suspicious. Is it leaking the answer?"**
 A: "No — and I had it audited for exactly that. `engine/` never reads the ground truth or
 the generator; a static test enforces it. Precision is 1.000 because the engine only commits
-on a real tie and abstains otherwise, so it's rarely *wrong*; the cost is recall ~0.9, which
-I report honestly. And I validated on four *unseen* seeds — precision and zero-decoy-FP hold,
-recall drops a bit. Those are out-of-sample numbers, not a memorised benchmark."
+on a real tie back to the settlement report and abstains otherwise, so it's rarely *wrong*;
+the cost is recall ~0.84 (0.82 on a sealed holdout), which I report honestly. And I validated
+on *unseen* seeds — precision and zero-decoy-FP hold. Those are out-of-sample numbers, not a
+memorised benchmark."
 
 **Q: "Where do you use AI, and where did you choose not to?"**
 A: "Not in any money decision — matching, arithmetic and the Razorpay verdict are all
@@ -80,9 +81,11 @@ couldn't classify, and even then a deterministic rule confirms it. I can run the
 system with AI switched off and report exactly what the model adds."
 
 **Q: "What breaks it? What's the weakest part?"**
-A: "Split settlements and absent UTRs — recall there is 0.5–0.77. But it *abstains* on those,
-never misattributes, so they land in the exception queue for a human. And my benchmark shares
-one generator's narration vocabulary, so true novel-vocabulary generalization is unproven
+A: "Split settlements whose per-leg UTR the bank destroyed — the engine now *abstains* on those
+rather than guess from a brand word plus an unverifiable token, so recall on that class is low by
+design and those credits land in the exception queue for a human. (Recovering them *safely* — by
+proving two legs sum to one settlement net — is the next feature.) It never misattributes them. And
+my benchmark shares one generator's narration vocabulary, so true novel-vocabulary generalization is unproven
 until I test on a real statement — I say that openly rather than hide it."
 
 ## 5. What to be able to draw on a whiteboard
