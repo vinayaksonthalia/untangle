@@ -129,12 +129,36 @@ _LANDING_CSS = """<style>
 .faq summary::after{content:'+';font-family:var(--mono);color:var(--tt);font-size:18px}
 .faq details[open] summary::after{content:'–'}
 .faq p{color:var(--ts);font-size:14px;margin:0 2px 18px;max-width:74ch;line-height:1.6}
+/* hero figure — the agent sorting, on a gentle loop (reduced-motion safe) */
+.hc{opacity:0;animation:hcin .5s ease forwards;animation-delay:calc(var(--i)*.55s + .2s)}
+.hw{stroke-dasharray:1;stroke-dashoffset:1;animation:hwdraw 9s ease-in-out infinite;animation-delay:calc(var(--i)*.55s)}
+@keyframes hcin{to{opacity:1}}
+@keyframes hwdraw{0%{stroke-dashoffset:1}18%{stroke-dashoffset:0}86%{stroke-dashoffset:0}94%{stroke-dashoffset:1}100%{stroke-dashoffset:1}}
+/* abstained tie keeps its dashed look ("4 3") — only pulses, never redrawn */
+.hw-ab{animation:abpulse 2.2s ease-in-out infinite}
+@keyframes abpulse{0%,100%{opacity:.5}50%{opacity:1}}
+@media(prefers-reduced-motion:reduce){
+  .hc{opacity:1;animation:none}
+  .hw{stroke-dashoffset:0;animation:none}
+  .hw-ab{animation:none;opacity:1}
+}
+/* hero hint + bring-your-own-data */
+.herohint{margin:18px 0 0;font-size:13px;color:var(--tt)}
+.herohint a{font-weight:500}
+.bring{margin-top:96px;background:var(--sunken);border:1px solid var(--border);border-radius:16px;padding:38px 36px;scroll-margin-top:72px}
+.bring-head{max-width:66ch}
+.bring-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:26px}
+.bfile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 20px 18px;position:relative}
+.bfile .bnum{font-family:var(--mono);font-size:11px;color:var(--acc);font-weight:500;letter-spacing:.06em}
+.bfile h4{font-size:15px;margin:8px 0 6px}
+.bfile .bsrc{color:var(--ts);font-size:13px;margin:0 0 12px;line-height:1.5}
+.bfile .bcols{font-family:var(--mono);font-size:10.5px;color:var(--ts);background:var(--sunken);border:1px solid var(--border);border-radius:6px;padding:6px 8px;line-height:1.5}
 /* final cta */
 .finalcta{margin-top:96px;text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:52px 30px}
 .finalcta h2{font-family:var(--disp);font-weight:480;font-size:32px;letter-spacing:-.01em;margin:0 0 10px}
 .finalcta p{color:var(--ts);margin:0 auto 26px;max-width:52ch}
 @media(max-width:840px){.hero{grid-template-columns:1fr;gap:34px}.trap{grid-template-columns:1fr;gap:26px}
-.stats{grid-template-columns:repeat(2,1fr)}.hero-copy h1{max-width:none}}
+.stats{grid-template-columns:repeat(2,1fr)}.hero-copy h1{max-width:none}.bring-grid{grid-template-columns:1fr}.bring{padding:28px 22px}}
 @media(max-width:520px){.stats{grid-template-columns:1fr}.proof{padding:28px 22px}.vs th,.vs td{padding:12px 13px}}
 </style>"""
 
@@ -149,19 +173,19 @@ _HERO_SVG = """<svg class="svgwrap" viewBox="0 0 440 300" role="img"
   <text x="300" y="20" font-family="'IBM Plex Mono',monospace" font-size="10" fill="#9b9b90" letter-spacing="1">ATTRIBUTED RAIL</text>
   <!-- credit chips -->
   <g font-family="'IBM Plex Mono',monospace" font-size="11" fill="#14140f">
-    <rect x="12" y="34" width="118" height="30" rx="7" fill="#fff" stroke="#e6e4df"/><text x="24" y="53">₹2,14,320</text>
-    <rect x="12" y="78" width="118" height="30" rx="7" fill="#fff" stroke="#e6e4df"/><text x="24" y="97">₹  88,400</text>
-    <rect x="12" y="122" width="118" height="30" rx="7" fill="#fff" stroke="#e6e4df"/><text x="24" y="141">₹  12,500</text>
-    <rect x="12" y="166" width="118" height="30" rx="7" fill="#fff" stroke="#e6e4df"/><text x="24" y="185">₹  49,999</text>
-    <rect x="12" y="210" width="118" height="30" rx="7" fill="#fff" stroke="#e6e4df"/><text x="24" y="229">₹  31,050</text>
+    <g class="hc" style="--i:0"><rect x="12" y="34" width="118" height="30" rx="7" fill="#fff" stroke="#e6e4df"/><text x="24" y="53">₹2,14,320</text></g>
+    <g class="hc" style="--i:1"><rect x="12" y="78" width="118" height="30" rx="7" fill="#fff" stroke="#e6e4df"/><text x="24" y="97">₹  88,400</text></g>
+    <g class="hc" style="--i:2"><rect x="12" y="122" width="118" height="30" rx="7" fill="#fff" stroke="#e6e4df"/><text x="24" y="141">₹  12,500</text></g>
+    <g class="hc" style="--i:3"><rect x="12" y="166" width="118" height="30" rx="7" fill="#fff" stroke="#e6e4df"/><text x="24" y="185">₹  49,999</text></g>
+    <g class="hc" style="--i:4"><rect x="12" y="210" width="118" height="30" rx="7" fill="#fff" stroke="#e6e4df"/><text x="24" y="229">₹  31,050</text></g>
   </g>
-  <!-- connectors -->
+  <!-- connectors (draw in sequence) -->
   <g fill="none" stroke="#c9c7c0" stroke-width="1.4" marker-end="url(#ah)">
-    <path d="M132,49 C210,49 214,52 296,52"/>
-    <path d="M132,93 C210,93 214,52 296,56" opacity=".85"/>
-    <path d="M132,137 C210,137 214,100 296,100"/>
-    <path d="M132,180 C210,180 214,148 296,148"/>
-    <path d="M132,224 C214,224 220,210 296,210" stroke="#e0b877" stroke-dasharray="4 3"/>
+    <path class="hw" style="--i:0" pathLength="1" d="M132,49 C210,49 214,52 296,52"/>
+    <path class="hw" style="--i:1" pathLength="1" d="M132,93 C210,93 214,52 296,56" opacity=".85"/>
+    <path class="hw" style="--i:2" pathLength="1" d="M132,137 C210,137 214,100 296,100"/>
+    <path class="hw" style="--i:3" pathLength="1" d="M132,180 C210,180 214,148 296,148"/>
+    <path class="hw-ab" style="--i:4" d="M132,224 C214,224 220,210 296,210" stroke="#e0b877" stroke-dasharray="4 3"/>
   </g>
   <!-- rail pills -->
   <g font-family="Inter,sans-serif" font-size="11.5">
@@ -178,21 +202,23 @@ _HERO_SVG = """<svg class="svgwrap" viewBox="0 0 440 300" role="img"
 
 
 def landing_page() -> str:
-    return _HEAD.format(title="untangle — which of these credits is even Razorpay's?") + _LANDING_CSS + """
+    return _HEAD.format(title="untangle — know exactly what every bank credit is") + _LANDING_CSS + """
 <div class="wrap">
   <div class="hero">
     <div class="hero-copy">
       <span class="badge"><span class="dot"></span>Precision-first · abstains rather than mislabel</span>
-      <h1>Which of these credits is even Razorpay's?</h1>
+      <h1>Know exactly what every bank credit is.</h1>
       <p class="sub">Settlements, a second gateway, direct UPI, COD remittances, the odd personal transfer — all
-      landing in one current account. untangle attributes every bank credit to its rail <b>with evidence</b>,
-      reconciles the Razorpay slice to the paise, and recovers the GST on gateway fees. When the evidence is
+      landing in one current account. untangle ties every bank credit to its source rail <b>with evidence</b>,
+      reconciles the Razorpay slice to the paise, and recovers the GST on gateway fees. When the proof is
       weak, it says so — it never force-books a guess.</p>
       <div class="ctarow">
-        <a class="cta primary" href="/try-sample">See it on sample data →</a>
-        <a class="cta ghost" href="/app">Reconcile my statement</a>
+        <a class="cta primary" href="/app">Reconcile your files →</a>
+        <a class="cta ghost" href="/try-sample">See it on sample data</a>
         <span class="free">free · no signup · nothing stored</span>
       </div>
+      <p class="herohint">Bring three exports — bank statement, Razorpay settlement report, order ledger.
+      <a href="#bring">What to bring &amp; where to get it ↓</a></p>
     </div>
     <div class="fig">
       <div class="fig-h"><span>one current account</span><span>five rails + review</span></div>
@@ -214,6 +240,42 @@ def landing_page() -> str:
     <div class="prop"><h3>It says “I don't know”, not a guess.</h3>
       <p>Every match shows its evidence. When evidence is weak, the credit goes to an exception queue with a
       suggested action — never silently mis-booked. A wrong “this is Razorpay's” corrupts your books; we abstain.</p></div>
+  </div>
+
+  <!-- BRING YOUR OWN DATA -->
+  <div id="bring" class="bring">
+    <div class="bring-head">
+      <p class="eyebrow">Run it on your own books</p>
+      <h2 class="section-h" style="margin:0">Three exports in. A reconciled verdict out.</h2>
+      <p class="section-s">No account, no integration, no signup. Export three files you already have and
+      drop them in — untangle reads them in a per-request temporary directory, shows you the answer, and
+      deletes them the moment the report renders. Nothing is persisted.</p>
+    </div>
+    <div class="bring-grid">
+      <div class="bfile">
+        <div class="bnum">01</div>
+        <h4>Bank statement</h4>
+        <p class="bsrc">Your netbanking → download statement as <b>CSV</b>.</p>
+        <div class="bcols">value_date · narration · credit · debit</div>
+      </div>
+      <div class="bfile">
+        <div class="bnum">02</div>
+        <h4>Razorpay settlement report</h4>
+        <p class="bsrc">Razorpay Dashboard → <b>Settlements → Reports</b> → export as <b>JSON</b>.</p>
+        <div class="bcols">entity_id · type · amount · fee · tax · settlement_utr</div>
+      </div>
+      <div class="bfile">
+        <div class="bnum">03</div>
+        <h4>Order ledger</h4>
+        <p class="bsrc">Your orders/admin export (CSV) — the list of what you sold.</p>
+        <div class="bcols">order_id · amount_paise · status</div>
+      </div>
+    </div>
+    <div class="ctarow" style="margin-top:26px">
+      <a class="cta primary" href="/app">Upload your three files →</a>
+      <a class="cta ghost" href="/try-sample">Not ready? Watch it on sample data</a>
+      <span class="free">Bank statement &amp; ledger as CSV, Razorpay report as JSON · PDF refused on purpose (it gets money wrong) · max 15 MB each</span>
+    </div>
   </div>
 
   <!-- PROOF -->
@@ -626,13 +688,13 @@ def upload_page() -> str:
       </div>
       <div class="drop req" data-req>
         <h4>Razorpay settlement report</h4><p class="hint">Dashboard → Settlements → Reports</p>
-        <div class="cols">entity_id · amount · fee · tax · settlement_utr</div>
+        <div class="cols">entity_id · type · amount · fee · tax · settlement_utr</div>
         <input type="file" name="recon" accept=".json,application/json" required onchange="mark(this)">
         <div class="status"></div>
       </div>
       <div class="drop req" data-req>
         <h4>Order ledger</h4><p class="hint">Your orders export (CSV)</p>
-        <div class="cols">order_id · amount · status</div>
+        <div class="cols">order_id · amount_paise · status</div>
         <input type="file" name="ledger" accept=".csv,text/csv" required onchange="mark(this)">
         <div class="status"></div>
       </div>
