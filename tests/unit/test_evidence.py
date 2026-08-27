@@ -222,3 +222,38 @@ def test_proof_gate_corroborated_suffix_still_decides():
     assert "utr_suffix" in _signals(ev)
     attr = attribute_line(line, idx, threshold=0.55)
     assert attr.rail == Rail.RAZORPAY_SETTLEMENT.value and attr.abstained is False
+
+
+def test_proof_gate_abstention_surfaces_razorpay_uncertain_not_unattributed():
+    """Qodo PR#9 #2: when the proof-gate zeros a resemblance-only razorpay score, the abstained
+    line must KEEP its razorpay evidence so the exception reads 'razorpay-leaning, no tie — review
+    against the settlement report', not 'no distinctive signal, add a narration rule'."""
+    from engine.attribute import attribute_line
+    from engine.exceptions import build_exceptions
+    idx = _index(utr="1780498800xp8vma", nets=[("s9", 55555, date(2026, 6, 10))])
+    line = _line("NEFT RZP REF 1234567890123456 RAZORPAY SETTLEMENT", amount=31050, vd="2026-06-15")
+    attr = attribute_line(line, idx, threshold=0.55)
+    assert attr.abstained is True and attr.evidence, "abstained line must retain razorpay evidence"
+    excs = build_exceptions([attr], [], {line.key: line})
+    assert excs and excs[0].reason_code == "razorpay_uncertain"
+    assert "narration pattern" not in excs[0].suggested_action.lower()
+
+
+def test_utr_suffix_prefers_corroborated_and_is_deterministic():
+    """Qodo PR#9 #4: with both a corroborated and an uncorroborated suffix token present, the
+    corroborated (deciding) utr_suffix must win — regardless of token iteration order."""
+    # Two real settlement UTRs; 'xp8vma' tails the first (whose net/date we corroborate),
+    # 'zzzz99' would tail the second but is uncorroborated.
+    from datetime import datetime
+    rows = [
+        ReconRow("pay_a", "payment", 100000, 0, 0, 0, 100000, "setl_a", "1780498800xp8vma",
+                 datetime(2026, 6, 10), datetime(2026, 6, 9), False, None, None, "upi", None),
+        ReconRow("pay_b", "payment", 200000, 0, 0, 0, 200000, "setl_b", "9999000011zzzz99",
+                 datetime(2026, 6, 10), datetime(2026, 6, 9), False, None, None, "upi", None),
+    ]
+    idx = ReconIndex(rows)
+    # amount + date corroborate the 'xp8vma' settlement (net 100000, 2026-06-10)
+    line = _line("NEFT RZP xp8vma zzzz99", amount=100000, vd="2026-06-10")
+    for _ in range(5):
+        sigs = _signals(razorpay_signals(line, idx))
+        assert "utr_suffix" in sigs and "utr_suffix_weak" not in sigs

@@ -156,32 +156,43 @@ def razorpay_signals(line: BankCreditLine, index: ReconIndex) -> list[EvidenceIt
     # false tie. An uncorroborated unique suffix is downgraded to "utr_suffix_weak" (corroboration
     # only; never decides a verdict). (Benchmark: all 12 real suffix cases are unique + corroborated.)
     if not matched_exact:
-        for tok in {m.group(0) for m in _ALNUM.finditer(text)}:
+        # Evaluate ALL suffix candidates deterministically (sorted, not set-iteration order) and
+        # prefer a corroborated match over an uncorroborated one, so the emitted signal never
+        # depends on hash ordering when a narration contains more than one suffix token.
+        strong = None  # (token, utr, how) once a corroborated suffix is found
+        weak = None    # (token, utr) — best uncorroborated suffix seen
+        for tok in sorted({m.group(0) for m in _ALNUM.finditer(text)}):
             u = index.utr_suffix_match(tok)
-            if u:
-                sid = index.utr_to_sid.get(u)
-                sdate = index.settlement_date.get(sid) if sid else None
-                snet = index.settlement_net.get(sid) if sid else None
-                date_ok = sdate is not None and abs((line.value_date - sdate).days) <= _DATE_WINDOW_DAYS
-                amt_ok = line.is_credit and snet is not None and line.amount_paise == snet
-                if date_ok or amt_ok:
-                    how = "value-date" if date_ok else "amount"
-                    ev.append(
-                        EvidenceItem(
-                            "utr_suffix",
-                            f"token {tok!r} is the unique suffix of settlement_utr {u}, corroborated by {how}",
-                            0.5,
-                        )
-                    )
-                else:
-                    ev.append(
-                        EvidenceItem(
-                            "utr_suffix_weak",
-                            f"token {tok!r} tails settlement_utr {u} but is uncorroborated (date/amount)",
-                            0.2,
-                        )
-                    )
-                break
+            if not u:
+                continue
+            sid = index.utr_to_sid.get(u)
+            sdate = index.settlement_date.get(sid) if sid else None
+            snet = index.settlement_net.get(sid) if sid else None
+            date_ok = sdate is not None and abs((line.value_date - sdate).days) <= _DATE_WINDOW_DAYS
+            amt_ok = line.is_credit and snet is not None and line.amount_paise == snet
+            if date_ok or amt_ok:
+                strong = (tok, u, "value-date" if date_ok else "amount")
+                break  # a corroborated tie is decisive; stop
+            if weak is None:
+                weak = (tok, u)
+        if strong is not None:
+            tok, u, how = strong
+            ev.append(
+                EvidenceItem(
+                    "utr_suffix",
+                    f"token {tok!r} is the unique suffix of settlement_utr {u}, corroborated by {how}",
+                    0.5,
+                )
+            )
+        elif weak is not None:
+            tok, u = weak
+            ev.append(
+                EvidenceItem(
+                    "utr_suffix_weak",
+                    f"token {tok!r} tails settlement_utr {u} but is uncorroborated (date/amount)",
+                    0.2,
+                )
+            )
 
     # Amount ties to a settlement net, corroborated by value-date proximity. Only a UNIQUE net
     # match (exactly one settlement has this net) is a deciding tie ("amount_corr"); if several

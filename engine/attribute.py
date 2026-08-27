@@ -260,8 +260,11 @@ def attribute_line(line: BankCreditLine, index: ReconIndex, threshold: float) ->
         )
 
     if not scores:
+        # Proof-gate abstention: razorpay evidence may have been zeroed for lacking a tie. Keep
+        # that evidence on the abstained line so the exception surfaces "razorpay-leaning but no
+        # settlement tie — review against the settlement report", not "no distinctive signal".
         return RailAttribution(
-            line.key, Rail.UNKNOWN.value, 0.0, Tier.NONE.value, [], abstained=True
+            line.key, Rail.UNKNOWN.value, 0.0, Tier.NONE.value, rzp_ev, abstained=True
         )
 
     best_rail, (best_conf, best_ev, best_tier) = max(
