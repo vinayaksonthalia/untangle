@@ -16,6 +16,11 @@ from engine.models import (
     ReconRow,
 )
 from engine.recovery import (
+    ACTION_CLASSIFY_COUNTERPARTY,
+    ACTION_CONFIRM_UTR_WITH_BANK,
+    ACTION_EXPORT_SETTLEMENT_REPORT,
+    ACTION_PROVIDE_SETTLEMENT_IDS,
+    ACTION_RECONCILE_ORDER_LEDGER,
     BLOCKING_AMBIGUOUS_SETSUM,
     BLOCKING_BRAND_NO_TIE,
     BLOCKING_LEDGER_EXCEPTION,
@@ -24,6 +29,7 @@ from engine.recovery import (
     Hypothesis,
     RecoveryAction,
     RecoveryPlan,
+    build_recovery_plan,
     diagnose,
 )
 
@@ -263,3 +269,171 @@ def test_dataclasses_frozen_and_serialization():
     p_dict = plan.to_dict()
     assert p_dict["unresolved_count"] == 2
     assert len(p_dict["actions"]) == 1
+
+
+def test_build_recovery_plan_grouping():
+    """Two credits sharing the same action_type and params are grouped into ONE action."""
+    l1 = _line("k1", narr="NEFT-RAZORPAY-SOFTWARE-PVT-LTD", amount=100000, vd="2026-06-10")
+    l2 = _line("k2", narr="NEFT-RAZORPAY-SOFTWARE-PVT-LTD", amount=200000, vd="2026-06-10")
+    ev1 = [EvidenceItem("narration_brand_rzp", "brand razorpay", 0.15)]
+    ev2 = [EvidenceItem("narration_brand_rzp", "brand razorpay", 0.15)]
+    a1 = RailAttribution("k1", Rail.UNKNOWN.value, 0.0, "none", ev1, abstained=True)
+    a2 = RailAttribution("k2", Rail.UNKNOWN.value, 0.0, "none", ev2, abstained=True)
+    exc1 = ExceptionRecord("k1", "razorpay_uncertain", "partial signal", "check", evidence=ev1)
+    exc2 = ExceptionRecord("k2", "razorpay_uncertain", "partial signal", "check", evidence=ev2)
+
+    plan = build_recovery_plan([l1, l2], [a1, a2], _empty_index(), [exc1, exc2])
+    assert plan.unresolved_count == 2
+    assert plan.unresolved_paise == 300000
+    assert plan.recoverable_if_actioned_paise == 300000
+    assert len(plan.actions) == 1
+
+    action = plan.actions[0]
+    assert action.action_type == ACTION_EXPORT_SETTLEMENT_REPORT
+    assert action.resolves == ("k1", "k2")
+    assert action.recoverable_paise == 300000
+    assert action.cost == 1.0
+    assert action.gain_per_cost == 300000.0
+
+
+def test_build_recovery_plan_ranking_by_gain_per_cost():
+    """Actions are ranked by gain_per_cost descending."""
+    # Action A: unknown_sender, cost 0.5, amount 100000 -> gain_per_cost = 200000.0
+    l_a = _line("ka", narr="NEFT CR TRANSFER A", amount=100000, vd="2026-06-10")
+    a_a = RailAttribution("ka", Rail.UNKNOWN.value, 0.0, "none", [], abstained=True)
+    exc_a = ExceptionRecord("ka", "unattributed_ambiguous", "no signal", "check", evidence=[])
+
+    # Action B: brand_no_tie, cost 1.0, amount 500000 -> gain_per_cost = 500000.0
+    l_b = _line("kb", narr="NEFT-RAZORPAY-B", amount=500000, vd="2026-06-10")
+    ev_b = [EvidenceItem("narration_brand_rzp", "brand", 0.15)]
+    a_b = RailAttribution("kb", Rail.UNKNOWN.value, 0.0, "none", ev_b, abstained=True)
+    exc_b = ExceptionRecord("kb", "razorpay_uncertain", "brand", "check", evidence=ev_b)
+
+    # Action C: weak_suffix, cost 2.0, amount 600000 -> gain_per_cost = 300000.0
+    idx_c = _index_with_utr("1780498800xp8vma", net=999999, dt=date(2026, 5, 1))
+    l_c = _line("kc", narr="REV-AXIS-XP8VMA-SETTLEMENT", amount=600000, vd="2026-06-10")
+    ev_c = [EvidenceItem("utr_suffix_weak", "suffix", 0.5)]
+    a_c = RailAttribution("kc", Rail.UNKNOWN.value, 0.0, "none", ev_c, abstained=True)
+    exc_c = ExceptionRecord("kc", "razorpay_uncertain", "weak", "check", evidence=ev_c)
+
+    plan = build_recovery_plan([l_a, l_b, l_c], [a_a, a_b, a_c], idx_c, [exc_a, exc_b, exc_c])
+    assert len(plan.actions) == 3
+    # Expected order: B (500000), C (300000), A (200000)
+    assert plan.actions[0].action_type == ACTION_EXPORT_SETTLEMENT_REPORT
+    assert plan.actions[0].gain_per_cost == 500000.0
+    assert plan.actions[1].action_type == ACTION_CONFIRM_UTR_WITH_BANK
+    assert plan.actions[1].gain_per_cost == 300000.0
+    assert plan.actions[2].action_type == ACTION_CLASSIFY_COUNTERPARTY
+    assert plan.actions[2].gain_per_cost == 200000.0
+
+
+def test_build_recovery_plan_tie_breaking():
+    """Equal gain_per_cost ties are broken by recoverable_paise desc, then action_type asc."""
+    # Action 1: amount 100000, cost 1.0 -> gain = 100000.0, recoverable = 100000
+    l1 = _line("k1", narr="NEFT-RAZORPAY-1", amount=100000, vd="2026-06-10")
+    ev1 = [EvidenceItem("narration_brand_rzp", "brand", 0.15)]
+    a1 = RailAttribution("k1", Rail.UNKNOWN.value, 0.0, "none", ev1, abstained=True)
+    exc1 = ExceptionRecord("k1", "razorpay_uncertain", "brand", "check", evidence=ev1)
+
+    # Action 2: amount 50000, cost 0.5 -> gain = 100000.0, recoverable = 50000
+    l2 = _line("k2", narr="NEFT CR TRANSFER 2", amount=50000, vd="2026-06-10")
+    a2 = RailAttribution("k2", Rail.UNKNOWN.value, 0.0, "none", [], abstained=True)
+    exc2 = ExceptionRecord("k2", "unattributed_ambiguous", "no signal", "check", evidence=[])
+
+    plan = build_recovery_plan([l1, l2], [a1, a2], _empty_index(), [exc1, exc2])
+    assert len(plan.actions) == 2
+    # Action 1 has higher recoverable_paise (100000 vs 50000), so ranks first
+    assert plan.actions[0].resolves == ("k1",)
+    assert plan.actions[1].resolves == ("k2",)
+
+
+def test_build_recovery_plan_no_double_counting():
+    """Credits resolvable by actions are counted exactly once in recoverable_if_actioned_paise."""
+    l1 = _line("k1", narr="NEFT-RAZORPAY-1", amount=100000, vd="2026-06-10")
+    l2 = _line("k2", narr="NEFT CR TRANSFER 2", amount=200000, vd="2026-06-10")
+    ev1 = [EvidenceItem("narration_brand_rzp", "brand", 0.15)]
+    a1 = RailAttribution("k1", Rail.UNKNOWN.value, 0.0, "none", ev1, abstained=True)
+    a2 = RailAttribution("k2", Rail.UNKNOWN.value, 0.0, "none", [], abstained=True)
+    exc1 = ExceptionRecord("k1", "razorpay_uncertain", "brand", "check", evidence=ev1)
+    exc2 = ExceptionRecord("k2", "unattributed_ambiguous", "no signal", "check", evidence=[])
+
+    plan = build_recovery_plan([l1, l2], [a1, a2], _empty_index(), [exc1, exc2])
+    assert plan.unresolved_paise == 300000
+    assert plan.recoverable_if_actioned_paise == 300000
+
+
+def test_build_recovery_plan_capping_with_note():
+    """When actions exceed max_actions, output is capped and a note is recorded."""
+    lines = []
+    attrs = []
+    excs = []
+    # Create 25 lines on different dates so they produce 25 distinct actions
+    for i in range(25):
+        key = f"k_{i:02d}"
+        d_str = f"2026-06-{i+1:02d}"
+        line_item = _line(key, narr=f"TRANSFER {i}", amount=10000 * (i + 1), vd=d_str)
+        a = RailAttribution(key, Rail.UNKNOWN.value, 0.0, "none", [], abstained=True)
+        exc = ExceptionRecord(key, "unattributed_ambiguous", "no signal", "check", evidence=[])
+        lines.append(line_item)
+        attrs.append(a)
+        excs.append(exc)
+
+    plan = build_recovery_plan(lines, attrs, _empty_index(), excs, max_actions=10)
+    assert len(plan.actions) == 10
+    assert plan.unresolved_count == 25
+    assert plan.note is not None
+    assert "top 10" in plan.note
+
+
+def test_build_recovery_plan_all_resolved():
+    """When all credits are resolved, returns empty plan with zeros."""
+    resolved_line = _line("k1", narr="RAZORPAY SETTLEMENT 1780498800xp8vma")
+    ev = [EvidenceItem("utr_exact", "exact tie", 0.95)]
+    a = RailAttribution("k1", Rail.RAZORPAY_SETTLEMENT.value, 0.95, "A", ev, abstained=False)
+
+    plan = build_recovery_plan([resolved_line], [a], _empty_index(), [])
+    assert plan.actions == ()
+    assert plan.unresolved_count == 0
+    assert plan.unresolved_paise == 0
+    assert plan.recoverable_if_actioned_paise == 0
+    assert plan.note is None
+
+
+def test_build_recovery_plan_action_types():
+    """Verify provide_settlement_ids and reconcile_order_ledger actions are generated."""
+    line_setsum = _line("k_setsum", narr="RZP SPLIT", amount=500000)
+    ev_setsum = [EvidenceItem("multiple_satisfying_subsets", "ambiguous", 0.0)]
+    attr_setsum = RailAttribution("k_setsum", Rail.UNKNOWN.value, 0.0, "none", ev_setsum, abstained=True)
+    exc_setsum = ExceptionRecord("k_setsum", "multiple_satisfying_subsets", "detail", "act", evidence=ev_setsum)
+
+    line_ledger = _line("k_ledger", narr="RZP SETTLEMENT", amount=250000)
+    attr_ledger = RailAttribution("k_ledger", Rail.RAZORPAY_SETTLEMENT.value, 0.95, "A", [], abstained=False)
+    exc_ledger = ExceptionRecord("k_ledger", "ledger_mismatch", "mismatch", "reconcile", evidence=[])
+
+    plan = build_recovery_plan(
+        [line_setsum, line_ledger],
+        [attr_setsum, attr_ledger],
+        _empty_index(),
+        [exc_setsum, exc_ledger],
+    )
+    action_types = {a.action_type for a in plan.actions}
+    assert ACTION_PROVIDE_SETTLEMENT_IDS in action_types
+    assert ACTION_RECONCILE_ORDER_LEDGER in action_types
+
+
+def test_recovery_action_honest_description():
+    """Human-readable descriptions frame amounts as 'up to ₹X ... if confirmed'."""
+    action = RecoveryAction(
+        action_type=ACTION_EXPORT_SETTLEMENT_REPORT,
+        params={"date_from": "2026-06-05", "date_to": "2026-06-15"},
+        resolves=("k1", "k2"),
+        recoverable_paise=350000,
+        cost=1.0,
+        gain_per_cost=350000.0,
+    )
+    desc = action.description
+    assert "up to ₹3,500.00" in desc
+    assert "if confirmed" in desc
+    assert "owed" not in desc.lower()
+
+

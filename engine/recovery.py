@@ -15,9 +15,10 @@ Guarantees:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from datetime import timedelta
+from typing import TYPE_CHECKING, Any
 
-from engine.attribute import _combine
+from engine.attribute import _SPLIT_DATE_WINDOW, _combine
 from engine.evidence import narration_rail_signals, razorpay_signals
 from engine.models import BankCreditLine, ExceptionRecord, Rail, RailAttribution
 
@@ -86,6 +87,52 @@ class RecoveryAction:
     cost: float               # fixed operational weight
     gain_per_cost: float      # recoverable_paise / cost (the ranking key)
 
+    @property
+    def description(self) -> str:
+        """Human-readable action description framing recoverable amount honestly."""
+        inr_str = f"₹{self.recoverable_paise / 100:,.2f}"
+        n_credits = len(self.resolves)
+        credit_plural = f"{n_credits} credit" if n_credits == 1 else f"{n_credits} credits"
+
+        if self.action_type == ACTION_EXPORT_SETTLEMENT_REPORT:
+            d_from = self.params.get("date_from", "")
+            d_to = self.params.get("date_to", "")
+            window = f" ({d_from} to {d_to})" if d_from and d_to else ""
+            return (
+                f"Export Razorpay settlement report{window} — "
+                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+            )
+        if self.action_type == ACTION_CONFIRM_UTR_WITH_BANK:
+            dt = self.params.get("date", "")
+            dt_str = f" for {dt}" if dt else ""
+            return (
+                f"Confirm UTR with bank{dt_str} — "
+                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+            )
+        if self.action_type == ACTION_PROVIDE_SETTLEMENT_IDS:
+            dt = self.params.get("date", "")
+            dt_str = f" for {dt}" if dt else ""
+            return (
+                f"Provide settlement IDs{dt_str} — "
+                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+            )
+        if self.action_type == ACTION_CLASSIFY_COUNTERPARTY:
+            dt = self.params.get("date", "")
+            dt_str = f" for {dt}" if dt else ""
+            return (
+                f"Classify counterparty{dt_str} — "
+                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+            )
+        if self.action_type == ACTION_RECONCILE_ORDER_LEDGER:
+            return (
+                f"Reconcile order ledger — "
+                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+            )
+        return (
+            f"Action {self.action_type} — "
+            f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+        )
+
     def to_dict(self) -> dict:
         return {
             "action_type": self.action_type,
@@ -94,6 +141,7 @@ class RecoveryAction:
             "recoverable_paise": self.recoverable_paise,
             "cost": self.cost,
             "gain_per_cost": round(self.gain_per_cost, 4),
+            "description": self.description,
         }
 
 
@@ -105,14 +153,18 @@ class RecoveryPlan:
     unresolved_count: int
     unresolved_paise: int
     recoverable_if_actioned_paise: int    # sum over distinct resolvable credits (no double counting)
+    note: str | None = None
 
     def to_dict(self) -> dict:
-        return {
+        d: dict[str, Any] = {
             "actions": [a.to_dict() for a in self.actions],
             "unresolved_count": self.unresolved_count,
             "unresolved_paise": self.unresolved_paise,
             "recoverable_if_actioned_paise": self.recoverable_if_actioned_paise,
         }
+        if self.note:
+            d["note"] = self.note
+        return d
 
 
 def _derive_blocking_reason(
@@ -246,3 +298,179 @@ def diagnose(
     # Sort deterministically: highest weight first, then rail ascending
     hypotheses.sort(key=lambda h: (-h.weight, h.rail))
     return hypotheses
+
+
+def _map_blocking_to_action(
+    line: BankCreditLine,
+    blocking_reason: str,
+    exception: ExceptionRecord | None,
+) -> tuple[str, dict[str, Any], float]:
+    """Map derived blocking_reason to (action_type, params, cost) per §3 taxonomy."""
+    if blocking_reason == BLOCKING_BRAND_NO_TIE:
+        d_from = (line.value_date - timedelta(days=_SPLIT_DATE_WINDOW)).isoformat()
+        d_to = (line.value_date + timedelta(days=_SPLIT_DATE_WINDOW)).isoformat()
+        return (
+            ACTION_EXPORT_SETTLEMENT_REPORT,
+            {"date_from": d_from, "date_to": d_to},
+            ACTION_COSTS[ACTION_EXPORT_SETTLEMENT_REPORT],
+        )
+
+    if blocking_reason == BLOCKING_WEAK_UTR_SUFFIX:
+        return (
+            ACTION_CONFIRM_UTR_WITH_BANK,
+            {"date": line.value_date.isoformat(), "amount_paise": line.amount_paise},
+            ACTION_COSTS[ACTION_CONFIRM_UTR_WITH_BANK],
+        )
+
+    if blocking_reason == BLOCKING_AMBIGUOUS_SETSUM:
+        return (
+            ACTION_PROVIDE_SETTLEMENT_IDS,
+            {"date": line.value_date.isoformat(), "amount_paise": line.amount_paise},
+            ACTION_COSTS[ACTION_PROVIDE_SETTLEMENT_IDS],
+        )
+
+    if blocking_reason in {BLOCKING_UNKNOWN_SENDER, BLOCKING_RULE_CONFLICT}:
+        params: dict[str, Any] = {
+            "date": line.value_date.isoformat(),
+            "amount_paise": line.amount_paise,
+        }
+        if line.bank_ref:
+            params["bank_ref"] = line.bank_ref
+        return (
+            ACTION_CLASSIFY_COUNTERPARTY,
+            params,
+            ACTION_COSTS[ACTION_CLASSIFY_COUNTERPARTY],
+        )
+
+    if blocking_reason == BLOCKING_LEDGER_EXCEPTION:
+        return (
+            ACTION_RECONCILE_ORDER_LEDGER,
+            {"date": line.value_date.isoformat(), "amount_paise": line.amount_paise},
+            ACTION_COSTS[ACTION_RECONCILE_ORDER_LEDGER],
+        )
+
+    # Fallback default
+    return (
+        ACTION_CLASSIFY_COUNTERPARTY,
+        {"date": line.value_date.isoformat(), "amount_paise": line.amount_paise},
+        ACTION_COSTS[ACTION_CLASSIFY_COUNTERPARTY],
+    )
+
+
+def build_recovery_plan(
+    lines: list[BankCreditLine],
+    attributions: list[RailAttribution],
+    index: ReconIndex,
+    exceptions: list[ExceptionRecord],
+    *,
+    max_actions: int = 20,
+) -> RecoveryPlan:
+    """Build a ranked, deduplicated plan of next-best recovery actions.
+
+    Pure function: deterministic, reads only inputs, does not mutate anything.
+    Amounts are framed honestly as "up to ₹X if confirmed".
+    """
+    lines_by_key = {ln.key: ln for ln in lines}
+    attrs_by_key = {a.line_key: a for a in attributions}
+    excs_by_key = {e.line_key: e for e in exceptions}
+
+    # Find unresolved credits: credits with an exception or with UNKNOWN/abstained attribution
+    unresolved_lines: list[BankCreditLine] = []
+    seen_keys: set[str] = set()
+    for line in lines:
+        is_unresolved = (
+            line.key in excs_by_key
+            or (line.key in attrs_by_key and (
+                attrs_by_key[line.key].abstained
+                or attrs_by_key[line.key].rail == Rail.UNKNOWN.value
+            ))
+        )
+        if is_unresolved and line.key not in seen_keys:
+            unresolved_lines.append(line)
+            seen_keys.add(line.key)
+
+    unresolved_count = len(unresolved_lines)
+    unresolved_paise = sum(ln.amount_paise for ln in unresolved_lines)
+
+    if not unresolved_lines:
+        return RecoveryPlan(
+            actions=(),
+            unresolved_count=0,
+            unresolved_paise=0,
+            recoverable_if_actioned_paise=0,
+            note=None,
+        )
+
+    # Group identical actions (same action_type + params)
+    # group_key -> (action_type, params, cost, list_of_line_keys, list_of_amounts)
+    groups: dict[tuple[str, tuple[tuple[str, Any], ...]], dict[str, Any]] = {}
+
+    for line in unresolved_lines:
+        attr = attrs_by_key.get(
+            line.key,
+            RailAttribution(line.key, Rail.UNKNOWN.value, 0.0, "none", [], abstained=True),
+        )
+        exc = excs_by_key.get(line.key)
+        blocking = _derive_blocking_reason(line, attr, index, exc)
+        act_type, params, cost = _map_blocking_to_action(line, blocking, exc)
+
+        param_items = tuple(sorted(params.items()))
+        g_key = (act_type, param_items)
+
+        if g_key not in groups:
+            groups[g_key] = {
+                "action_type": act_type,
+                "params": params,
+                "cost": cost,
+                "keys": [],
+                "amounts": [],
+            }
+        groups[g_key]["keys"].append(line.key)
+        groups[g_key]["amounts"].append(line.amount_paise)
+
+    # Construct RecoveryAction for each group
+    actions: list[RecoveryAction] = []
+    for g in groups.values():
+        resolves = tuple(sorted(set(g["keys"])))
+        rec_paise = sum(g["amounts"])
+        cost = g["cost"]
+        gain_per_cost = rec_paise / cost if cost > 0 else 0.0
+        actions.append(
+            RecoveryAction(
+                action_type=g["action_type"],
+                params=g["params"],
+                resolves=resolves,
+                recoverable_paise=rec_paise,
+                cost=cost,
+                gain_per_cost=gain_per_cost,
+            )
+        )
+
+    # Rank actions: gain_per_cost desc, recoverable_paise desc, action_type asc, resolves asc
+    actions.sort(key=lambda a: (-a.gain_per_cost, -a.recoverable_paise, a.action_type, a.resolves))
+
+    # Cap at max_actions
+    note: str | None = None
+    if len(actions) > max_actions:
+        total_actions = len(actions)
+        actions = actions[:max_actions]
+        note = (
+            f"Plan capped at top {max_actions} actions (of {total_actions} available) "
+            "ranked by expected impact per cost."
+        )
+
+    # Compute recoverable_if_actioned_paise counting each credit ONCE (set union)
+    actioned_keys: set[str] = set()
+    for a in actions:
+        actioned_keys.update(a.resolves)
+    recoverable_if_actioned_paise = sum(
+        lines_by_key[k].amount_paise for k in actioned_keys if k in lines_by_key
+    )
+
+    return RecoveryPlan(
+        actions=tuple(actions),
+        unresolved_count=unresolved_count,
+        unresolved_paise=unresolved_paise,
+        recoverable_if_actioned_paise=recoverable_if_actioned_paise,
+        note=note,
+    )
