@@ -273,6 +273,279 @@ def landing_page() -> str:
     </tbody>
   </table></div>
 
+  <section class="bb-section" aria-labelledby="bb-title">
+  <style>
+    .bb-section {
+      padding: 72px 0;
+      color: var(--tp);
+      font-family: var(--ui);
+    }
+
+    .bb-header {
+      margin-bottom: 24px;
+    }
+
+    .bb-header .section-h,
+    .bb-header .section-s {
+      margin-left: 0;
+      margin-right: 0;
+    }
+
+    .bb-header .section-h {
+      margin-top: 0;
+      margin-bottom: 6px;
+    }
+
+    .bb-header .section-s {
+      margin-top: 0;
+      margin-bottom: 0;
+    }
+
+    .bb-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .bb-table {
+      width: 100%;
+      min-width: 880px;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .bb-table th,
+    .bb-table td {
+      padding: 16px 18px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .bb-table th {
+      color: var(--ts);
+      background: var(--sunken);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .bb-table th:first-child {
+      width: 21%;
+    }
+
+    .bb-table th:nth-child(2),
+    .bb-table th:nth-child(3) {
+      width: 11%;
+    }
+
+    .bb-table th:nth-child(4) {
+      width: 25%;
+    }
+
+    .bb-table th:nth-child(5) {
+      width: 32%;
+    }
+
+    .bb-table tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .bb-table tbody tr:hover {
+      background: var(--sunken);
+    }
+
+    .bb-method {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--tp);
+      font-weight: 700;
+    }
+
+    .bb-method-note {
+      display: block;
+      color: var(--ts);
+      font-size: 12px;
+    }
+
+    .bb-metric {
+      display: block;
+      color: var(--tp);
+      font-family: var(--mono);
+      font-size: 17px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .bb-fail {
+      color: var(--warn);
+      font-weight: 700;
+    }
+
+    .bb-pass {
+      color: var(--ok);
+      font-weight: 700;
+    }
+
+    .bb-untangle-row {
+      background: color-mix(in srgb, var(--ok) 5%, var(--surface));
+    }
+
+    .bb-untangle-row:hover {
+      background: color-mix(in srgb, var(--ok) 8%, var(--surface)) !important;
+    }
+
+    .bb-untangle-row .bb-method {
+      color: var(--ok);
+    }
+
+    .bb-detail {
+      display: block;
+      margin-top: 3px;
+      color: var(--ts);
+      font-size: 12px;
+    }
+
+    .bb-close {
+      margin: 20px 0 0;
+      max-width: 820px;
+      font-family: var(--disp);
+      font-size: 20px;
+      line-height: 1.4;
+      letter-spacing: 0;
+    }
+
+    .bb-close strong {
+      color: var(--ok);
+      font-weight: 600;
+    }
+
+    .bb-source {
+      margin: 14px 0 0;
+      max-width: 820px;
+      font-size: 12px;
+      color: var(--tt);
+      line-height: 1.55;
+    }
+    .bb-source code {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--ts);
+    }
+
+    @media (max-width: 640px) {
+      .bb-section {
+        padding: 52px 0;
+      }
+
+      .bb-table th,
+      .bb-table td {
+        padding: 14px;
+      }
+
+      .bb-close {
+        font-size: 18px;
+      }
+    }
+  </style>
+
+  <header class="bb-header">
+    <h2 class="section-h" id="bb-title">Baseline Battle</h2>
+    <p class="section-s">Measured on 294 lines, with razorpay_settlement as the positive class.</p>
+  </header>
+
+  <div class="bb-table-wrap">
+    <table class="bb-table">
+      <thead>
+        <tr>
+          <th scope="col">Matcher</th>
+          <th scope="col">Precision</th>
+          <th scope="col">Recall</th>
+          <th scope="col">Fooled by</th>
+          <th scope="col">Blind to</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <span class="bb-method">Brand-word match</span>
+            <span class="bb-method-note">One recognizable name</span>
+          </td>
+          <td><span class="bb-metric">83%</span></td>
+          <td><span class="bb-metric">86%</span></td>
+          <td>
+            <span class="bb-fail">100% false-positives</span>
+            <span class="bb-detail">RAZORPAYX PAYOUTS vendor refunds</span>
+          </td>
+          <td>
+            <span class="bb-fail">0% recall</span>
+            <span class="bb-detail">Brand-less real settlements</span>
+          </td>
+        </tr>
+
+        <tr>
+          <td>
+            <span class="bb-method">Amount + date match</span>
+            <span class="bb-method-note">One coincident pair</span>
+          </td>
+          <td><span class="bb-metric">84%</span></td>
+          <td><span class="bb-metric">80%</span></td>
+          <td>
+            <span class="bb-fail">81% false-positives</span>
+            <span class="bb-detail">Coincidental amount collisions</span>
+          </td>
+          <td>
+            <span class="bb-fail">0% recall</span>
+            <span class="bb-detail">Split, merge, and carry-forward settlements</span>
+          </td>
+        </tr>
+
+        <tr>
+          <td>
+            <span class="bb-method">Clean-UTR match</span>
+            <span class="bb-method-note">One pristine identifier</span>
+          </td>
+          <td><span class="bb-metric">100%</span></td>
+          <td><span class="bb-metric bb-fail">52%</span></td>
+          <td>
+            <span class="bb-detail">Precise when the key survives intact</span>
+          </td>
+          <td>
+            <span class="bb-fail">0% recall</span>
+            <span class="bb-detail">Mangled, prefix-destroyed, or absent UTRs</span>
+          </td>
+        </tr>
+
+        <tr class="bb-untangle-row">
+          <td>
+            <span class="bb-method">untangle</span>
+            <span class="bb-method-note">Tiered evidence + calibrated abstention</span>
+          </td>
+          <td><span class="bb-metric bb-pass">1.000</span></td>
+          <td><span class="bb-metric bb-pass">0.91</span></td>
+          <td>
+            <span class="bb-pass">0 decoy false-positives</span>
+            <span class="bb-detail">Look-alikes do not create a tie</span>
+          </td>
+          <td>
+            <span class="bb-pass">Abstains instead of guessing</span>
+            <span class="bb-detail">Uncertain cases stay explicit</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="bb-close">Every shortcut is fooled by the trap it can't see. <strong>untangle needs a real tie, or it says so.</strong></p>
+  <p class="bb-source">Every figure above is measured on the same labelled 294-line benchmark by <code>generator/difficulty_probe.py</code> — the naive baselines and untangle scored against the identical blind ground truth. Reproduce with <code>python -m generator.difficulty_probe</code>.</p>
+</section>
+
   <h2 class="section-h">How it works</h2>
   <p class="section-s">Three files in, a paise-exact verdict out. No account, no storage.</p>
   <div class="steps">
