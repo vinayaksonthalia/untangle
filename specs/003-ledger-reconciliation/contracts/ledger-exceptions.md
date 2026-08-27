@@ -4,18 +4,6 @@ The public "interface" of this feature is the set of exception classes it adds t
 exception queue. Each is an `ExceptionRecord` (existing schema) with the fields below. These codes
 are stable identifiers consumers (dashboard, CSV/JSON export, a CA) may rely on.
 
-## `uncredited_order`
-- **Trigger**: a ledger order in a believed-paid status whose `order_id` matches no *reconciled*
-  Razorpay settlement.
-- **Meaning**: the merchant thinks this money arrived; the proven settlement slice does not show it.
-  Potentially lost revenue, a stuck settlement, or a non-Razorpay rail.
-- **Evidence**: the ledger row (order_id, amount, status, date); the fact that no reconciled
-  settlement covers this order_id.
-- **Suggested action**: "Verify against the gateway settlement report — this paid order has no
-  matching Razorpay settlement."
-- **Never**: force-match by amount/date. If an id match exists but the amount disagrees, this is a
-  `ledger_mismatch`, not `uncredited_order`.
-
 ## `ledger_mismatch`
 - **Trigger**: a reconciled settlement's `order_id` is (a) absent from the ledger, or (b) present but
   in a status contradicting a completed settlement, or (c) present with an amount outside ±₹1 tolerance.

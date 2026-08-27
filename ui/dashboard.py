@@ -35,6 +35,9 @@ _REASON = {
     "uncredited_settlement": ("uncredited settlement", "#8C8C82"),
     "reconstructed_split_leg": ("reconstructed split leg", "#2B5EDB"),
     "rule_conflict": ("rule conflict", "#B23B3B"),
+    "ledger_mismatch": ("ledger mismatch", "#B4720A"),
+    "duplicate_order_booking": ("duplicate order booking", "#B4720A"),
+    "refund_not_reflected": ("refund not reflected", "#8A6D3B"),
 }
 
 

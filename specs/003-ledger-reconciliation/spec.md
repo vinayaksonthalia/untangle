@@ -126,3 +126,23 @@ the suggested correction.
 - Amounts in all three files are integer paise after ingestion, compared to the exact paise within the same labelled rounding tolerance the reconciliation engine already uses.
 - This feature builds on the existing proven-Razorpay slice and exception framework; it reuses their evidence/traceability conventions rather than inventing a parallel one.
 - Scope is v1 order↔settlement discrepancy detection only; multi-currency, partial-capture accounting, and journal posting are explicitly out of scope.
+
+---
+
+## Design revision (post-implementation review, 2026-08-27)
+
+Four rounds of adversarial review (gpt-5.6-sol) refined the design without changing its intent:
+
+- **`uncredited_order` was dropped.** From these three files the engine cannot honestly claim
+  "Razorpay owes you for this order" — an order absent from Razorpay's recon report is simply not
+  Razorpay's (another rail), so flagging it as an uncredited *Razorpay* discrepancy would be a false
+  Razorpay signal. The genuine value is in the books-integrity classes below. (US1's "money owed"
+  goal is not provable from this input and is retired; the recon-report-backed classes remain.)
+- **Outputs are AGGREGATED** — one summary `ExceptionRecord` per class (count, distinct-order total,
+  examples), never one row per order — so the exception queue stays short and honest (Constitution V).
+- **All checks are scoped to the PROVEN (balanced) reconciled slice** and to orders with a covered
+  *payment* row; refund/dispute-only rows never make an order "settled". A doubly-booked order is
+  reported only as a duplicate and abstains on status/amount. `(type, entity_id)` keys that resolve
+  to materially conflicting rows are excluded (abstain) rather than resolved arbitrarily.
+
+Final classes: `ledger_mismatch`, `duplicate_order_booking`, `refund_not_reflected`.
