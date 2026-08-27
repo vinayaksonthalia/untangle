@@ -25,9 +25,9 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from math import comb
+from math import ceil, comb
 
-from engine.attribute import _combine, attribute_line
+from engine.attribute import _combine, attribute_all
 from engine.challenger import challenge_razorpay
 from engine.evidence import ReconIndex, narration_rail_signals
 from engine.ingest import load_bank, load_recon
@@ -104,13 +104,15 @@ def calibrate_proof_margin(
     """
     if not candidates:
         return None
+    if not (0.0 < grid_step <= 1.0):  # invalid grid → fail closed, never miscertify
+        return None
     baseline_correct = sum(1 for _m, c in candidates if c)
     if baseline_correct == 0:
         return None
 
-    n_grid = int(round(1.0 / grid_step)) + 1
-    alpha = (1.0 - confidence) / n_grid  # Bonferroni across the predeclared grid
-    grid = [round(i * grid_step, 6) for i in range(n_grid)]
+    # Predeclared grid over [0, 1] with a guaranteed 1.0 endpoint; Bonferroni over its exact size.
+    grid = sorted({round(min(i * grid_step, 1.0), 6) for i in range(ceil(1.0 / grid_step) + 1)})
+    alpha = (1.0 - confidence) / len(grid)
 
     best: MarginCalibration | None = None
     for t in grid:
@@ -173,16 +175,20 @@ def collect_candidate_margins(
     truth = _truth_by_line_id(truth_path)
     key_to_lineid = build_key_to_lineid(bank_csv)
 
+    # Use attribute_all (gate off) so candidates cover EVERY machine Razorpay verdict — including the
+    # Tier-C split-reconstruction legs that attribute_line alone would miss.
+    attrs = attribute_all(lines, index, threshold, margin_threshold=0.0)
+    line_by_key = {ln.key: ln for ln in lines}
+
     candidates: list[tuple[float, bool]] = []
     total_true_rzp = sum(1 for r in truth.values() if r == _RZP)
     baseline_correct = 0
-    for ln in lines:
-        a = attribute_line(ln, index, threshold, margin_threshold=0.0)
+    for a in attrs:
         if a.rail != _RZP or a.abstained:
             continue
+        ln = line_by_key[a.line_key]
         res = challenge_razorpay(ln, index, a.evidence, narration_rail_signals(ln), a.confidence, _combine)
-        true_rail = truth.get(key_to_lineid.get(ln.key, ""), "")
-        correct = true_rail == _RZP
+        correct = truth.get(key_to_lineid.get(ln.key, ""), "") == _RZP
         candidates.append((res.proof_margin, correct))
         if correct:
             baseline_correct += 1
@@ -241,9 +247,12 @@ def run(argv: list[str] | None = None) -> int:
     if result is None:
         if n_err == 0:
             print("  No benchmark false-positives to gate out — precision is already 1.000.")
-            print("  Honest result: the challenger surfaces per-verdict margins for transparency, but")
-            print("  no POSITIVE threshold is certified (a positive threshold would only cut recall for")
-            print("  no measured precision gain). Feature stays at margin_threshold = 0.0 (surface-only).")
+            print("  Honest result: no POSITIVE threshold is certified (a positive threshold would only")
+            print("  cut recall for no measured precision gain). The challenger stays INACTIVE in")
+            print("  production (margin_threshold = 0.0): it does not run, so it neither gates nor")
+            print("  annotates verdicts here. It is wired + tested, ready to enable when a benchmark")
+            print("  with real false-positives certifies a threshold; its abstain-on-fragile behaviour")
+            print("  is exercised by the crafted unit tests.")
         else:
             print("  FAIL CLOSED: no threshold meets the precision target within the recall budget.")
             print("  Feature stays disabled (margin_threshold = 0.0).")

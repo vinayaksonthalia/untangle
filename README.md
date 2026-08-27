@@ -66,8 +66,10 @@ Razorpay credits whose UTR was mangled) or **fooled** (label look-alike decoys a
 - **Order-ledger reconciliation** — cross-checks the proven slice against your order ledger
   (uncredited / missing / duplicate / refund-not-reflected).
 - **Proof Packets** — a per-credit evidence receipt (JSON/CSV) for every verdict; the whole run is auditable.
-- **An adversarial challenger** — before accepting any attribution, untangle actively tries to *disprove*
-  it and reports a proof margin. It knows when *not* to act.
+- **An adversarial challenger** — a counterfactual engine that, before accepting a Razorpay verdict, tries
+  to *disprove* it and computes a proof margin, abstaining when a competing explanation is too close. It
+  knows when *not* to act. *(Wired and tested; enabled once a benchmark with real false-positives certifies
+  a margin threshold — on the current benchmark precision is already 1.000, so it stays inactive.)*
 
 ## Measured — precision first, never a bare match rate
 

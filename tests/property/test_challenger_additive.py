@@ -24,23 +24,36 @@ def test_additive_at_zero_threshold():
            [(a.line_key, a.rail, a.abstained, round(a.confidence, 6)) for a in gated]
 
 
-def test_precision_monotone_at_positive_thresholds():
+def _truth_by_key():
+    """line_key -> true rail, via the generator ground truth."""
+    import json
+
+    from eval.metrics import build_key_to_lineid
+    labels = {lab["line_id"]: lab["rail"]
+              for lab in json.load(open("data/ground_truth.json"))["labels"]}
+    return {k: labels.get(lid, "") for k, lid in build_key_to_lineid("data/bank_statement.csv").items()}
+
+
+def test_gate_only_removes_razorpay_predictions_so_false_positives_cannot_grow():
+    """The honest safety invariant. The gate can only DEMOTE a Razorpay verdict, never add one, so at
+    any positive threshold the set of Razorpay predictions is a SUBSET of baseline — hence the set of
+    Razorpay FALSE-positives is a subset of baseline's, i.e. false-positives can only decrease. (Subset
+    alone does not make precision monotone in general; the real guarantee is 'no new false positives'.)"""
     lines, index = _pipeline()
+    truth = _truth_by_key()
     base = attribute_all(lines, index, 0.55)
     base_rzp = {a.line_key for a in base if a.rail == Rail.RAZORPAY_SETTLEMENT.value}
-    for t in (0.05, 0.2, 0.5, 0.99):
-        gated = attribute_all(lines, index, 0.55, margin_threshold=t)
-        gated_rzp = {a.line_key for a in gated if a.rail == Rail.RAZORPAY_SETTLEMENT.value}
-        # razorpay predictions can only shrink → precision cannot drop, false-positives can only fall
-        assert gated_rzp <= base_rzp, f"threshold {t} added razorpay predictions"
-        # a stronger threshold never predicts MORE razorpay than a weaker one
-    # monotone in the threshold itself
+    base_fp = {k for k in base_rzp if truth.get(k) != Rail.RAZORPAY_SETTLEMENT.value}
+
     prev = base_rzp
     for t in (0.05, 0.2, 0.5, 0.99):
-        cur = {a.line_key for a in attribute_all(lines, index, 0.55, margin_threshold=t)
-               if a.rail == Rail.RAZORPAY_SETTLEMENT.value}
-        assert cur <= prev, f"threshold {t} not monotone vs weaker threshold"
-        prev = cur
+        gated_rzp = {a.line_key for a in attribute_all(lines, index, 0.55, margin_threshold=t)
+                     if a.rail == Rail.RAZORPAY_SETTLEMENT.value}
+        assert gated_rzp <= base_rzp, f"threshold {t} added razorpay predictions"
+        gated_fp = {k for k in gated_rzp if truth.get(k) != Rail.RAZORPAY_SETTLEMENT.value}
+        assert gated_fp <= base_fp, f"threshold {t} introduced a new false positive"
+        assert gated_rzp <= prev, f"threshold {t} not monotone vs a weaker threshold"
+        prev = gated_rzp
 
 
 def test_deterministic():

@@ -380,6 +380,8 @@ def reconstruct_splits(
     index: ReconIndex,
     attrs: list[RailAttribution],
     threshold: float,
+    *,
+    margin_threshold: float = 0.0,
 ) -> list[RailAttribution]:
     """Recover split-settlement legs the *provable* way (FR-016): a Razorpay settlement paid out
     across 2–3 bank credits leaves legs whose per-leg UTR is absent from the recon report, so each
@@ -465,8 +467,9 @@ def reconstruct_splits(
                 f"1 of {k} bank legs whose amounts uniquely sum to {balance} the settlement net for {sid}",
                 _SPLIT_CONFIDENCE,
             )]
-            out.append(RailAttribution(
-                ln.key, Rail.RAZORPAY_SETTLEMENT.value, _SPLIT_CONFIDENCE, Tier.C.value, ev, abstained=False
+            # A split leg is a MACHINE Razorpay verdict, so it goes through the same adversarial gate.
+            out.append(_finalize_razorpay(
+                ln, index, ev, narration_rail_signals(ln), _SPLIT_CONFIDENCE, Tier.C, margin_threshold
             ))
         else:
             out.append(a)
@@ -482,7 +485,7 @@ def attribute_all(
     margin_threshold: float = 0.0,
 ) -> list[RailAttribution]:
     base = [attribute_line(ln, index, threshold, margin_threshold=margin_threshold) for ln in lines]
-    base = reconstruct_splits(lines, index, base, threshold)
+    base = reconstruct_splits(lines, index, base, threshold, margin_threshold=margin_threshold)
     if not rules:
         return base
     from engine.rules import apply_approved_rules

@@ -100,6 +100,20 @@ def test_gate_additive_at_zero_threshold():
     assert [(a.rail, a.abstained) for a in base] == [(a.rail, a.abstained) for a in gated0]
 
 
+def test_to_dict_carries_challenger_fields_when_present():
+    from engine.models import RailAttribution
+    plain = RailAttribution("k", Rail.RAZORPAY_SETTLEMENT.value, 0.9, "A", [])
+    d = plain.to_dict()
+    assert "proof_margin" not in d and "competing_explanation" not in d  # absent when unset
+    annotated = RailAttribution(
+        "k", Rail.UNKNOWN.value, 0.9, "NONE", [], abstained=True,
+        proof_margin=0.03, competing_explanation={"operator": "observed_competing_rail", "rail": "x"},
+    )
+    ad = annotated.to_dict()
+    assert ad["proof_margin"] == 0.03
+    assert ad["competing_explanation"]["operator"] == "observed_competing_rail"
+
+
 def test_gate_only_demotes_razorpay_at_high_threshold():
     lines, index = _dataset_index_and_lines()
     base = [attribute_line(ln, index, 0.55) for ln in lines]

@@ -117,7 +117,7 @@ class RailAttribution:
     competing_explanation: dict | None = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "line_key": self.line_key,
             "rail": self.rail,
             "confidence": round(self.confidence, 4),
@@ -126,6 +126,12 @@ class RailAttribution:
             "llm_used": self.llm_used,
             "evidence": [asdict(e) for e in self.evidence],
         }
+        # Feature 004 — carry the challenger audit trail when present (accepted margin / abstention).
+        if self.proof_margin is not None:
+            d["proof_margin"] = round(self.proof_margin, 4)
+        if self.competing_explanation is not None:
+            d["competing_explanation"] = self.competing_explanation
+        return d
 
 
 @dataclass
