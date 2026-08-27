@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections import defaultdict
 from itertools import combinations
 
+from engine.challenger import challenge_razorpay
 from engine.evidence import (
     ReconIndex,
     extract_utr_tokens,
@@ -183,7 +184,63 @@ def _setsum_evidence(line: BankCreditLine, index: ReconIndex) -> list[EvidenceIt
     return None
 
 
-def attribute_line(line: BankCreditLine, index: ReconIndex, threshold: float) -> RailAttribution:
+def _finalize_razorpay(
+    line: BankCreditLine,
+    index: ReconIndex,
+    rzp_ev: list[EvidenceItem],
+    non_rzp: dict,
+    rzp_score: float,
+    tier: Tier,
+    margin_threshold: float,
+) -> RailAttribution:
+    """Accept a machine Razorpay verdict — but first let the adversarial challenger try to disprove it.
+
+    With ``margin_threshold <= 0`` the challenger is skipped entirely, so behaviour is byte-identical to
+    pre-Feature-004 (additivity). With a positive, calibrated threshold, a verdict whose proof margin is
+    below it (or whose challenger overflowed) is demoted to an abstention carrying the strongest
+    competing explanation. The gate can only ever turn a Razorpay verdict into 'unknown'.
+    """
+    accept = RailAttribution(
+        line.key, Rail.RAZORPAY_SETTLEMENT.value, rzp_score, tier.value, rzp_ev
+    )
+    if margin_threshold <= 0.0:
+        return accept
+
+    result = challenge_razorpay(line, index, rzp_ev, non_rzp, rzp_score, _combine)
+    if result.truncated or result.proof_margin < margin_threshold:
+        note = (
+            f"Razorpay proof margin {result.proof_margin:.3f} is below the calibrated minimum "
+            f"{margin_threshold:.3f}."
+        )
+        if result.strongest is not None:
+            note += (
+                f" Strongest alternative: {result.strongest.rail} "
+                f"({result.strongest.score:.2f}) — {result.strongest.detail}."
+            )
+        ev = list(rzp_ev) + [EvidenceItem("proof_margin_low", note, 0.0)]
+        return RailAttribution(
+            line.key,
+            Rail.UNKNOWN.value,
+            rzp_score,
+            Tier.NONE.value,
+            ev,
+            abstained=True,
+            proof_margin=result.proof_margin,
+            competing_explanation=(result.strongest.as_dict() if result.strongest else None),
+        )
+    accept.proof_margin = result.proof_margin
+    if result.strongest is not None:
+        accept.competing_explanation = result.strongest.as_dict()
+    return accept
+
+
+def attribute_line(
+    line: BankCreditLine,
+    index: ReconIndex,
+    threshold: float,
+    *,
+    margin_threshold: float = 0.0,
+) -> RailAttribution:
     non_rzp = narration_rail_signals(line)
 
     # FR-015: v1 attributes inbound CREDITS. A debit (bank charge / reversal / sweep-out) is
@@ -203,12 +260,10 @@ def attribute_line(line: BankCreditLine, index: ReconIndex, threshold: float) ->
     rzp_ev = razorpay_signals(line, index)
     rzp_hard = any(e.signal in _HARD_RZP_SIGNALS for e in rzp_ev)
 
-    # Tier A: clean UTR exact match is decisive.
+    # Tier A: clean UTR exact match is decisive — but still challenged before acceptance.
     if any(e.signal == "utr_exact" for e in rzp_ev):
         conf = _combine(rzp_ev)
-        return RailAttribution(
-            line.key, Rail.RAZORPAY_SETTLEMENT.value, conf, Tier.A.value, rzp_ev
-        )
+        return _finalize_razorpay(line, index, rzp_ev, non_rzp, conf, Tier.A, margin_threshold)
 
     # Tier C: no single-net/UTR tie yet, but the line looks Razorpay-ish → try set-sum.
     tier_used = Tier.B
@@ -276,8 +331,11 @@ def attribute_line(line: BankCreditLine, index: ReconIndex, threshold: float) ->
             line.key, Rail.UNKNOWN.value, best_conf, Tier.NONE.value, best_ev, abstained=True
         )
 
-    tier = best_tier if best_rail == Rail.RAZORPAY_SETTLEMENT.value else Tier.B
-    return RailAttribution(line.key, best_rail, best_conf, tier.value, best_ev)
+    if best_rail == Rail.RAZORPAY_SETTLEMENT.value:
+        return _finalize_razorpay(
+            line, index, best_ev, non_rzp, best_conf, best_tier, margin_threshold
+        )
+    return RailAttribution(line.key, best_rail, best_conf, Tier.B.value, best_ev)
 
 
 _SPLIT_MAX_LEGS = 3
@@ -322,6 +380,8 @@ def reconstruct_splits(
     index: ReconIndex,
     attrs: list[RailAttribution],
     threshold: float,
+    *,
+    margin_threshold: float = 0.0,
 ) -> list[RailAttribution]:
     """Recover split-settlement legs the *provable* way (FR-016): a Razorpay settlement paid out
     across 2–3 bank credits leaves legs whose per-leg UTR is absent from the recon report, so each
@@ -407,8 +467,9 @@ def reconstruct_splits(
                 f"1 of {k} bank legs whose amounts uniquely sum to {balance} the settlement net for {sid}",
                 _SPLIT_CONFIDENCE,
             )]
-            out.append(RailAttribution(
-                ln.key, Rail.RAZORPAY_SETTLEMENT.value, _SPLIT_CONFIDENCE, Tier.C.value, ev, abstained=False
+            # A split leg is a MACHINE Razorpay verdict, so it goes through the same adversarial gate.
+            out.append(_finalize_razorpay(
+                ln, index, ev, narration_rail_signals(ln), _SPLIT_CONFIDENCE, Tier.C, margin_threshold
             ))
         else:
             out.append(a)
@@ -420,9 +481,11 @@ def attribute_all(
     index: ReconIndex,
     threshold: float,
     rules: list | None = None,
+    *,
+    margin_threshold: float = 0.0,
 ) -> list[RailAttribution]:
-    base = [attribute_line(ln, index, threshold) for ln in lines]
-    base = reconstruct_splits(lines, index, base, threshold)
+    base = [attribute_line(ln, index, threshold, margin_threshold=margin_threshold) for ln in lines]
+    base = reconstruct_splits(lines, index, base, threshold, margin_threshold=margin_threshold)
     if not rules:
         return base
     from engine.rules import apply_approved_rules

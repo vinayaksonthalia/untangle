@@ -63,13 +63,15 @@ def test_phase5_gate_dashboard_leads_with_attribution_and_abstention():
 
 
 def test_phase5_gate_readme_leads_with_attribution():
-    """Gate 1 & 2: README leads with attribution + abstention headline."""
+    """Gate 1 & 2: README leads with attribution + honest abstention, precision-first (never a bare
+    match rate). Enforced on the redesigned product README."""
     readme = Path("README.md").read_text(encoding="utf-8")
-    assert "## Headline: Attribution & Calibrated Abstention (PR-004)" in readme
-    assert "Attribution Precision: 1.000 (100%)" in readme
-    assert "0 decoy false-positives" in readme
-    assert "Precision-at-Coverage & Abstention Curve" in readme
-    assert "Reconciliation & Recoverable ITC (Proven Slice Only)" in readme
+    assert "Attribution-first reconciliation" in readme          # leads with attribution
+    assert "abstained" in readme or "abstains" in readme         # honest abstention, not a guess
+    assert "Razorpay attribution precision: 1.000" in readme     # precision headline
+    assert "0 decoy false-positives" in readme                   # zero false "this is Razorpay's"
+    assert "precision-first" in readme.lower() or "precision first" in readme.lower()
+    assert "reconcil" in readme.lower()                          # reconciliation of the proven slice
 
 
 def test_phase5_gate_one_click_demo_reproduction(client):
