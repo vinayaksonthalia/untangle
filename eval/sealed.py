@@ -133,10 +133,12 @@ def run_sealed_holdout_comparison(seed: int = DEFAULT_SEALED_SEED, sealed_dir: s
 
     # Load dev baseline if available
     dev_res_path = "out/report.json"
+    # Fallback dev-set baselines, used only if out/report.json is absent (otherwise recomputed
+    # live below). Kept current with the shipped engine so a missing report never prints stale numbers.
     dev_prec = 1.000
-    dev_recall = 0.938
+    dev_recall = 0.841
     dev_decoy = 0
-    dev_ece = 0.0876
+    dev_ece = 0.0764
     if os.path.exists(dev_res_path):
         try:
             dev_data = json.load(open(dev_res_path))

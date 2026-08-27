@@ -135,3 +135,125 @@ def test_setsum_ambiguity_causes_attribute_line_to_abstain():
     assert attr.abstained is True
     assert attr.rail == Rail.UNKNOWN.value
     assert any(e.signal == "multiple_satisfying_subsets" for e in attr.evidence)
+
+
+def test_proof_gate_brand_plus_unverified_utr_token_never_wins_razorpay():
+    """Proof-gate (audit HIGH): a credit carrying a Razorpay brand word AND a UTR-SHAPED token
+    that is NOT in the settlement report must NEVER be attributed razorpay_settlement. That token
+    proves nothing (settlement_ref is resemblance, not a tie), and this is the exact decoy trap:
+    a non-Razorpay credit engineered to look like a split-settlement leg."""
+    from engine.attribute import attribute_line
+    # Recon report contains ONE real settlement UTR and a couple of nets — none matching this line.
+    idx = _index(utr="1780498800xp8vma", nets=[("s9", 55555, date(2026, 6, 10))])
+    # Brand word + a 16-char UTR-shaped token that is NOT the settlement_utr, no amount tie.
+    line = _line("NEFT RZP REF 1234567890123456 RAZORPAY", amount=31050, vd="2026-06-15")
+    attr = attribute_line(line, idx, threshold=0.55)
+    assert attr.rail != Rail.RAZORPAY_SETTLEMENT.value, "brand + unverified token must not win razorpay"
+    assert attr.abstained is True
+
+
+def test_proof_gate_amount_tie_plus_brand_still_wins_razorpay():
+    """Guard against over-correction: a genuine amount tie (credit equals an ACTUAL settlement net)
+    within the value-date window, with a brand word, is a real tie and must still attribute
+    razorpay_settlement — the proof-gate removes resemblance, not real ties."""
+    from engine.attribute import attribute_line
+    idx = _index(nets=[("s1", 88400, date(2026, 6, 14))])
+    line = _line("NEFT RAZORPAY SETTLEMENT", amount=88400, vd="2026-06-14")
+    attr = attribute_line(line, idx, threshold=0.55)
+    assert attr.rail == Rail.RAZORPAY_SETTLEMENT.value
+    assert attr.abstained is False
+    assert any(e.signal == "amount_corr" for e in attr.evidence)
+
+
+def test_proof_gate_ifsc_plus_amount_no_utr_needs_real_tie():
+    """IFSC (razorpay RBL account) + a coincidental amount collision, no UTR: the amount tie is a
+    real tie so razorpay is allowed IF the amount uniquely matches a net; but IFSC/brand alone can
+    never manufacture a verdict. Here the amount does NOT match any net → must abstain."""
+    from engine.attribute import attribute_line
+    idx = _index(nets=[("s1", 77777, date(2026, 6, 10))])
+    line = _line("NEFT CR-RATN0000088-CREDIT", amount=12345, vd="2026-06-15")  # amount matches nothing
+    attr = attribute_line(line, idx, threshold=0.55)
+    assert attr.rail != Rail.RAZORPAY_SETTLEMENT.value
+    assert attr.abstained is True
+
+
+def test_proof_gate_embedded_utr_in_longer_numeric_run_does_not_fire():
+    """A 16-char UTR-looking window sliced out of a longer numeric run (e.g. a 20-digit account
+    number) must NOT be extracted as a UTR token (anchored regex)."""
+    from engine.evidence import extract_utr_tokens
+    # 20 contiguous digits: the old unanchored regex would slice a 16-char 'UTR' out of it.
+    assert extract_utr_tokens("NEFT 12345678901234567890 RAZORPAY") == []
+    # A properly delimited real-shaped token still extracts.
+    assert extract_utr_tokens("IMPS 1780498800xp8vma DONE") == ["1780498800xp8vma"]
+
+
+def test_proof_gate_amount_corr_multi_is_corroboration_only():
+    """When several settlements share the matched net, the amount no longer identifies one
+    settlement: it is emitted as amount_corr_multi (corroboration), not the deciding amount_corr."""
+    idx = _index(nets=[("s1", 50000, date(2026, 6, 10)), ("s2", 50000, date(2026, 6, 10))])
+    ev = razorpay_signals(_line("RAZORPAY SETTLEMENT", amount=50000, vd="2026-06-10"), idx)
+    sigs = _signals(ev)
+    assert "amount_corr_multi" in sigs and "amount_corr" not in sigs
+
+
+def test_proof_gate_uncorroborated_suffix_collision_does_not_decide():
+    """sol review: a token that coincidentally tails a real settlement_utr, but on a credit with the
+    WRONG date and WRONG amount, must NOT become a deciding utr_suffix tie — it downgrades to
+    utr_suffix_weak (corroboration only) and the line abstains."""
+    from engine.attribute import attribute_line
+    idx = _index(utr="1780498800xp8vma")  # one real settlement, net 100000, settled 2026-06-10
+    # Token 'xp8vma' is the 6-char suffix of the real UTR, but this credit is far in date and a
+    # different amount, and carries a brand word (the decoy shape).
+    line = _line("NEFT RZP REF xp8vma RAZORPAY", amount=31050, vd="2026-07-20")
+    ev = razorpay_signals(line, idx)
+    sigs = _signals(ev)
+    assert "utr_suffix_weak" in sigs and "utr_suffix" not in sigs
+    attr = attribute_line(line, idx, threshold=0.55)
+    assert attr.rail != Rail.RAZORPAY_SETTLEMENT.value
+    assert attr.abstained is True
+
+
+def test_proof_gate_corroborated_suffix_still_decides():
+    """The genuine prefix-destroyed case (unique suffix + matching amount/date) must still win."""
+    from engine.attribute import attribute_line
+    idx = _index(utr="1780498800xp8vma")  # net 100000, settled 2026-06-10
+    line = _line("NEFT RZP xp8vma", amount=100000, vd="2026-06-10")  # amount + date corroborate
+    ev = razorpay_signals(line, idx)
+    assert "utr_suffix" in _signals(ev)
+    attr = attribute_line(line, idx, threshold=0.55)
+    assert attr.rail == Rail.RAZORPAY_SETTLEMENT.value and attr.abstained is False
+
+
+def test_proof_gate_abstention_surfaces_razorpay_uncertain_not_unattributed():
+    """Qodo PR#9 #2: when the proof-gate zeros a resemblance-only razorpay score, the abstained
+    line must KEEP its razorpay evidence so the exception reads 'razorpay-leaning, no tie — review
+    against the settlement report', not 'no distinctive signal, add a narration rule'."""
+    from engine.attribute import attribute_line
+    from engine.exceptions import build_exceptions
+    idx = _index(utr="1780498800xp8vma", nets=[("s9", 55555, date(2026, 6, 10))])
+    line = _line("NEFT RZP REF 1234567890123456 RAZORPAY SETTLEMENT", amount=31050, vd="2026-06-15")
+    attr = attribute_line(line, idx, threshold=0.55)
+    assert attr.abstained is True and attr.evidence, "abstained line must retain razorpay evidence"
+    excs = build_exceptions([attr], [], {line.key: line})
+    assert excs and excs[0].reason_code == "razorpay_uncertain"
+    assert "narration pattern" not in excs[0].suggested_action.lower()
+
+
+def test_utr_suffix_prefers_corroborated_and_is_deterministic():
+    """Qodo PR#9 #4: with both a corroborated and an uncorroborated suffix token present, the
+    corroborated (deciding) utr_suffix must win — regardless of token iteration order."""
+    # Two real settlement UTRs; 'xp8vma' tails the first (whose net/date we corroborate),
+    # 'zzzz99' would tail the second but is uncorroborated.
+    from datetime import datetime
+    rows = [
+        ReconRow("pay_a", "payment", 100000, 0, 0, 0, 100000, "setl_a", "1780498800xp8vma",
+                 datetime(2026, 6, 10), datetime(2026, 6, 9), False, None, None, "upi", None),
+        ReconRow("pay_b", "payment", 200000, 0, 0, 0, 200000, "setl_b", "9999000011zzzz99",
+                 datetime(2026, 6, 10), datetime(2026, 6, 9), False, None, None, "upi", None),
+    ]
+    idx = ReconIndex(rows)
+    # amount + date corroborate the 'xp8vma' settlement (net 100000, 2026-06-10)
+    line = _line("NEFT RZP xp8vma zzzz99", amount=100000, vd="2026-06-10")
+    for _ in range(5):
+        sigs = _signals(razorpay_signals(line, idx))
+        assert "utr_suffix" in sigs and "utr_suffix_weak" not in sigs
