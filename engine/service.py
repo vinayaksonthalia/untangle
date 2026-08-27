@@ -31,11 +31,11 @@ def reconcile(
     cfg = build_config(no_ai=no_ai, provider=provider, model=model, threshold=threshold, seed=seed)
     lines = load_bank(bank_path)
     recon_rows = load_recon(recon_path)
-    load_ledger(ledger_path)  # validated; used by later phases
+    order_ledger = load_ledger(ledger_path)  # Feature 003: cross-checked against the proven slice
     index = ReconIndex(recon_rows)
     attributions = attribute_all(lines, index, cfg.threshold)
     if cfg.use_ai:
         client = LLMClient(enabled=True, provider=cfg.provider, model=cfg.model, api_key=cfg.api_key)
         attributions = resolve_unknowns(attributions, {ln.key: ln for ln in lines}, index, client)
-    report, _ledger = build_report(cfg, lines, recon_rows, index, attributions)
+    report, _ledger = build_report(cfg, lines, recon_rows, index, attributions, order_ledger)
     return report.to_dict()
