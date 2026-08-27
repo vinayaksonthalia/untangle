@@ -52,7 +52,6 @@ def build_proof_packets(
     lines_by_key = {ln.key: ln for ln in lines}
     recon_by_key = {r.line_key: r for r in reconciliations}
     tax_by_entity = {eid: tax for eid, tax in feegst.by_entity}
-    rows_by_entity = {(r.type, r.entity_id): r for r in recon_rows}
 
     packets: list[dict] = []
     for a in attributions:
@@ -67,6 +66,11 @@ def build_proof_packets(
             {"signal": e.signal, "detail": e.detail, "explains": _TIE_LABEL[e.signal]}
             for e in a.evidence if e.signal in _TIE_LABEL
         ]
+        # Invariant (post proof-gate): a proven Razorpay verdict always rests on a report-backed
+        # tie. A packet with no tie has nothing to prove, so it is not a Proof Packet — skip it
+        # rather than present resemblance as proof.
+        if not ties:
+            continue
         corroboration = [
             {"signal": e.signal, "detail": e.detail, "weight": round(e.weight, 3)}
             for e in a.evidence if e.signal not in _TIE_LABEL
@@ -125,6 +129,10 @@ _CSV_COLUMNS = [
 
 def _csv_field(value: str) -> str:
     s = str(value)
+    # CSV formula-injection guard: a field beginning with = + - @ (or a tab/CR) can execute as a
+    # formula when the file is opened in a spreadsheet. Neutralize by prefixing a single quote.
+    if s[:1] in ("=", "+", "-", "@", "\t", "\r", "\n"):
+        s = "'" + s
     if any(c in s for c in [",", '"', "\n", "\r"]):
         return '"' + s.replace('"', '""') + '"'
     return s

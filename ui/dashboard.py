@@ -55,6 +55,17 @@ def _amt(paise: int) -> str:
     return f'{sign}<span class="rs">₹</span> {_grp(int(round(abs(paise) / 100)))}'
 
 
+def _embed_json(obj) -> str:
+    """JSON-encode for safe embedding inside a <script> element. json.dumps does not escape
+    ``<``, so a value containing ``</script>`` would break out of the script at the HTML-parser
+    level (stored XSS). Escape the HTML-significant characters and the JS line separators."""
+    s = json.dumps(obj, ensure_ascii=False)
+    return (
+        s.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+        .replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+    )
+
+
 def render(report: dict) -> str:
     t = report["totals"]
     bp = t["by_rail_paise"]; bc = t["by_rail_count"]
@@ -155,7 +166,7 @@ def render(report: dict) -> str:
         pac_rows="".join(pac_rows),
         exc_rows="".join(exc_rows), footer_ai=footer_ai,
         exc_toolbar=exc_toolbar, exc_section_copy=exc_section_copy, script=_DASH_JS,
-        proof_json=json.dumps(report.get("proof_packets", []), ensure_ascii=False),
+        proof_json=_embed_json(report.get("proof_packets", [])),
         proof_count=len(report.get("proof_packets", [])),
         seed=cfg.get("seed", "?"), n_recon=f'{t["n_recon_rows"]:,}',
         n_lines=t["n_bank_lines"], audit=html.escape(report["audit_root"][:10]),
@@ -454,7 +465,7 @@ _DASH_JS = """<script>
   }
   function toCsv(rows){
     var cols=['line_key','value_date','amount_inr','narration','bank_ref','rail','tier','confidence','tie_signals','reconciled','covered_entity_count','residual_paise','balanced','fee_gst_recoverable_inr'];
-    function q(v){ v=(v==null?'':String(v)); return /[",\\n\\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+    function q(v){ v=(v==null?'':String(v)); if('=+-@\\t\\r\\n'.indexOf(v.charAt(0))!==-1) v="'"+v; return /[",\\n\\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
     var out=[cols.join(',')];
     rows.forEach(function(p){
       var st=p.settlement||{};
