@@ -111,6 +111,10 @@ class RailAttribution:
     evidence: list[EvidenceItem] = field(default_factory=list)
     abstained: bool = False
     llm_used: bool = False
+    # Feature 004 — adversarial challenger. Set on accepted Razorpay lines (the audited margin) and on
+    # margin-driven abstentions (the strongest competing explanation). None everywhere else.
+    proof_margin: float | None = None
+    competing_explanation: dict | None = None
 
     def to_dict(self) -> dict:
         return {
