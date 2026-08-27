@@ -48,7 +48,7 @@ def _fmt_inr(paise: int) -> str:
     return ("-" if neg else "") + "₹" + s
 
 
-def build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
+def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None) -> RunReport:
     ledger = audit_mod.AuditLedger()
     ledger.append("run_start", {"engine_version": _ENGINE_VERSION, "seed": cfg.seed,
                                 "provider": cfg.provider_or_none(), "threshold": cfg.threshold,
@@ -75,6 +75,11 @@ def build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
         duplicate_or_split_rzp=sidx.duplicate_or_split_lines,
         unbalanced_rzp=sidx.unbalanced_lines,
     )
+    # Feature 003: order-ledger reconciliation is ADDITIVE — it only appends new exceptions and
+    # never touches any attribution/reconciliation verdict or metric above.
+    if order_ledger:
+        from engine.ledger import reconcile_ledger
+        exceptions = exceptions + reconcile_ledger(order_ledger, reconciliations, recon_rows)
     for r in reconciliations:
         ledger.append("reconciliation", {"line_key": r.line_key,
                                          "covered": len(r.covered_entity_ids),
@@ -134,7 +139,7 @@ def _cmd_run(args) -> int:
     try:
         lines = load_bank(args.bank)
         recon_rows = load_recon(args.recon)
-        _ = load_ledger(args.ledger)  # validated; used in later phases
+        order_ledger = load_ledger(args.ledger)  # Feature 003: cross-checked against the proven slice
     except InputError as exc:
         print(f"Input error: {exc}", file=sys.stderr)
         return 2
@@ -148,7 +153,7 @@ def _cmd_run(args) -> int:
         lines_by_key = {ln.key: ln for ln in lines}
         attributions = resolve_unknowns(attributions, lines_by_key, index, client)
 
-    report, _ledger = build_report(cfg, lines, recon_rows, index, attributions)
+    report, _ledger = build_report(cfg, lines, recon_rows, index, attributions, order_ledger)
 
     os.makedirs(args.out, exist_ok=True)
     report_path = os.path.join(args.out, "report.json")
