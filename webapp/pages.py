@@ -134,12 +134,13 @@ _LANDING_CSS = """<style>
 .hw{stroke-dasharray:1;stroke-dashoffset:1;animation:hwdraw 9s ease-in-out infinite;animation-delay:calc(var(--i)*.55s)}
 @keyframes hcin{to{opacity:1}}
 @keyframes hwdraw{0%{stroke-dashoffset:1}18%{stroke-dashoffset:0}86%{stroke-dashoffset:0}94%{stroke-dashoffset:1}100%{stroke-dashoffset:1}}
-.hw-ab{animation:hwdraw 9s ease-in-out infinite, abpulse 2.2s ease-in-out infinite}
-@keyframes abpulse{0%,100%{opacity:.55}50%{opacity:1}}
+/* abstained tie keeps its dashed look ("4 3") — only pulses, never redrawn */
+.hw-ab{animation:abpulse 2.2s ease-in-out infinite}
+@keyframes abpulse{0%,100%{opacity:.5}50%{opacity:1}}
 @media(prefers-reduced-motion:reduce){
   .hc{opacity:1;animation:none}
   .hw{stroke-dashoffset:0;animation:none}
-  .hw-ab{animation:none}
+  .hw-ab{animation:none;opacity:1}
 }
 /* hero hint + bring-your-own-data */
 .herohint{margin:18px 0 0;font-size:13px;color:var(--tt)}
@@ -184,7 +185,7 @@ _HERO_SVG = """<svg class="svgwrap" viewBox="0 0 440 300" role="img"
     <path class="hw" style="--i:1" pathLength="1" d="M132,93 C210,93 214,52 296,56" opacity=".85"/>
     <path class="hw" style="--i:2" pathLength="1" d="M132,137 C210,137 214,100 296,100"/>
     <path class="hw" style="--i:3" pathLength="1" d="M132,180 C210,180 214,148 296,148"/>
-    <path class="hw hw-ab" style="--i:4" pathLength="1" d="M132,224 C214,224 220,210 296,210" stroke="#e0b877" stroke-dasharray="4 3"/>
+    <path class="hw-ab" style="--i:4" d="M132,224 C214,224 220,210 296,210" stroke="#e0b877" stroke-dasharray="4 3"/>
   </g>
   <!-- rail pills -->
   <g font-family="Inter,sans-serif" font-size="11.5">
@@ -247,7 +248,8 @@ def landing_page() -> str:
       <p class="eyebrow">Run it on your own books</p>
       <h2 class="section-h" style="margin:0">Three exports in. A reconciled verdict out.</h2>
       <p class="section-s">No account, no integration, no signup. Export three files you already have and
-      drop them in — untangle reads them in memory and shows you the answer. Nothing is stored.</p>
+      drop them in — untangle reads them in a per-request temporary directory, shows you the answer, and
+      deletes them the moment the report renders. Nothing is persisted.</p>
     </div>
     <div class="bring-grid">
       <div class="bfile">
@@ -259,20 +261,20 @@ def landing_page() -> str:
       <div class="bfile">
         <div class="bnum">02</div>
         <h4>Razorpay settlement report</h4>
-        <p class="bsrc">Razorpay Dashboard → <b>Settlements → Reports</b> → export.</p>
-        <div class="bcols">entity_id · amount · fee · tax · settlement_utr</div>
+        <p class="bsrc">Razorpay Dashboard → <b>Settlements → Reports</b> → export as <b>JSON</b>.</p>
+        <div class="bcols">entity_id · type · amount · fee · tax · settlement_utr</div>
       </div>
       <div class="bfile">
         <div class="bnum">03</div>
         <h4>Order ledger</h4>
-        <p class="bsrc">Your orders/admin export — the list of what you sold.</p>
-        <div class="bcols">order_id · amount · status</div>
+        <p class="bsrc">Your orders/admin export (CSV) — the list of what you sold.</p>
+        <div class="bcols">order_id · amount_paise · status</div>
       </div>
     </div>
     <div class="ctarow" style="margin-top:26px">
       <a class="cta primary" href="/app">Upload your three files →</a>
       <a class="cta ghost" href="/try-sample">Not ready? Watch it on sample data</a>
-      <span class="free">CSV today · PDF refused on purpose (it gets money wrong) · max 15 MB each</span>
+      <span class="free">Bank statement &amp; ledger as CSV, Razorpay report as JSON · PDF refused on purpose (it gets money wrong) · max 15 MB each</span>
     </div>
   </div>
 
@@ -686,13 +688,13 @@ def upload_page() -> str:
       </div>
       <div class="drop req" data-req>
         <h4>Razorpay settlement report</h4><p class="hint">Dashboard → Settlements → Reports</p>
-        <div class="cols">entity_id · amount · fee · tax · settlement_utr</div>
+        <div class="cols">entity_id · type · amount · fee · tax · settlement_utr</div>
         <input type="file" name="recon" accept=".json,application/json" required onchange="mark(this)">
         <div class="status"></div>
       </div>
       <div class="drop req" data-req>
         <h4>Order ledger</h4><p class="hint">Your orders export (CSV)</p>
-        <div class="cols">order_id · amount · status</div>
+        <div class="cols">order_id · amount_paise · status</div>
         <input type="file" name="ledger" accept=".csv,text/csv" required onchange="mark(this)">
         <div class="status"></div>
       </div>
