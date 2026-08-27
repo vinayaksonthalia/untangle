@@ -1,0 +1,13 @@
+# One-click deploy to Render (https://render.com) — free tier is enough for the demo.
+# New → Blueprint → point at this repo; Render reads this file and builds the Dockerfile.
+services:
+  - type: web
+    name: untangle
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "8080"
