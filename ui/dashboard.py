@@ -55,6 +55,17 @@ def _amt(paise: int) -> str:
     return f'{sign}<span class="rs">₹</span> {_grp(int(round(abs(paise) / 100)))}'
 
 
+def _embed_json(obj) -> str:
+    """JSON-encode for safe embedding inside a <script> element. json.dumps does not escape
+    ``<``, so a value containing ``</script>`` would break out of the script at the HTML-parser
+    level (stored XSS). Escape the HTML-significant characters and the JS line separators."""
+    s = json.dumps(obj, ensure_ascii=False)
+    return (
+        s.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+        .replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+    )
+
+
 def render(report: dict) -> str:
     t = report["totals"]
     bp = t["by_rail_paise"]; bc = t["by_rail_count"]
@@ -155,6 +166,8 @@ def render(report: dict) -> str:
         pac_rows="".join(pac_rows),
         exc_rows="".join(exc_rows), footer_ai=footer_ai,
         exc_toolbar=exc_toolbar, exc_section_copy=exc_section_copy, script=_DASH_JS,
+        proof_json=_embed_json(report.get("proof_packets", [])),
+        proof_count=len(report.get("proof_packets", [])),
         seed=cfg.get("seed", "?"), n_recon=f'{t["n_recon_rows"]:,}',
         n_lines=t["n_bank_lines"], audit=html.escape(report["audit_root"][:10]),
     )
@@ -258,6 +271,28 @@ tbody tr.hide{{display:none}}
 .noresults{{padding:26px 20px;text-align:center;color:var(--ts);font-size:13px}}
 .linkbtn{{background:none;border:0;color:var(--acc);cursor:pointer;font-size:13px;font-family:var(--ui);text-decoration:underline;padding:0}}
 .exc-count{{font-size:12px;color:var(--tt);margin:12px 2px 0;font-family:var(--mono)}}
+.proof-wrap{{margin-top:64px}}
+.proof-head{{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}}
+.proof-actions{{display:flex;gap:10px;flex:none}}
+.xbtn{{font-family:var(--ui);font-size:13px;font-weight:500;color:var(--tp);background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);padding:8px 14px;cursor:pointer;transition:border-color .13s,background .13s}}
+.xbtn:hover{{border-color:var(--acc);color:var(--acc)}}
+.proof-search{{margin:16px 0}}
+.proof-search input{{font-family:var(--ui);font-size:13px;color:var(--tp);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:9px 13px;width:340px;max-width:100%;outline:none}}
+.proof-search input:focus{{border-color:var(--acc)}}
+#proofTable td{{cursor:pointer;vertical-align:top}}
+.pk-amt{{font-family:var(--mono);font-weight:500;font-size:13.5px}}.pk-date{{font-family:var(--mono);font-size:11px;color:var(--tt)}}
+.pk-narr{{font-size:12.5px;color:#3d3d36;word-break:break-word}}
+.pk-tie{{margin-top:5px;display:inline-flex;align-items:center;gap:6px;font-size:11px;font-family:var(--mono);color:var(--acc);background:var(--acc-tint);border-radius:5px;padding:2px 7px}}
+.pk-tier{{font-family:var(--mono);font-size:12px;color:var(--ts)}}
+.pk-fee{{font-family:var(--mono);font-size:13px;color:var(--ok)}}
+.pk-detail{{background:var(--sunken);border-top:1px solid var(--border)}}
+.pk-detail td{{cursor:default;padding:0}}
+.pk-inner{{padding:16px 20px;font-size:12.5px;color:var(--ts);display:grid;gap:12px}}
+.pk-inner h5{{margin:0 0 5px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--tt);font-weight:600}}
+.pk-ev{{font-family:var(--mono);font-size:11.5px;color:#3d3d36;line-height:1.7}}
+.pk-ev .w{{color:var(--tt)}}
+.pk-reject{{color:var(--ts);font-style:italic}}
+tr.pk-row.open td{{background:var(--sunken)}}
 @media(max-width:880px){{.wrap,.topbar .in,footer{{padding-left:24px;padding-right:24px}}
 .cards{{grid-template-columns:repeat(2,1fr)}}.grid2{{grid-template-columns:1fr}}.hero-fig{{font-size:40px}}
 .secnav{{display:none}}.search input{{width:100%}}.exc-toolbar{{align-items:stretch}}.search{{width:100%}}}}
@@ -269,6 +304,7 @@ tbody tr.hide{{display:none}}
     <a href="#sec-attribution">Attribution</a>
     <a href="#sec-reconciliation">Reconciliation</a>
     <a href="#sec-exceptions">Exceptions</a>
+    <a href="#sec-proof">Proof</a>
   </nav>
   <span class="spacer"></span>
   <a class="pill" href="#sec-exceptions"><span class="d"></span>{exc_n} to review</a>
@@ -339,7 +375,26 @@ tbody tr.hide{{display:none}}
     </div>
     <p class="exc-count mono" id="excCount" role="status" aria-live="polite"></p>
   </div>
+
+  <div class="proof-wrap" id="sec-proof">
+    <div class="proof-head">
+      <div>
+        <h2>Proof packets</h2>
+        <p class="sc">A receipt for every credit proven to be Razorpay's — the bank line, the exact tie back to the settlement report, the settlements it covers, and the recoverable fee-GST. Click any row for the full evidence.</p>
+      </div>
+      <div class="proof-actions">
+        <button type="button" class="xbtn" id="proofJson">Export JSON</button>
+        <button type="button" class="xbtn" id="proofCsv">Export CSV</button>
+      </div>
+    </div>
+    <div class="proof-search"><input id="proofSearch" type="search" placeholder="Search narration, UTR, tier, settlement…" autocomplete="off" aria-label="Search proof packets"/></div>
+    <div class="tblwrap"><table id="proofTable"><thead><tr>
+      <th style="width:150px">Date · Amount</th><th>Credit & tie</th><th style="width:90px">Tier</th><th style="width:120px">Fee-GST</th>
+    </tr></thead><tbody id="proofBody"></tbody></table></div>
+    <p class="exc-count mono" id="proofCount"></p>
+  </div>
 </div>
+<script>window.__PROOF__ = {proof_json};</script>
 {script}
 <footer><span>reproducible · seed <b>{seed}</b></span><span>{footer_ai}</span>
 <span><b>{n_lines}</b> bank credits · <b>{n_recon}</b> recon rows</span><span>audit <b>{audit}…</b></span></footer>
@@ -394,6 +449,74 @@ _DASH_JS = """<script>
     apply();
   });
   apply();
+
+  // Proof packets: render, expand, search, export.
+  var packets = (window.__PROOF__ || []);
+  var pbody = document.getElementById('proofBody');
+  var psearch = document.getElementById('proofSearch');
+  var pcount = document.getElementById('proofCount');
+  function esc(s){ var d=document.createElement('span'); d.textContent = (s==null?'':String(s)); return d.innerHTML; }
+  function blob(text, mime, name){
+    try{
+      var b=new Blob([text],{type:mime}); var u=URL.createObjectURL(b);
+      var a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click();
+      document.body.removeChild(a); setTimeout(function(){URL.revokeObjectURL(u);},1000);
+    }catch(e){}
+  }
+  function toCsv(rows){
+    var cols=['line_key','value_date','amount_inr','narration','bank_ref','rail','tier','confidence','tie_signals','reconciled','covered_entity_count','residual_paise','balanced','fee_gst_recoverable_inr'];
+    function q(v){ v=(v==null?'':String(v)); if('=+-@\\t\\r\\n'.indexOf(v.charAt(0))!==-1) v="'"+v; return /[",\\n\\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+    var out=[cols.join(',')];
+    rows.forEach(function(p){
+      var st=p.settlement||{};
+      out.push([p.line_key,p.value_date,p.amount_inr,p.narration,p.bank_ref,p.verdict.rail,p.verdict.tier,p.verdict.confidence,
+        (p.proof.ties||[]).map(function(t){return t.signal;}).join('; '),p.reconciled,(st.covered_entities||[]).length,
+        (st.residual_paise==null?'':st.residual_paise),(st.balanced==null?'':st.balanced),p.fee_gst_recoverable_inr].map(q).join(','));
+    });
+    return out.join('\\n')+'\\n';
+  }
+  function detailHtml(p){
+    var ties=(p.proof.ties||[]).map(function(t){return '<div class="pk-ev">✓ '+esc(t.explains)+' — <span class="w">'+esc(t.detail)+'</span></div>';}).join('');
+    var corr=(p.proof.corroboration||[]).map(function(c){return '<div class="pk-ev">· '+esc(c.signal)+' <span class="w">('+esc(c.weight)+') '+esc(c.detail)+'</span></div>';}).join('');
+    var st=p.settlement;
+    var settle = st ? ('<div><h5>Settlement coverage</h5><div class="pk-ev">'+esc(st.covered_entities.length)+' entities · covered net '+esc(st.covered_net_inr)+' · residual '+esc(st.residual_paise)+' paise · '+(st.balanced?'balanced':'unbalanced')+'</div></div>')
+      : '<div><h5>Settlement coverage</h5><div class="pk-ev pk-reject">attributed Razorpay; per-leg entity reconciliation pending (see exceptions)</div></div>';
+    return '<div class="pk-inner">'
+      + '<div><h5>Why it is Razorpay (report-backed tie)</h5>'+(ties||'<div class="pk-ev">'+esc(p.verdict.tier_label)+'</div>')+'</div>'
+      + (corr?'<div><h5>Corroboration</h5>'+corr+'</div>':'')
+      + settle
+      + '<div><h5>Recoverable fee-GST</h5><div class="pk-ev">'+esc(p.fee_gst_recoverable_inr)+' input tax credit</div></div>'
+      + '<div><h5>Why not another rail</h5><div class="pk-ev pk-reject">'+esc(p.proof.rejected_alternatives)+'</div></div>'
+      + '</div>';
+  }
+  function renderProof(q){
+    if(!pbody) return;
+    q=(q||'').trim().toLowerCase();
+    pbody.innerHTML='';
+    var shown=0;
+    packets.forEach(function(p,i){
+      var hay=(p.narration+' '+p.bank_ref+' '+p.verdict.tier+' '+(p.proof.ties||[]).map(function(t){return t.signal+' '+t.detail;}).join(' ')).toLowerCase();
+      if(q && hay.indexOf(q)===-1) return;
+      shown++;
+      var tie=(p.proof.ties[0]||{}).signal||p.verdict.tier;
+      var tr=document.createElement('tr'); tr.className='pk-row';
+      tr.innerHTML='<td><div class="pk-amt">'+esc(p.amount_inr)+'</div><div class="pk-date">'+esc(p.value_date)+'</div></td>'
+        +'<td><div class="pk-narr">'+esc(p.narration)+'</div><span class="pk-tie">🔗 '+esc(tie)+'</span></td>'
+        +'<td class="pk-tier">'+esc(p.verdict.tier)+'</td>'
+        +'<td class="pk-fee">'+esc(p.fee_gst_recoverable_inr)+'</td>';
+      var dr=document.createElement('tr'); dr.className='pk-detail'; dr.style.display='none';
+      dr.innerHTML='<td colspan="4">'+detailHtml(p)+'</td>';
+      tr.addEventListener('click',function(){ var open=dr.style.display!=='none'; dr.style.display=open?'none':''; tr.classList.toggle('open',!open); });
+      pbody.appendChild(tr); pbody.appendChild(dr);
+    });
+    if(pcount) pcount.textContent = shown===packets.length ? (packets.length+' proven Razorpay credits') : ('Showing '+shown+' of '+packets.length);
+  }
+  if(pbody){
+    renderProof('');
+    if(psearch) psearch.addEventListener('input',function(){ renderProof(psearch.value); });
+    var pj=document.getElementById('proofJson'); if(pj) pj.addEventListener('click',function(){ blob(JSON.stringify(packets,null,2),'application/json','proof_packets.json'); });
+    var pc=document.getElementById('proofCsv'); if(pc) pc.addEventListener('click',function(){ blob(toCsv(packets),'text/csv','proof_packets.csv'); });
+  }
 
   // Section-nav scroll-spy (rect-based; robust to positioned ancestors — sol review LOW)
   var links = Array.prototype.slice.call(document.querySelectorAll('.secnav a'));

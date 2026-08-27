@@ -104,12 +104,15 @@ def _build_report(cfg, lines, recon_rows, index, attributions) -> RunReport:
         # abstains on half its lines must not report 100% coverage of the other half).
         "coverage_curve": [c.__dict__ for c in coverage_curve(confidences, total=len(attributions))],
     }
+    from engine.proof import build_proof_packets
+    proof_packets = build_proof_packets(lines, attributions, reconciliations, recon_rows, feegst)
     return RunReport(
         totals=totals,
         attributions=attributions,
         reconciliations=reconciliations,
         fee_gst=feegst,
         exceptions=exceptions,
+        proof_packets=proof_packets,
         audit_root=ledger.root,
         config={
             "engine_version": _ENGINE_VERSION,
@@ -154,7 +157,17 @@ def _cmd_run(args) -> int:
         fh.write("\n")
     _ledger.write(os.path.join(args.out, "audit.jsonl"))
 
+    # Proof Packets: the per-credit evidence receipts, exported for a finance team / CA.
+    from engine.proof import proof_packets_to_csv
+    with open(os.path.join(args.out, "proof_packets.json"), "w", encoding="utf-8") as fh:
+        json.dump(report.proof_packets, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    with open(os.path.join(args.out, "proof_packets.csv"), "w", encoding="utf-8") as fh:
+        fh.write(proof_packets_to_csv(report.proof_packets))
+
     _print_summary(report)
+    print(f"Proof packets: {len(report.proof_packets)} written to "
+          f"{os.path.join(args.out, 'proof_packets.json')} (+ .csv)")
     return 0
 
 
