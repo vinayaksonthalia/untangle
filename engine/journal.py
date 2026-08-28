@@ -17,17 +17,23 @@ derived net differs from the actual bank credit by a residual (rounding / labell
 "Bank Charges & Rounding" line absorbs it so the voucher still balances.
 """
 
-from __future__ import annotations
-
+import re
 from dataclasses import dataclass
+
+# Code points NOT permitted in XML 1.0 text (control chars other than tab/LF/CR, surrogates, etc.).
+_XML_ILLEGAL_RE = re.compile(
+    "[^\u0009\u000a\u000d\u0020-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]"
+)
 
 
 def _xml_escape(s: object) -> str:
-    """Escape the 5 XML special characters for safe output. A local escaper (not xml.sax.saxutils) so
-    the module imports no `xml` parser — this is output-only string escaping, never XML parsing (and it
-    keeps the security scanner's XXE rule, which flags any `xml` import, satisfied)."""
+    """Escape the 5 XML metacharacters AND drop XML 1.0-forbidden code points (control characters etc.)
+    for safe output. A local escaper (not xml.sax.saxutils) so the module imports no `xml` parser — this
+    is output-only string escaping, never parsing. Qodo #: uploaded settlement ids/UTRs flow into GUID/
+    reference/narration verbatim, so illegal control chars must be stripped or the Tally XML won't parse."""
+    text = _XML_ILLEGAL_RE.sub("", str(s))
     return (
-        str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         .replace('"', "&quot;").replace("'", "&apos;")
     )
 

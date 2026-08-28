@@ -105,6 +105,19 @@ def test_tally_xml_sign_convention_and_balance():
             assert (pos == "Yes" and amt < 0) or (pos == "No" and amt > 0)
 
 
+def test_tally_xml_strips_xml_illegal_control_chars():
+    """Qodo: uploaded settlement id/UTR with XML-1.0-forbidden control characters must not produce a
+    non-well-formed Tally download — illegal code points are stripped before serialization."""
+    row = ReconRow(
+        entity_id="pay_1", type="payment", amount_paise=1000000, fee_paise=1000, tax_paise=180,
+        debit_paise=0, credit_paise=999000, settlement_id="setl_\x01\x02X", settlement_utr="U\x0bTR",
+        settled_at=datetime(2026, 6, 10), created_at=datetime(2026, 6, 10),
+        on_hold=False, dispute_id=None, order_id=None, method="card", description=None,
+    )
+    xml = to_tally_xml(build_journal_entries([_recon(["pay_1"], 999000)], [row]))
+    ET.fromstring(xml)  # raises if control chars leaked through and broke well-formedness
+
+
 def test_deterministic_on_real_data():
     lines = load_bank("data/bank_statement.csv")
     recon = load_recon("data/recon_report.json")
