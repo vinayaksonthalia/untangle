@@ -48,18 +48,21 @@ Priority = (impact on winning ÷ effort). Owner: **C**=Claude (design/correctnes
 
 | # | Feature | Why (evidence) | Owner | Status |
 |---|---|---|---|---|
-| P0 | **Deploy public URL** (Render; established, not antideploy) | No demo URL = capped score. Judges must click it. | U | pending |
-| P0 | **Journal-entry export** (Tally XML `<ENVELOPE>` + clean double-entry JSON) | The #1 "makes them pay" feature AND completes the Track-4 finance loop. Every number already computed (recon slice, MDR, 18% GST ITC, refunds). | C leads, A assists on XML | todo |
-| P0 | **Reframe pitch/README** around §1 (5%-eats-80%, 78%-tax abstention, GST ROI, journal deliverable) | Two research rounds; kills the overclaim a judge would attack. | C | todo |
-| P1 | **Evidence Courtroom** (one verdict, cross-examined) | The unforgettable demo moment; MILAAN/Kosh can't show it. | C | DONE (data+UI) |
-| P1 | **Honest 4-label taxonomy** (proven/non-Razorpay/ambiguous/unattributed) | Kills the alternate-rail overclaim. | C | DONE |
-| P1 | **Independent verifier + close certificate** (+ /verify page, download) | "Re-check our claims without trusting us." Trust layer. | A built+C fixed; /verify by C | in progress |
-| P1 | **MCP server** (untangle-specific, read-only) | Multi-surface accessibility = the Lethe winning factor; on-theme for an AI-agent buildathon. Wraps existing fns. | A (spec by C) | todo |
-| P1 | **Docs pass** (usage for web/CLI/MCP/API, one-glance quickstart) | The Lethe lesson: dedicated docs won it. | C | todo |
-| P2 | **Frictionless demo + BYOD polish** (60-sec judge onboarding, sample↔own-data toggle) | Ease-of-use is a decisive judge factor. | C | mostly done (upload page redesigned, month filter) |
-| P2 | **Exception queue: pre-computed variance categories** (T+5 refund lag, split leg, etc.) | Research: abstention is valued ONLY with a structured, suggestive queue. | C | partial (recovery controller exists) |
+| **P0** | **Agentic exception-investigation loop** (the 30% rubric pillar) — autonomous detect → deterministic root-cause classify → draft corrective journal + next action, visible reasoning trace, "Investigate" button. Extends the merged recovery controller (feat 005). Deterministic-core + LLM narration only. | THE gap. Rubric's 30% agentic pillar; the show-stopper demo moment; the disqualifier if done as an LLM guesser. | A (spec by C), C reviews | **TODO — top priority** |
+| **P0** | **Deploy public URL** (Render; established, not antideploy) | No demo URL = capped score. Judges must click it. | U | **pending** |
+| **P0** | **Reframe pitch/README** around §1 (5%-eats-80%, 78%-tax abstention, GST ROI, journal deliverable) + official Track-4 language (§6c) | Two research rounds; kills the overclaim a judge would attack. | C | **todo (verify current README)** |
+| **P1** | **Docs pass** (usage for web/CLI/MCP/API, one-glance quickstart) | The Lethe lesson: dedicated docs won it. | C | **todo** |
+| P1 | **Real bank-statement / real Razorpay-export ingestion** (HDFC/ICICI/SBI/Axis/Kotak/RBL headers + UTR regex already captured §6b) — BYOD real-data adapters | Closes "toy/synthetic?"; near-free (schema already mirrors real). | A (spec by C) | todo |
 | P2 | **One real statement in the demo** (e.g. Razorpay's published sample) | Closes the "synthetic/toy?" gap. | U/C | todo |
-| P3 | 5-min demo video (fake-UTR refusal + forge-cert-live) | Submission requirement. | U | todo |
+| P3 | 5-min demo video (fake-UTR refusal + forge-cert-live + the "2 AM bug") | Submission requirement. | U | todo |
+| P-later | **TDS / statutory-correctness layer** (194-O TDS, ITC-vs-GSTR-2B) — neutralizes the peer's edge (§6d) | Makes untangle strictly broader; not P0. | A/C | optional |
+| ✅ | **Evidence Courtroom** (one verdict, cross-examined) | Unforgettable demo moment. | C | **DONE (merged)** |
+| ✅ | **Honest 4-label taxonomy** (proven/non-Razorpay/ambiguous/unattributed) | Kills the alternate-rail overclaim. | C | **DONE (merged)** |
+| ✅ | **Journal-entry export** (Tally XML `<ENVELOPE>` + double-entry JSON, convention-agnostic) | #1 "makes them pay" feature; completes the finance loop. | C+A | **DONE (merged)** |
+| ✅ | **Independent verifier + close certificate** (+ /verify page, download) | Trust layer — "re-check our claims without trusting us." | A+C | **DONE (merged, 3 security bugs fixed)** |
+| ✅ | **MCP server** (untangle-specific, read-only, 9 tools) | Multi-surface = the Lethe winning factor. | A (spec by C) | **DONE (merged)** |
+| ✅ | **Active Recovery Controller** (ranked next-best recovery actions, info-gain, recovery trail) | Structured suggestive exception queue — the foundation the agentic loop extends. | A (spec by C)+C | **DONE (merged, PR #18)** |
+| ✅ | **Frictionless demo + BYOD polish** (upload redesign, month filter, sample↔own-data) | Ease-of-use is decisive. | C | **mostly done** |
 
 ## 5. What NOT to build (scope discipline — dilutes identity)
 
