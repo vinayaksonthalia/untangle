@@ -139,6 +139,17 @@ agentic pillar.** Top remaining builds, ranked:
 over 50+ records, reports match rate + the exceptions it refuses to guess, proves every verdict, hands
 you the postable Tally entry, and handles failure gracefully."
 
+## 6d. Competitive note — the TDS / statutory-correctness gap (a peer's idea)
+
+A peer's Track-4 idea: "given a credit, establish settlement + STATUTORY correctness — decompose into
+exact GST / ITC / **TDS** / adjustment components with lineage." Honest read: it overlaps ~60-70% with
+untangle (same lineage/decomposition spine) and is narrower (assumes the credit is given — the
+decomposition sub-problem, not the harder attribution), BUT it has ONE real edge untangle lacks: **TDS
++ statutory-correctness framing** (194-O TDS on e-commerce operators, ITC-eligibility vs GSTR-2B,
+adjustment lineage). untangle already has the lineage spine + journal decomposition, so **adding a TDS /
+statutory-correctness layer would make untangle strictly broader and neutralize that edge.** Candidate
+build if time allows; not a P0. Do NOT let it pull the pitch away from "close the finance-ops loop".
+
 ## 7. Roadmap (post-buildathon, do NOT chase now)
 
 COD/3PL remittance recon (weight-dispute auditing), CA-firm multi-client workspaces, live Razorpay/
