@@ -7,11 +7,11 @@
 *Attribution-first reconciliation — every bank credit tied to its source rail with evidence,
 or abstained. Never a guessed match.*
 
-[![Try the live demo](https://img.shields.io/badge/▶_TRY_THE_LIVE_DEMO-2b5edb?style=for-the-badge)](#quickstart)
+[![Run on the web](https://img.shields.io/badge/▶_RUN_ON_THE_WEB-2b5edb?style=for-the-badge)](#quickstart)
 [![Run it locally](https://img.shields.io/badge/RUN_IT_LOCALLY-14140f?style=for-the-badge)](#quickstart)
 
 ![CI](https://github.com/vinayaksonthalia/untangle/actions/workflows/ci.yml/badge.svg)
-![tests](https://img.shields.io/badge/tests-129_passing-1b7a4d)
+![tests](https://img.shields.io/badge/tests-204_passing-1b7a4d)
 ![precision](https://img.shields.io/badge/Razorpay_precision-1.000-1b7a4d)
 ![abstains](https://img.shields.io/badge/abstains-never_guesses-b4720a)
 ![python](https://img.shields.io/badge/python-3.12-3776ab)
@@ -100,7 +100,19 @@ real coverage curve, and never asserts a precision it cannot measure.
 ## Quickstart
 
 untangle is a real product, not a demo — upload your **own** three files and get a real reconciliation.
-The bundled sample just lets you see it work instantly.
+The bundled sample just lets you see it work instantly. The **same web app** runs two ways — on your own
+machine, or hosted on the web — with identical behaviour: landing, upload, live reconcile, and a JSON API.
+
+### Option A — Run it on the web (hosted, one click)
+
+The full product is a single self-contained FastAPI app that deploys anywhere Docker runs. On
+[Render](https://render.com): **New → Blueprint → point at this repo** — it reads [`render.yaml`](render.yaml),
+builds the [`Dockerfile`](Dockerfile), and gives you a public URL serving the complete app (free tier is
+enough for the demo). No config, no database, no keys stored. Full walkthrough: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
+> **Live demo:** _add your deployed URL here after the one-click deploy._
+
+### Option B — Run it locally
 
 ```bash
 git clone https://github.com/vinayaksonthalia/untangle && cd untangle
@@ -114,20 +126,20 @@ python3 -m generator.generate --seed 42 --scale 1.0 --out data
 uvicorn webapp.app:app --port 8080
 ```
 
-- `/` landing · `/app` upload your three files · `/try-sample` instant sample run · `/api/docs` the JSON API.
+Both options serve the same routes:
+`/` landing · `/app` upload your three files · `/try-sample` instant sample run · `/api/docs` the JSON API.
+
 - **Bring your own data:** a bank statement CSV (`value_date · narration · credit · debit`), the Razorpay
   settlement report JSON (`entity_id · type · amount · fee · tax · settlement_utr`), and your order ledger
   CSV (`order_id · amount_paise · status`). Processed in a per-request temp directory and deleted the
-  moment the report renders — nothing is persisted.
+  moment the report renders — nothing is persisted (locally or hosted).
 
-Or run the pipeline headless:
+### Option C — Headless CLI (no web)
 
 ```bash
 python -m engine.cli run --bank data/bank_statement.csv --recon data/recon_report.json \
   --ledger data/order_ledger.csv --out out/
 ```
-
-Deploy your own (Docker / Render one-click): see [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ## How it works
 
