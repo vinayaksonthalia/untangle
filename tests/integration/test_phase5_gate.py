@@ -78,6 +78,12 @@ def test_phase5_gate_readme_leads_with_finance_loop_and_stays_honest():
     assert "precision-first" in readme.lower() or "precision first" in readme.lower()
     assert "reconcil" in readme.lower()                           # reconciliation of the proven slice
     assert "attribution" in readme.lower()                        # the hard part is still explained
+    # Enforce the ORDERING, not just presence: the finance-ops headline must appear ABOVE the
+    # "which credit is even Razorpay's" attribution section — that is the whole point of the reframe.
+    lead_idx = readme.find("Close your Razorpay settlement books")
+    attribution_section_idx = readme.find("which credit is even Razorpay's")
+    assert lead_idx != -1 and attribution_section_idx != -1
+    assert lead_idx < attribution_section_idx, "finance-ops loop must lead; attribution stays underneath"
 
 
 def test_phase5_gate_one_click_demo_reproduction(client):

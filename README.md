@@ -25,14 +25,17 @@ proves every verdict, and hands you a balanced journal entry ready to post to Ta
 
 ### Why it matters
 
-- **The 5% that eats 80% of the work.** 60–75% of settlement lines auto-match on day one. It's the
-  mangled UTRs, split settlements, and cross-cycle refunds — barely 1–4% of lines — that consume
-  70–80% of a finance team's reconciliation time. untangle is built for that slice.
+- **The 5% that eats most of the work.** Most settlement lines auto-match on day one; it's the tail —
+  mangled UTRs, split settlements, cross-cycle refunds — that eats the bulk of a finance team's
+  reconciliation time (a widely-reported industry pattern, not a figure we measured here). untangle is
+  built for that tail.
 - **It refuses to guess — because a wrong match is expensive.** In India an unexplained or mis-matched
   credit can attract ~78% tax (Section 115BBE). So untangle only calls a credit "Razorpay's" when the
   settlement report *proves* it, and abstains otherwise. Precision is a financial safeguard, not a nicety.
-- **It pays for itself.** Every reconciled gateway fee carries recoverable GST input-tax-credit (18% on
-  MDR) that merchants routinely miss — surfaced as a per-transaction, postable schedule.
+- **It surfaces the GST on your gateway fees.** For each reconciled settlement, untangle extracts the
+  GST Razorpay charged on its fee (from Razorpay's own tax figures) into a per-transaction schedule — the
+  input-tax-credit line your accountant can then assess for eligibility. untangle reports the figures; it
+  does not make the ITC-eligibility judgment for you.
 - **It hands you postable books.** The output isn't a report to eyeball — it's a balanced double-entry
   journal (Tally XML + JSON), with an independently-verifiable audit trail behind every number.
 
@@ -88,11 +91,16 @@ Razorpay credits whose UTR was mangled) or **fooled** (label look-alike decoys a
 - **Postable journal entries** — the reconciled slice exported as a balanced double-entry journal in
   **Tally Prime XML** (`<ENVELOPE>` voucher import) and clean JSON: gross → MDR fee → 18% GST ITC → bank,
   each voucher balancing to zero. Convention-agnostic (detects GST-inside-fee vs tax-separate per
-  settlement), so both untangle's synthetic data and a real Razorpay export post correctly.
+  settlement). The JSON always carries every reconciled voucher; the Tally XML requires a voucher date, so
+  a voucher whose source rows carry no `settled_at`/`created_at` date is omitted from the XML rather than
+  emitted with an invalid empty date. (Reconcile against the JSON for the complete set.)
 - **Proof Packets** — a per-credit evidence receipt (JSON/CSV) for every verdict; the whole run is auditable.
-- **Signed close certificate + independent verifier** — the run seals into a content-hashed (optionally
-  ECDSA-signed) certificate, and a standalone verifier (`/verify` page + `verify_report`) lets anyone
-  re-check every claim *without trusting untangle* — the tamper-evident trust layer.
+- **Close certificate + independent verifier** — the run seals into a content-hashed certificate (also
+  ECDSA-signed when the optional `cryptography` extra and a signing key are configured), and a standalone
+  verifier (`/verify` page + `verify_report`) independently re-checks it: the content hash, the signature
+  (when present), the per-credit proof packets, and internal metric consistency — *without trusting
+  untangle*. It confirms the certificate is authentic and self-consistent; it does not re-audit your bank
+  against reality.
 - **An adversarial challenger** — a counterfactual engine that, before accepting a Razorpay verdict, tries
   to *disprove* it and computes a proof margin, abstaining when a competing explanation is too close. It
   knows when *not* to act. *(Wired and tested; enabled once a benchmark with real false-positives certifies
@@ -185,7 +193,7 @@ python -m engine.cli run --bank data/bank_statement.csv --recon data/recon_repor
                             │
                             ▼
          POST TO BOOKS: balanced journal (Tally XML + JSON)
-         + signed close certificate → independently verifiable
+         + content-hashed close certificate (signed when configured) → independently verifiable
 ```
 
 Every step is deterministic and read-only toward money. The intelligence is in the judgment: tiered
