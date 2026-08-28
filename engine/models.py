@@ -119,10 +119,23 @@ class RailAttribution:
     proof_margin: float | None = None
     competing_explanation: dict | None = None
 
+    def provenance_class(self) -> str:
+        """Honest provenance grouping (never over-claims an alternate rail from absence of evidence):
+          razorpay_proven  — passed the Razorpay proof-gate (a report-backed tie).
+          non_razorpay     — positively signalled to a specific non-Razorpay rail by a distinctive
+                             narration signal (a claim about NOT-Razorpay, weaker than the proof-gate).
+          ambiguous        — abstained but carrying some signal we could not resolve.
+          unattributed     — abstained with no distinctive signal either way.
+        The specific `rail` is retained as finer evidence; this is the class we actually assert."""
+        if not self.abstained:
+            return "razorpay_proven" if self.rail == "razorpay_settlement" else "non_razorpay"
+        return "ambiguous" if self.evidence else "unattributed"
+
     def to_dict(self) -> dict:
         d = {
             "line_key": self.line_key,
             "rail": self.rail,
+            "provenance_class": self.provenance_class(),
             "confidence": round(self.confidence, 4),
             "tier": self.tier,
             "abstained": self.abstained,
