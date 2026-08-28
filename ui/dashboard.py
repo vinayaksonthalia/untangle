@@ -428,6 +428,7 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
         other=_amt(other_p), other_c=other_c, exc_n=exc_n, attr_c=attr_c,
         rail_rows="".join(rail_rows), circ=f"{circ:.1f}", off=f"{off:.1f}",
         rec_of=f"{rec_c}/{rzp_c}", unresolved=rzp_c - rec_c, unk_c=unk_c,
+        unresolved_cash=_amt(recoverable_p),
         pac_rows="".join(pac_rows),
         exc_rows="".join(exc_rows), footer_ai=footer_ai,
         exc_toolbar=exc_toolbar, exc_section_copy=exc_section_copy, script=_DASH_JS,
@@ -664,8 +665,8 @@ tr.pk-row.open td{{background:var(--sunken)}}
         <div class="n">input tax credit · traceable across {fee_n} txns</div></div>
       <div class="card"><div class="l">Razorpay settlement</div><div class="v">{rec_c}/{rzp_c}</div>
         <div class="n"><span class="tick">✓</span> {rec_c} credits reconciled to the paise</div></div>
-      <div class="card"><div class="l">Unresolved Razorpay</div><div class="v">{unresolved}</div>
-        <div class="n">split legs or partial settlements</div></div>
+      <div class="card sig" style="border-left-color:var(--warn)"><div class="l">Unresolved cash</div><div class="v" style="color:var(--warn)">{unresolved_cash}</div>
+        <div class="n">{unresolved} credits not booked without proof · recoverable if evidence supplied (see plan)</div></div>
       <div class="card"><div class="l">Max residual</div><div class="v">{max_resid}p</div>
         <div class="n">within ±₹1 labelled drift tolerance</div></div>
     </div>
