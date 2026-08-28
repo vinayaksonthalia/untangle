@@ -70,6 +70,11 @@ Razorpay credits whose UTR was mangled) or **fooled** (label look-alike decoys a
   to *disprove* it and computes a proof margin, abstaining when a competing explanation is too close. It
   knows when *not* to act. *(Wired and tested; enabled once a benchmark with real false-positives certifies
   a margin threshold — on the current benchmark precision is already 1.000, so it stays inactive.)*
+- **Active Recovery Controller** — turns abstentions and unresolved credits into an actionable recovery
+  plan. Recommends ranked next-best actions by expected recoverable impact per unit cost (`export_settlement_report`,
+  `confirm_utr_with_bank`, `provide_settlement_ids`, `classify_counterparty`). Amounts are framed honestly
+  as "up to ₹X if confirmed", never "owed". Includes `resolve_delta` to track newly-resolved credits and
+  recovered paise across reruns.
 
 ## Measured — precision first, never a bare match rate
 
