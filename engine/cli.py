@@ -15,6 +15,7 @@ import json
 import os
 import sys
 from collections import Counter, defaultdict
+from typing import Any
 
 from engine import audit as audit_mod
 from engine.abstain import coverage_curve, required_precision
@@ -49,7 +50,26 @@ def _fmt_inr(paise: int) -> str:
 
 
 def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
-                 *, with_recovery: bool = True) -> RunReport:
+                 *, with_recovery: bool = True, global_solver: bool = False,
+                 solver_result: Any | None = None) -> tuple[RunReport, audit_mod.AuditLedger]:
+    solver_active = global_solver or getattr(cfg, "global_solver", False)
+    rejected_matches = None
+    if solver_active:
+        if solver_result is not None:
+            rejected_matches = solver_result.rejected_matches
+        else:
+            # Guard: do not double-run if attributions were already solved by global solver (Bug 2)
+            already_solved = any(
+                any(e.signal == "split_reconstruction" for e in a.evidence) for a in attributions
+            )
+            if not already_solved:
+                from engine.solver import run_global_solver
+
+                attributions, solver_result = run_global_solver(
+                    lines, index, attributions, threshold=cfg.threshold
+                )
+                rejected_matches = solver_result.rejected_matches
+
     ledger = audit_mod.AuditLedger()
     ledger.append("run_start", {"engine_version": _ENGINE_VERSION, "seed": cfg.seed,
                                 "provider": cfg.provider_or_none(), "threshold": cfg.threshold,
@@ -116,7 +136,19 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
     # Additive post-pass: computed only when enabled, so a report built with_recovery=False is byte-identical
     # to the pre-Feature-005 report (the additivity property test relies on this to compare both builds).
     recovery_plan = build_recovery_plan(lines, attributions, index, exceptions) if with_recovery else None
-    proof_packets = build_proof_packets(lines, attributions, reconciliations, recon_rows, feegst)
+    proof_packets = build_proof_packets(
+        lines, attributions, reconciliations, recon_rows, feegst, rejected_matches=rejected_matches
+    )
+    report_cfg = {
+        "engine_version": _ENGINE_VERSION,
+        "seed": cfg.seed,
+        "provider": cfg.provider_or_none(),
+        "model": cfg.model if cfg.use_ai else None,
+        "threshold": cfg.threshold,
+    }
+    if solver_active:
+        report_cfg["global_solver"] = True
+
     return RunReport(
         totals=totals,
         attributions=attributions,
@@ -125,21 +157,23 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
         exceptions=exceptions,
         proof_packets=proof_packets,
         audit_root=ledger.root,
-        config={
-            "engine_version": _ENGINE_VERSION,
-            "seed": cfg.seed,
-            "provider": cfg.provider_or_none(),
-            "model": cfg.model if cfg.use_ai else None,
-            "threshold": cfg.threshold,
-        },
+        config=report_cfg,
         recovery_plan=recovery_plan,
+        rejected_matches=rejected_matches,
     ), ledger
 
 
 def _cmd_run(args) -> int:
+    global_solver = getattr(args, "global_solver", False)
     try:
-        cfg = build_config(no_ai=not args.ai, provider=args.provider, model=args.model,
-                           threshold=args.threshold, seed=args.seed)
+        cfg = build_config(
+            no_ai=not args.ai,
+            provider=args.provider,
+            model=args.model,
+            threshold=args.threshold,
+            seed=args.seed,
+            global_solver=global_solver,
+        )
     except ConfigError as exc:
         print(f"Config error: {exc}", file=sys.stderr)
         return 3
@@ -152,7 +186,14 @@ def _cmd_run(args) -> int:
         return 2
 
     index = ReconIndex(recon_rows)
-    attributions = attribute_all(lines, index, cfg.threshold)
+    solver_out: dict[str, Any] = {}
+    attributions = attribute_all(
+        lines,
+        index,
+        cfg.threshold,
+        global_solver=cfg.global_solver,
+        solver_result_out=solver_out if cfg.global_solver else None,
+    )
 
     if cfg.use_ai:
         client = LLMClient(enabled=True, provider=cfg.provider, model=cfg.model,
@@ -160,7 +201,16 @@ def _cmd_run(args) -> int:
         lines_by_key = {ln.key: ln for ln in lines}
         attributions = resolve_unknowns(attributions, lines_by_key, index, client)
 
-    report, _ledger = build_report(cfg, lines, recon_rows, index, attributions, order_ledger)
+    report, _ledger = build_report(
+        cfg,
+        lines,
+        recon_rows,
+        index,
+        attributions,
+        order_ledger,
+        global_solver=cfg.global_solver,
+        solver_result=solver_out.get("solver_result"),
+    )
 
     os.makedirs(args.out, exist_ok=True)
     report_path = os.path.join(args.out, "report.json")
@@ -272,6 +322,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--model")
     run.add_argument("--threshold", type=float, default=None)
     run.add_argument("--seed", type=int, default=42)
+    run.add_argument(
+        "--global-solver",
+        action="store_true",
+        default=False,
+        help="enable global evidence-constrained reconciliation solver (default: False)",
+    )
     run.set_defaults(func=_cmd_run)
 
     why = sub.add_parser("why", help="explain one credit's verdict")

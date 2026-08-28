@@ -116,3 +116,17 @@ Real failures, written after the fact, by me. Not generated. Each entry: what I 
 **Fix.** Enforced strict grounding in actual emitted identifiers (grepping both keyword and positional constructor usages). Aligned the recovery taxonomy: genuine bank-credit reconciliation failures (`razorpay_coverage_not_found`, `unbalanced_residual`, `reconstructed_split_leg`, `partial_or_duplicate_settlement`) map to `export_settlement_report`. The unreachable `reconcile_order_ledger` action was excised, keeping the recovery plan strictly focused on bank credit resolution.
 
 **Pattern.** Never assume an identifier or key schema based on intuition or doc prose without inspecting the actual constructors and dictionary emissions in code. Grounding every string in actual codebase references before implementation is mandatory.
+
+---
+
+## 008 — Truncated UTR suffix tokens dropped by full-length UTR regex in candidate graph (2026-08-28)
+
+**What happened.** During Phase 4 wiring of the Global Evidence-Constrained Solver (Feature 006), candidate edge generation for credits with a `utr_suffix` tie called `extract_utr_tokens(ln.narration)`. But `extract_utr_tokens` is anchored to `_UTR = re.compile(r"(?<![0-9a-z])[0-9]{10}[a-z0-9]{6}(?![0-9a-z])", re.I)`, which strictly matches 16-character full UTRs. A destroyed-prefix UTR suffix (e.g. `'S5IPVF'`, `'AUGX79'`, `'WQ6Z14'`) is only 6 characters long. Because `extract_utr_tokens` returned empty for 6-character tokens, `matched_sids` was empty, and the candidate graph generated zero Razorpay candidate edges for these credits. In the solver-ON evaluation, dev recall dropped from 0.911 to 0.885 (100 TP vs 103 TP).
+
+**Why it's serious.** The primary invariant of the global solver is that when enabled, recall must be $\ge$ baseline (0.911 dev / 0.839 sealed) at 1.000 precision. Dropping valid suffix-matched credits caused a silent recall regression.
+
+**Fix.** Replaced the full-length token re-extraction with direct extraction of the matching settlement UTR from the corroborated evidence detail (`r"settlement_utr\s+([a-z0-9]+)"`) and matched against `index.utr_to_sid`.
+
+**Measured.** Dev recall was restored to **0.911** (103 TP, 0 FP, 0 decoy FP), and sealed holdout recall improved from **0.839 to 0.857** (+1.8%, 96 TP vs 94 TP, +2 reconciled settlements) at **1.000 precision** and **0 decoy false-positives** (reproducible via `python -m eval.sealed --compare-solver`).
+
+**Pattern.** Reusing a parser utility (`extract_utr_tokens`) whose preconditions (16-character full UTRs) did not match the corrupted token format (6-character suffix). Caught immediately by the fail-closed precision/recall property test gate before merging.
