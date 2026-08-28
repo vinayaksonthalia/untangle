@@ -6,8 +6,65 @@ import json
 import subprocess
 import sys
 
-from engine.certificate import build_close_certificate
+import copy
+
+from engine.certificate import (
+    _CRYPTO_AVAILABLE,
+    build_close_certificate,
+    generate_signing_key,
+    issue_certificate,
+    verify_certificate,
+)
 from engine.service import reconcile
+
+
+def _report():
+    return reconcile("data/bank_statement.csv", "data/recon_report.json", "data/order_ledger.csv", no_ai=True, seed=42)
+
+
+def test_issue_certificate_is_content_hashed_and_verifies_unsigned(monkeypatch):
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    rep = _report()
+    env = issue_certificate(rep)
+    assert env["signed"] is False
+    assert len(env["content_sha256"]) == 64
+    env["report"] = rep
+    v = verify_certificate(env)
+    assert v["ok"] is True
+    assert v["hash_matches"] is True
+    assert v["packets_passed"] == v["packets_verified"] > 0
+
+
+def test_tampered_certificate_breaks_the_hash(monkeypatch):
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    env = issue_certificate(_report())
+    tampered = copy.deepcopy(env)
+    tampered["certificate"]["proven_razorpay_count"] = 999999
+    v = verify_certificate(tampered)
+    assert v["hash_matches"] is False
+    assert v["ok"] is False
+
+
+def test_content_hash_is_deterministic(monkeypatch):
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    rep = _report()
+    assert issue_certificate(rep)["content_sha256"] == issue_certificate(rep)["content_sha256"]
+
+
+def test_signed_certificate_verifies_and_forgery_is_detected(monkeypatch):
+    if not _CRYPTO_AVAILABLE:
+        import pytest
+        pytest.skip("cryptography extra not installed")
+    monkeypatch.setenv("UNTANGLE_SIGNING_KEY", generate_signing_key())
+    env = issue_certificate(_report())
+    assert env["signed"] is True and "signature" in env and "public_key_pem" in env
+    v = verify_certificate(env)
+    assert v["signature_valid"] is True and v["ok"] is True
+    # Forge: tamper a signed certificate → signature must fail.
+    env["certificate"]["proven_razorpay_count"] = 1
+    vf = verify_certificate(env)
+    assert vf["signature_valid"] is False
+    assert vf["ok"] is False
 
 
 def test_build_close_certificate_on_real_reconciliation():
