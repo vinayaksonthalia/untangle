@@ -15,7 +15,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from engine.models import BankCreditLine, OrderLedgerEntry, ReconRow
@@ -68,7 +68,11 @@ def _epoch_to_dt(v) -> datetime | None:
     if v is None or v == "":
         return None
     try:
-        return datetime.fromtimestamp(int(v))
+        # Convert in UTC, then drop tzinfo: the rest of the engine uses naive datetimes
+        # (see _parse_dt), and a naive-vs-aware comparison would raise. Using local time here
+        # made settlement dates host-timezone-dependent — a determinism break for a tool whose
+        # whole pitch is byte-identical, re-derivable output.
+        return datetime.fromtimestamp(int(v), tz=UTC).replace(tzinfo=None)
     except (ValueError, OSError, TypeError):
         return None
 

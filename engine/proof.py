@@ -11,6 +11,7 @@ report already contains. Serializes to JSON and flattens to CSV for a finance te
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 from engine.evidence import narration_rail_signals
@@ -60,7 +61,13 @@ def build_proof_packets(
     recon_by_key = {r.line_key: r for r in reconciliations}
     # Key tax by the FULL (type, entity_id) join — the same composite key reconciliation and
     # fee_gst use — so two entities of different types sharing an id can't collide (Qodo #3).
-    tax_by_entity = {(r.type, r.entity_id): r.tax_paise for r in recon_rows}
+    # MULTIMAP (not a plain dict): duplicate (type, entity_id) rows genuinely occur; a plain dict
+    # collapsed them to the last, so a packet's fee-GST double-counted the survivor and dropped the
+    # shadowed row — disagreeing with the journal's posted ITC. Consume one row per covered-key
+    # occurrence (mirrors the journal's Qodo #7 fix).
+    tax_by_entity: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for r in recon_rows:
+        tax_by_entity[(r.type, r.entity_id)].append(r.tax_paise)
     sid_by_entity = {(r.type, r.entity_id): r.settlement_id for r in recon_rows if r.settlement_id}
 
     packets: list[dict] = []
@@ -106,9 +113,15 @@ def build_proof_packets(
         claimed_sids: set[str] = set()
         if rec is not None:
             covered = [{"type": t, "entity_id": eid} for t, eid in rec.covered_entity_ids]
-            fee_gst_paise = sum(
-                tax_by_entity.get((t, eid), 0) for t, eid in rec.covered_entity_ids
-            )
+            # Consume one tax row per covered-key occurrence (multimap) so duplicate
+            # (type, entity_id) rows are summed distinctly, not double-counted from the survivor.
+            _seen_tax: dict[tuple[str, str], int] = defaultdict(int)
+            fee_gst_paise = 0
+            for t, eid in rec.covered_entity_ids:
+                bucket = tax_by_entity.get((t, eid), [])
+                if _seen_tax[(t, eid)] < len(bucket):
+                    fee_gst_paise += bucket[_seen_tax[(t, eid)]]
+                _seen_tax[(t, eid)] += 1
             fee_gst_display = _inr(fee_gst_paise)
             for t, eid in rec.covered_entity_ids:
                 s = sid_by_entity.get((t, eid))
