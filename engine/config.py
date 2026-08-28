@@ -48,6 +48,7 @@ class Config:
     api_key: str | None
     threshold: float
     seed: int
+    global_solver: bool = False
 
     def provider_or_none(self) -> str:
         return self.provider if self.use_ai else "none"
@@ -61,6 +62,7 @@ def build_config(
     threshold: float | None,
     seed: int,
     dotenv_path: str = ".env",
+    global_solver: bool = False,
 ) -> Config:
     use_ai = not no_ai
     env = {**load_dotenv(dotenv_path), **os.environ}
@@ -97,4 +99,5 @@ def build_config(
         api_key=api_key,
         threshold=DEFAULT_THRESHOLD if threshold is None else threshold,
         seed=seed,
+        global_solver=global_solver,
     )

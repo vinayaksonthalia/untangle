@@ -40,3 +40,24 @@ def test_amt_indian_grouping_and_sign():
     assert _grp(45102532) == "4,51,02,532"
     assert "43,201" in _amt(43201_00)
     assert _amt(-700).startswith("−")
+
+
+def test_render_with_global_solver_rejected_matches():
+    rep = _report()
+    rep["rejected_matches"] = [
+        {
+            "credit_keys": ["k_01"],
+            "candidate_id": "k_01->s_01",
+            "target_id": "s_01",
+            "rail": "razorpay_settlement",
+            "violated_constraint": "settlement_already_consumed",
+            "detail": "Settlement s_01 was consumed by globally consistent assignment for credit(s) ('k_02',)",
+        }
+    ]
+    html_out = render(rep)
+    assert 'href="#sec-solver">Solver</a>' in html_out
+    assert "Global Evidence-Constrained Reconciliation" in html_out
+    assert "settlement_already_consumed" in html_out.lower() or "Settlement Already Consumed" in html_out
+    assert "s_01" in html_out
+    assert "k_01" in html_out
+    assert "k_02" in html_out

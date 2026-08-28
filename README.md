@@ -75,6 +75,13 @@ Razorpay credits whose UTR was mangled) or **fooled** (label look-alike decoys a
   `confirm_utr_with_bank`, `provide_settlement_ids`, `classify_counterparty`). Amounts are framed honestly
   as "up to ₹X if confirmed", never "owed". Includes `resolve_delta` to track newly-resolved credits and
   recovered paise across reruns.
+- **Global Evidence-Constrained Solver** — formulates whole-period reconciliation as a single constrained
+  assignment problem over a candidate graph, minimizing invalid picks, unexplained paise, and ops cost.
+  Reconciles globally consistent assignments and rejects locally-plausible matches that violate global settlement
+  uniqueness (e.g. credit A cannot take settlement S when S is uniquely consumed by B+C). When enabled
+  (`--global-solver`), sealed holdout recall improves from **0.839 to 0.857** (+2 reconciled settlements) at
+  **1.000 precision** and **0 decoy false-positives** (reproduce via `python -m eval.sealed --compare-solver`).
+  Gated behind a default-OFF flag (`global_solver=False`) preserving byte-identical baseline output.
 
 ## Measured — precision first, never a bare match rate
 
@@ -84,6 +91,7 @@ On a sealed, generator-blind adversarial holdout (n ≈ 294, 14 narration-corrup
 - **0 decoy false-positives** across 181 look-alike non-Razorpay credits.
 - **Recall 0.91** on true Razorpay credits (0.84 on the blind sealed set) — the rest abstain, never guessed.
 - **±₹0 residual** on every reconciled credit; unresolved credits are surfaced, not forced.
+- **Global solver (optional, `--global-solver`)**: sealed holdout recall improves from **0.839 to 0.857** (+2 reconciled settlements) at **1.000 precision** and **0 decoy false-positives** (`python -m eval.sealed --compare-solver`).
 
 Honest scope: these are measured on a labelled adversarial benchmark, **not** a claim about every
 real-world statement. On your own unlabelled upload, untangle shows attributed-vs-abstained counts and a

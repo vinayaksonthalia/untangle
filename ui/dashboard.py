@@ -242,6 +242,61 @@ def render(report: dict) -> str:
     </div>
   </div>"""
 
+    # Feature 006: Global Solver Violated Constraints section
+    rejected_matches = report.get("rejected_matches") or []
+    solver_rows = []
+    for r in rejected_matches:
+        credit_keys = ", ".join(r.get("credit_keys", ()))
+        target_id = r.get("target_id", "")
+        violation = r.get("violated_constraint", "")
+        detail = r.get("detail", "")
+        violation_label = violation.replace("_", " ").title()
+        solver_rows.append(f"""
+      <tr>
+        <td class="mono" style="font-size:12px;font-weight:600">{html.escape(credit_keys)}</td>
+        <td class="mono" style="font-size:12px">{html.escape(target_id)}</td>
+        <td>
+          <span class="badg" style="background:#fde8e8;color:#b23b3b;border:1px solid #f8b4b4;padding:2px 6px;border-radius:3px;font-size:11px;font-weight:600">
+            {html.escape(violation_label)}
+          </span>
+        </td>
+        <td style="font-size:13px;color:var(--tp)">{html.escape(detail)}</td>
+      </tr>""")
+
+    if solver_rows:
+        solver_section = f"""
+  <div class="exc-wrap" id="sec-solver" style="margin-top:40px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:12px">
+      <div>
+        <span class="proven-tag" style="background:#eef2ff;color:#2b5edb;border-color:#c7d2fe">Globally-Forced Assignment</span>
+        <h2 style="margin-top:6px">Global Evidence-Constrained Reconciliation</h2>
+        <p class="sc">Proof of global consistency: local candidate matches that cannot be part of any globally-valid assignment are rejected with the violated constraint recorded.</p>
+      </div>
+      <div class="mono" style="font-size:13px;color:var(--ts)">
+        {len(rejected_matches)} locally-plausible match(es) rejected under global constraints
+      </div>
+    </div>
+    <div class="tblwrap" style="margin-top:16px">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:180px">Contending Credit</th>
+            <th style="width:160px">Target Settlement</th>
+            <th style="width:180px">Violated Constraint</th>
+            <th>Globally-Forced Alternative &amp; Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(solver_rows)}
+        </tbody>
+      </table>
+    </div>
+  </div>"""
+        solver_nav = '<a href="#sec-solver">Solver</a>'
+    else:
+        solver_section = ""
+        solver_nav = ""
+
     prov = cfg.get("provider")
     footer_ai = f"provider <b>{html.escape(str(prov))}</b>" if prov else "matching <b>deterministic</b>"
     attr_c = t.get("attributed", sum(bc.get(k, 0) for k in bc if k != "UNKNOWN"))
@@ -255,6 +310,8 @@ def render(report: dict) -> str:
         exc_rows="".join(exc_rows), footer_ai=footer_ai,
         exc_toolbar=exc_toolbar, exc_section_copy=exc_section_copy, script=_DASH_JS,
         recovery_section=recovery_section,
+        solver_section=solver_section,
+        solver_nav=solver_nav,
         proof_json=_embed_json(report.get("proof_packets", [])),
         proof_count=len(report.get("proof_packets", [])),
         seed=cfg.get("seed", "?"), n_recon=f'{t["n_recon_rows"]:,}',
@@ -397,6 +454,7 @@ tr.pk-row.open td{{background:var(--sunken)}}
     <a href="#sec-reconciliation">Reconciliation</a>
     <a href="#sec-exceptions">Exceptions</a>
     <a href="#sec-recovery">Recovery</a>
+    {solver_nav}
     <a href="#sec-proof">Proof</a>
   </nav>
   <span class="spacer"></span>
@@ -470,6 +528,8 @@ tr.pk-row.open td{{background:var(--sunken)}}
   </div>
 
   {recovery_section}
+
+  {solver_section}
 
   <div class="proof-wrap" id="sec-proof">
     <div class="proof-head">
