@@ -46,6 +46,23 @@ def test_every_entry_balances_and_gst_not_double_counted():
     assert e.total_debit_paise == e.total_credit_paise
 
 
+def test_real_razorpay_convention_tax_separate_from_fee():
+    """A REAL Razorpay report keeps fee (ex-GST) and tax separate: credit = amount − fee − tax. The
+    export must detect this and set MDR = fee (NOT fee − tax) so real uploads reconcile correctly."""
+    # amount 10000, fee 200 (ex-GST), tax 36 → credit 9764 (real Razorpay sample row).
+    row = ReconRow(
+        entity_id="pay_r", type="payment", amount_paise=1000000, fee_paise=20000, tax_paise=3600,
+        debit_paise=0, credit_paise=976400, settlement_id="setl_1", settlement_utr="U1",
+        settled_at=datetime(2026, 6, 10), created_at=datetime(2026, 6, 10),
+        on_hold=False, dispute_id=None, order_id=None, method="card", description=None,
+    )
+    e = build_journal_entries([_recon(["pay_r"], credit_paise=976400)], [row], intra_state=True)[0]
+    led = {ln.ledger: ln.debit_paise for ln in e.lines if ln.debit_paise}
+    assert led["Payment Gateway Charges"] == 20000            # fee is already ex-GST → not fee − tax
+    assert led["Input CGST"] + led["Input SGST"] == 3600      # ITC = tax
+    assert e.balanced
+
+
 def test_inter_state_uses_single_igst_line():
     rows = [_row("pay_1", amount=10000, fee=1000, tax=180)]
     rec = _recon(["pay_1"], credit_paise=9000)

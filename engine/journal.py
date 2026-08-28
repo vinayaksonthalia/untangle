@@ -82,6 +82,23 @@ def _inr(paise: int) -> str:
     return f"{paise / 100:.2f}"
 
 
+def _tax_inside_fee(covered) -> bool:
+    """Detect the fee/tax convention of the settlement rows. untangle's synthetic data folds GST inside
+    `fee` (credit = amount − fee); a REAL Razorpay report keeps them separate (credit = amount − fee −
+    tax). Decide by which formula reproduces the reported `credit` on the payment rows. Defaults to True
+    (untangle's own convention) when there's nothing to measure."""
+    pays = [r for r in covered if r.type == "payment" and (r.fee_paise or r.tax_paise)]
+    if not pays:
+        return True
+    amt = sum(r.amount_paise for r in pays)
+    fee = sum(r.fee_paise for r in pays)
+    tax = sum(r.tax_paise for r in pays)
+    credit = sum(r.credit_paise for r in pays)
+    inside_err = abs(credit - (amt - fee))
+    separate_err = abs(credit - (amt - fee - tax))
+    return inside_err <= separate_err
+
+
 def build_journal_entries(
     reconciliations,
     recon_rows,
@@ -97,14 +114,15 @@ def build_journal_entries(
         covered = [by_entity[k] for k in rec.covered_entity_ids if k in by_entity]
         if not covered:
             continue
-        # Model the SETTLEMENT leg from the fees actually charged (robust to a settlement that mixes
-        # payments, refunds and adjustments — summing raw amounts would mis-derive the net):
-        #   clearing relieved = net received + total fee charged; bank gets net; fee & ITC recognised.
-        fee_incl = sum(r.fee_paise for r in covered)
-        itc = sum(r.tax_paise for r in covered)          # GST-on-fee, already inside fee_incl
-        mdr_ex_gst = fee_incl - itc
+        # Model the SETTLEMENT leg robustly to (a) a settlement mixing payments/refunds/adjustments,
+        # and (b) EITHER fee/tax convention: untangle's synthetic data folds GST inside `fee`
+        # (credit = amount − fee), while a REAL Razorpay report keeps them separate
+        # (credit = amount − fee − tax). We detect which, so the MDR expense (ex-GST) is always right.
+        fee_sum = sum(r.fee_paise for r in covered)
+        itc = sum(r.tax_paise for r in covered)          # the GST amount (an ITC asset) — unambiguous
+        mdr_ex_gst = fee_sum - itc if _tax_inside_fee(covered) else fee_sum
         actual_net = rec.credit_amount_paise             # what actually hit the bank
-        gross = actual_net + fee_incl                    # clearing relieved → balances exactly, no drift
+        gross = actual_net + mdr_ex_gst + itc            # clearing relieved → balances exactly, no drift
 
         sid = next((r.settlement_id for r in covered if r.settlement_id), rec.line_key)
         utr = next((r.settlement_utr for r in covered if r.settlement_utr), "")
