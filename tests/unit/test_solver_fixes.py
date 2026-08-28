@@ -68,21 +68,45 @@ def _row(
     )
 
 
-def test_poisoned_credit_never_appears_in_a_split_candidate():
-    """Qodo (PR#20): a credit poisoned by an oversized/un-enumerable split pool must not appear in ANY
-    split candidate (even one emitted for an earlier settlement before it was poisoned)."""
-    # 35 RATN-IFSC legs eligible for one settlement → oversized (combos > max_combinations) → poisoned.
-    legs = [
-        _line(f"k_split_{i}", narr="RTGS-RATN0000088-SPLIT", amount=10000 + i * 100, vd="2026-06-10")
+def test_stale_split_retracted_when_later_pool_poisons_a_shared_credit():
+    """Qodo (PR#20): the real stale-edge path. Settlements are processed in sorted ID order, so an
+    EARLIER, enumerable settlement can emit a valid split containing a credit that a LATER, oversized
+    settlement then marks un-enumerable. The generation-time guard cannot retract that already-emitted
+    split; the post-generation filter must. This fixture genuinely creates the stale split and proves
+    it is removed — deleting the filter makes this test fail (red/green)."""
+    # k_shared (₹100) + k_partner (₹200) uniquely sum to s1_small's net (₹300) → an enumerable split.
+    k_shared = _line("k_shared", narr="RTGS-RATN0000088-A", amount=10000, vd="2026-06-10")
+    k_partner = _line("k_partner", narr="RTGS-RATN0000088-B", amount=20000, vd="2026-06-10")
+    # 35 big RATN legs (each ≥ ₹300, so excluded from s1_small's <net pool) that, together with
+    # k_shared/k_partner, form s2_big's oversized eligible pool (combos > 5000 → un-enumerable).
+    big = [
+        _line(f"k_big_{i}", narr="RTGS-RATN0000088-BIG", amount=30000 + i * 100, vd="2026-06-10")
         for i in range(35)
     ]
-    idx = ReconIndex([_row("s_split", utr="UTR_SPLIT_LARGE", net=500000, dt=date(2026, 6, 10))])
-    graph = build_candidate_graph(legs, idx, threshold=0.55, max_combinations=5000)
-    assert graph.un_enumerable_credits, "test did not force an un-enumerable pool"
+    # "s1_small" sorts before "s2_big": s1_small emits the split, then s2_big poisons k_shared.
+    recon_rows = [
+        _row("s1_small", utr="UTR_SMALL", net=30000, dt=date(2026, 6, 10)),
+        _row("s2_big", utr="UTR_BIG", net=500000, dt=date(2026, 6, 10)),
+    ]
+    idx = ReconIndex(recon_rows)
+
+    # Proof the fixture genuinely creates a stale-able split: with ONLY s1_small, the split exists and
+    # nothing is poisoned. This is the exact candidate the later pool will strand.
+    idx_alone = ReconIndex([recon_rows[0]])
+    graph_alone = build_candidate_graph([k_shared, k_partner], idx_alone, threshold=0.55, max_combinations=5000)
+    assert not graph_alone.un_enumerable_credits
+    stale_splits = [c for c in graph_alone.candidates if c.is_split and "k_shared" in c.credit_keys]
+    assert stale_splits, "fixture failed to emit the enumerable split for the earlier settlement"
+
+    # Full graph: s2_big's oversized pool poisons k_shared AFTER s1_small already emitted its split.
+    graph = build_candidate_graph([k_shared, k_partner, *big], idx, threshold=0.55, max_combinations=5000)
+    assert "k_shared" in graph.un_enumerable_credits, "later oversized pool should poison k_shared"
+
+    # The filter must have retracted the stale split — no split candidate references a poisoned credit.
     for c in graph.candidates:
         if c.is_split:
             assert not (set(c.credit_keys) & graph.un_enumerable_credits), (
-                f"split candidate {c.assignment_id} references a poisoned credit"
+                f"stale split {c.assignment_id} references a poisoned credit"
             )
 
 
