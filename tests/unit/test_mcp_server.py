@@ -9,7 +9,10 @@ import json
 
 import pytest
 
-pytest.importorskip("mcp")  # the MCP server needs the optional [mcp] extra; skip cleanly when absent
+# Skip ONLY when the optional [mcp] extra is absent (base install). When mcp IS installed, an
+# incompatible API must fail loudly (not skip), so CI — which installs [mcp], pinned <2 — always runs
+# these tests and catches version drift instead of masking it as a green skip.
+pytest.importorskip("mcp")
 
 from mcp_server import (  # noqa: E402  — imported after the importorskip guard, by design
     explain_bank_credit,

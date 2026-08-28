@@ -134,7 +134,10 @@ def verify_proof_packet(
                     CheckResult(
                         "tie_signals",
                         True,
-                        f"All tie signals are valid report-backed signals: {', '.join(valid_ties)}",
+                        # Qodo #4 (honest scope): confirms the tie is an allowlisted report-backed tie
+                        # TYPE, not resemblance. Full independent re-derivation from the source bank/recon
+                        # records is done only by check (d) when recon_rows are supplied.
+                        f"Tie signal(s) are allowlisted report-backed tie types: {', '.join(valid_ties)}",
                     )
                 )
 
@@ -367,7 +370,13 @@ def verify_report(report: dict) -> list[VerificationResult]:
         and all(c in "0123456789abcdefABCDEF" for c in audit_root)
     ):
         audit_ok = True
-        audit_detail = f"Valid 64-char SHA256 audit root: {audit_root}"
+        # Qodo #12: this is a FORMAT check only. Recomputing the audit hash-chain would require the raw
+        # ledger events, which the report does not carry — so we assert well-formedness, NOT integrity,
+        # and say so plainly rather than overstating it as attestation.
+        audit_detail = (
+            f"audit_root is a well-formed 64-char SHA-256 hex string ({audit_root}) — FORMAT only; "
+            "not an independent recomputation of the audit chain (needs the raw ledger)."
+        )
     else:
         audit_detail = f"Invalid audit_root: expected 64-char hex string, got {audit_root!r}"
 
@@ -379,10 +388,22 @@ def verify_report(report: dict) -> list[VerificationResult]:
         )
     )
 
-    # 2. Proof packet verification
-    packets = report.get("proof_packets", [])
+    # 2. Proof packet verification.
+    # Qodo #5: a non-list (or missing) proof_packets must be a FAILED structure check, not a silent
+    # skip — otherwise a tampered report ("proof_packets": "…") yields 0-passed-of-0 and is mistaken
+    # for success by the certificate verifier.
+    packets = report.get("proof_packets")
     if isinstance(packets, list):
         for pkt in packets:
             results.append(verify_proof_packet(pkt))
+    else:
+        results.append(
+            VerificationResult(
+                ok=False,
+                checks=[CheckResult("proof_packets_structure", False,
+                                    f"'proof_packets' must be a list, got {type(packets).__name__}")],
+                packet_line_key="report:proof_packets",
+            )
+        )
 
     return results

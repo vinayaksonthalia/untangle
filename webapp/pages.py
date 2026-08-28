@@ -798,9 +798,10 @@ def verify_page() -> str:
   <h1 style="font-size:38px">Verify a close certificate.</h1>
   <p class="vlede">Paste an untangle close-certificate (the JSON from <span class="vmono">Download close certificate</span>,
   or <a href="/api/certificate/sample">the sample</a>). This page re-derives its <b>SHA-256 content hash</b> and,
-  when the certificate is signed, checks the <b>ECDSA (P-256) signature</b> — a tampered field breaks the hash;
-  a forged certificate fails the signature. <b>No trust in this server is required:</b> every verdict in the
-  underlying report is independently re-derivable from the source files.</p>
+  when the certificate is signed, checks the <b>ECDSA (P-256) signature against untangle's pinned issuer
+  key</b> (not a key inside the certificate) — a tampered field breaks the hash; a certificate signed with
+  any other key fails. Attach the run's report to also re-run every proof-packet check; each accepted
+  verdict rests on a report-backed tie you can re-derive from the source records.</p>
 
   <textarea id="certin" placeholder='Paste the certificate JSON here, e.g. {"certificate":{...},"content_sha256":"...","signature":"..."}'></textarea>
   <div class="vrow">
