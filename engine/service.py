@@ -48,6 +48,7 @@ def reconcile(
         cfg.threshold,
         global_solver=cfg.global_solver,
         solver_result_out=solver_out if cfg.global_solver else None,
+        audit_challenger=True,  # evidence courtroom: attach proof margin + rejected explanation (display-only)
     )
     if cfg.use_ai:
         client = LLMClient(enabled=True, provider=cfg.provider, model=cfg.model, api_key=cfg.api_key)
