@@ -16,6 +16,7 @@ import argparse
 import html
 import json
 import math
+from collections import Counter
 
 _RAIL = {
     "razorpay_settlement": ("Razorpay settlement", "#2B5EDB", True),
@@ -422,7 +423,17 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
     prov = cfg.get("provider")
     footer_ai = f"provider <b>{html.escape(str(prov))}</b>" if prov else "matching <b>deterministic</b>"
     attr_c = t.get("attributed", sum(bc.get(k, 0) for k in bc if k != "UNKNOWN"))
+    # Honest provenance classes (never over-claims an alternate rail from absence of evidence).
+    _prov = Counter(a.get("provenance_class", "") for a in report.get("attributions", []))
+    prov_summary = (
+        f'<b>{_prov.get("razorpay_proven", 0)}</b> Razorpay-proven · '
+        f'<b>{_prov.get("non_razorpay", 0)}</b> non-Razorpay (signalled) · '
+        f'<b>{_prov.get("ambiguous", 0)}</b> ambiguous · '
+        f'<b>{_prov.get("unattributed", 0)}</b> unattributed'
+    )
+
     return _T.format(
+        prov_summary=prov_summary,
         hero_rec=_amt(rec_p), hero_total=_amt(rzp_p), cov_pct=cov_pct, max_resid=max_resid,
         fee=_amt(fee), fee_n=f"{fee_n:,}", rzp_rec=_amt(rzp_p), rzp_c=rzp_c, rec_c=rec_c,
         other=_amt(other_p), other_c=other_c, exc_n=exc_n, attr_c=attr_c,
@@ -502,6 +513,11 @@ h2{{font-family:var(--disp);font-weight:480;font-size:20px;letter-spacing:-.01em
 .covbar{{height:8px;background:var(--border);border-radius:100px;margin:16px 0 8px;max-width:620px;overflow:hidden}}
 .covbar i{{display:block;height:100%;background:var(--ok);border-radius:100px}}
 .covmeta{{font-size:12.5px;color:var(--ts)}}
+/* Provenance classes (honest labels) */
+.prov-row{{margin:14px 0 4px;font-size:13.5px;color:var(--ts)}}
+.prov-row b{{color:var(--tp);font-weight:600}}
+.prov-note{{display:block;font-size:12px;color:var(--tt);margin-top:6px;max-width:80ch;line-height:1.5}}
+.prov-note em{{color:var(--ts);font-style:italic}}
 /* Evidence courtroom */
 .court{{margin-top:64px;background:#101014;border-radius:var(--r-lg);padding:34px 36px;color:#e9e9e6}}
 .court .proven-tag{{color:#8fb0ff;background:rgba(143,176,255,.12)}}
@@ -622,6 +638,7 @@ tr.pk-row.open td{{background:var(--sunken)}}
   <p class="eyebrow" id="sec-attribution">Attribution &amp; Calibrated Abstention (Primary Verdict)</p>
   <div class="hero-fig">{attr_c} <span style="font-size:24px;color:var(--ts)">attributed</span> · {unk_c} <span style="font-size:24px;color:var(--warn)">abstained</span></div>
   <div class="hero-of">Every bank credit attributed to its rail with evidence · {unk_c} ambiguous credits abstained (never force-matched)</div>
+  <div class="prov-row">{prov_summary}<span class="prov-note">Only Razorpay is <em>proven</em> (a report-backed tie). "Non-Razorpay" means a distinctive signal points elsewhere — a claim about not-Razorpay, never inferred from absence of evidence.</span></div>
 
   <div class="cards">
     <div class="card sig"><div class="l">Attributed with evidence</div><div class="v">{attr_c}</div>
@@ -630,8 +647,8 @@ tr.pk-row.open td{{background:var(--sunken)}}
       <div class="n">abstained with reasons · queue below</div></div>
     <div class="card"><div class="l">Razorpay credits</div><div class="v">{rzp_rec}</div>
       <div class="n">{rzp_c} credits proven Razorpay's</div></div>
-    <div class="card"><div class="l">Other rails</div><div class="v">{other}</div>
-      <div class="n">{other_c} credits across UPI/COD/other gateways</div></div>
+    <div class="card"><div class="l">Non-Razorpay (signalled)</div><div class="v">{other}</div>
+      <div class="n">{other_c} credits with a distinctive non-Razorpay signal · not proven to the Razorpay bar</div></div>
   </div>
 
   <div class="grid2">
