@@ -7,7 +7,11 @@ from __future__ import annotations
 
 import json
 
-from mcp_server import (
+import pytest
+
+pytest.importorskip("mcp")  # the MCP server needs the optional [mcp] extra; skip cleanly when absent
+
+from mcp_server import (  # noqa: E402  — imported after the importorskip guard, by design
     explain_bank_credit,
     export_journal_entries,
     export_proof_packet,
