@@ -75,6 +75,14 @@ def test_fail_closed_when_excluding_errors_would_break_recall():
     assert out is None
 
 
+def test_zero_threshold_is_never_certified_fail_closed():
+    """A threshold of 0.0 = 'no gate' at runtime; calibration must never certify it (Qodo #17).
+    A large clean sample whose only precision-perfect point would be 0.0 (all margins 0.0) fails closed."""
+    cands = [(0.0, True)] * 3000
+    out = calibrate_proof_margin(cands, total_lines=3300, baseline_razorpay_recall=0.91)
+    assert out is None  # cannot certify 0.0; no positive threshold accepts anything -> fail closed
+
+
 def test_deterministic():
     cands = [(0.5, True)] * 2000 + [(0.01, False)] * 40
     a = calibrate_proof_margin(cands, total_lines=2200, baseline_razorpay_recall=0.91)
