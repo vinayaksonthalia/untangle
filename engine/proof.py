@@ -11,6 +11,8 @@ report already contains. Serializes to JSON and flattens to CSV for a finance te
 
 from __future__ import annotations
 
+from typing import Any
+
 from engine.evidence import narration_rail_signals
 from engine.models import (
     BankCreditLine,
@@ -50,6 +52,8 @@ def build_proof_packets(
     reconciliations: list[ReconciliationResult],
     recon_rows: list[ReconRow],
     feegst: FeeGstRecovery,
+    *,
+    rejected_matches: list[dict] | None = None,
 ) -> list[dict]:
     """One Proof Packet per credit proven to be Razorpay's (never an abstained credit)."""
     lines_by_key = {ln.key: ln for ln in lines}
@@ -57,6 +61,7 @@ def build_proof_packets(
     # Key tax by the FULL (type, entity_id) join — the same composite key reconciliation and
     # fee_gst use — so two entities of different types sharing an id can't collide (Qodo #3).
     tax_by_entity = {(r.type, r.entity_id): r.tax_paise for r in recon_rows}
+    sid_by_entity = {(r.type, r.entity_id): r.settlement_id for r in recon_rows if r.settlement_id}
 
     packets: list[dict] = []
     for a in attributions:
@@ -98,12 +103,17 @@ def build_proof_packets(
 
         rec = recon_by_key.get(a.line_key)
         settlement = None
+        claimed_sids: set[str] = set()
         if rec is not None:
             covered = [{"type": t, "entity_id": eid} for t, eid in rec.covered_entity_ids]
             fee_gst_paise = sum(
                 tax_by_entity.get((t, eid), 0) for t, eid in rec.covered_entity_ids
             )
             fee_gst_display = _inr(fee_gst_paise)
+            for t, eid in rec.covered_entity_ids:
+                s = sid_by_entity.get((t, eid))
+                if s:
+                    claimed_sids.add(s)
             settlement = {
                 "covered_entities": covered,
                 "covered_net_inr": _inr(rec.covered_net_paise),
@@ -114,6 +124,40 @@ def build_proof_packets(
             # Unresolved (e.g. a reconstructed split leg): the recoverable GST is UNKNOWN until
             # entity-level reconciliation, NOT zero. Never present an unknown as ₹0.00 (Qodo #1).
             fee_gst_display = _PENDING_GST
+
+        proof_data: dict[str, Any] = {
+            "ties": ties,
+            "corroboration": corroboration,
+            "rejected_alternatives": rejected,
+        }
+
+        # Feature 006: Thread through violated constraints and globally-forced alternatives
+        if rejected_matches is not None:
+            this_credit_rejected = [
+                r for r in rejected_matches if a.line_key in r.get("credit_keys", ())
+            ]
+            contenders_rejected = [
+                r for r in rejected_matches
+                if r.get("target_id") in claimed_sids and a.line_key not in r.get("credit_keys", ())
+            ]
+            violated_constraints = []
+            for cr in this_credit_rejected:
+                violated_constraints.append({
+                    "type": "credit_candidate_rejected",
+                    "candidate_id": cr["candidate_id"],
+                    "target_id": cr["target_id"],
+                    "violated_constraint": cr["violated_constraint"],
+                    "detail": cr["detail"],
+                })
+            for cnd in contenders_rejected:
+                violated_constraints.append({
+                    "type": "contender_settlement_rejected",
+                    "contender_credit_keys": list(cnd["credit_keys"]),
+                    "target_id": cnd["target_id"],
+                    "violated_constraint": cnd["violated_constraint"],
+                    "detail": cnd["detail"],
+                })
+            proof_data["violated_constraints"] = violated_constraints
 
         packets.append({
             "line_key": a.line_key,
@@ -127,11 +171,7 @@ def build_proof_packets(
                 "tier_label": _TIER_LABEL.get(a.tier, a.tier),
                 "confidence": round(a.confidence, 3),
             },
-            "proof": {
-                "ties": ties,
-                "corroboration": corroboration,
-                "rejected_alternatives": rejected,
-            },
+            "proof": proof_data,
             "settlement": settlement,
             "fee_gst_recoverable_inr": fee_gst_display,
             "reconciled": rec is not None,

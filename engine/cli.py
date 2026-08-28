@@ -51,10 +51,12 @@ def _fmt_inr(paise: int) -> str:
 def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
                  *, with_recovery: bool = True, global_solver: bool = False) -> tuple[RunReport, audit_mod.AuditLedger]:
     solver_active = global_solver or getattr(cfg, "global_solver", False)
+    rejected_matches = None
     if solver_active:
         from engine.solver import run_global_solver
 
-        attributions, _ = run_global_solver(lines, index, attributions)
+        attributions, solver_result = run_global_solver(lines, index, attributions)
+        rejected_matches = solver_result.rejected_matches
 
     ledger = audit_mod.AuditLedger()
     ledger.append("run_start", {"engine_version": _ENGINE_VERSION, "seed": cfg.seed,
@@ -122,7 +124,9 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
     # Additive post-pass: computed only when enabled, so a report built with_recovery=False is byte-identical
     # to the pre-Feature-005 report (the additivity property test relies on this to compare both builds).
     recovery_plan = build_recovery_plan(lines, attributions, index, exceptions) if with_recovery else None
-    proof_packets = build_proof_packets(lines, attributions, reconciliations, recon_rows, feegst)
+    proof_packets = build_proof_packets(
+        lines, attributions, reconciliations, recon_rows, feegst, rejected_matches=rejected_matches
+    )
     report_cfg = {
         "engine_version": _ENGINE_VERSION,
         "seed": cfg.seed,
@@ -143,6 +147,7 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
         audit_root=ledger.root,
         config=report_cfg,
         recovery_plan=recovery_plan,
+        rejected_matches=rejected_matches,
     ), ledger
 
 
