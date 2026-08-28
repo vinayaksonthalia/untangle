@@ -139,6 +139,8 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
     proof_packets = build_proof_packets(
         lines, attributions, reconciliations, recon_rows, feegst, rejected_matches=rejected_matches
     )
+    from engine.journal import build_journal_entries, to_journal_json
+    journal = to_journal_json(build_journal_entries(reconciliations, recon_rows))
     report_cfg = {
         "engine_version": _ENGINE_VERSION,
         "seed": cfg.seed,
@@ -160,6 +162,7 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
         config=report_cfg,
         recovery_plan=recovery_plan,
         rejected_matches=rejected_matches,
+        journal=journal,
     ), ledger
 
 

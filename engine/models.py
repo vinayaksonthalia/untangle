@@ -206,6 +206,7 @@ class RunReport:
     proof_packets: list[dict] = field(default_factory=list)
     recovery_plan: Any | None = None
     rejected_matches: list[dict[str, Any]] | None = None
+    journal: list[dict] | None = None    # balanced Tally/Zoho journal entries for the reconciled slice
 
     def to_dict(self) -> dict:
         d = {
@@ -226,4 +227,6 @@ class RunReport:
             )
         if self.rejected_matches is not None:
             d["rejected_matches"] = self.rejected_matches
+        if self.journal is not None:
+            d["journal"] = self.journal
         return d

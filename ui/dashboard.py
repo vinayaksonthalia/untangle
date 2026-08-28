@@ -173,6 +173,43 @@ def _courtroom_html(report: dict) -> str:
   </div>"""
 
 
+def _journal_html(report: dict) -> str:
+    """'Post to your books' — the postable deliverable. Shows one balanced settlement voucher and offers
+    the whole reconciled slice as a Tally Prime XML import + double-entry JSON."""
+    journal = report.get("journal") or []
+    if not journal:
+        return ""
+    # Feature a reconciled voucher with the fullest waterfall (most ledger lines).
+    ex = max(journal, key=lambda e: len(e.get("lines", [])))
+    rows = "".join(
+        f'<tr><td>{html.escape(ln["ledger"])}</td>'
+        f'<td class="mono jr-d">{"₹ " + ln["debit_inr"] if float(ln["debit_inr"]) else ""}</td>'
+        f'<td class="mono jr-c">{"₹ " + ln["credit_inr"] if float(ln["credit_inr"]) else ""}</td></tr>'
+        for ln in ex.get("lines", [])
+    )
+    total_d = sum(float(ln["debit_inr"]) for ln in ex.get("lines", []))
+    total_c = sum(float(ln["credit_inr"]) for ln in ex.get("lines", []))
+    return f"""
+  <div class="exc-wrap" id="sec-books" style="margin-top:56px">
+    <span class="proven-tag">The deliverable</span>
+    <h2>Post to your books</h2>
+    <p class="sc">A recon report is only half the job. untangle emits the <b>balanced journal voucher</b>
+    a merchant/CA actually posts — gross → gateway fee → 18% GST input-tax-credit → bank — for all
+    {len(journal)} reconciled settlements, importable straight into Tally Prime or Zoho Books.</p>
+    <div class="jr-card">
+      <div class="jr-h mono">Journal voucher · settlement {html.escape(str(ex.get("ref","")))} · {html.escape(str(ex.get("date","")))}</div>
+      <table class="jr-tbl"><thead><tr><th>Ledger</th><th class="jr-d">Debit</th><th class="jr-c">Credit</th></tr></thead>
+      <tbody>{rows}</tbody>
+      <tfoot><tr><td>Balanced</td><td class="mono jr-d">₹ {total_d:,.2f}</td><td class="mono jr-c">₹ {total_c:,.2f}</td></tr></tfoot></table>
+    </div>
+    <div class="jr-btns">
+      <a class="xbtn" href="/api/journal/sample.tally.xml">Download Tally XML</a>
+      <button type="button" class="xbtn" id="journalJson">Download journal JSON</button>
+    </div>
+  </div>
+<script>window.__JOURNAL__ = {_embed_json(journal)};</script>"""
+
+
 def render(report: dict, months_by_key: dict | None = None) -> str:
     t = report["totals"]
     bp = t["by_rail_paise"]
@@ -447,6 +484,7 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
         solver_section=solver_section,
         solver_nav=solver_nav,
         courtroom=_courtroom_html(report),
+        books=_journal_html(report),
         proof_json=_embed_json(report.get("proof_packets", [])),
         proof_count=len(report.get("proof_packets", [])),
         seed=cfg.get("seed", "?"), n_recon=f'{t["n_recon_rows"]:,}',
@@ -518,6 +556,15 @@ h2{{font-family:var(--disp);font-weight:480;font-size:20px;letter-spacing:-.01em
 .prov-row b{{color:var(--tp);font-weight:600}}
 .prov-note{{display:block;font-size:12px;color:var(--tt);margin-top:6px;max-width:80ch;line-height:1.5}}
 .prov-note em{{color:var(--ts);font-style:italic}}
+/* Post to your books */
+.jr-card{{margin-top:20px;border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;max-width:640px;background:var(--surface)}}
+.jr-h{{background:var(--sunken);border-bottom:1px solid var(--border);padding:12px 18px;font-size:11.5px;color:var(--ts)}}
+.jr-tbl{{width:100%;border-collapse:collapse;font-size:13.5px}}
+.jr-tbl th,.jr-tbl td{{text-align:left;padding:10px 18px;border-bottom:1px solid var(--border)}}
+.jr-tbl thead th{{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ts);font-weight:500}}
+.jr-tbl .jr-d,.jr-tbl .jr-c{{text-align:right;width:130px}}
+.jr-tbl tfoot td{{font-weight:600;border-bottom:none;background:var(--sunken)}}
+.jr-btns{{display:flex;gap:12px;margin-top:16px;flex-wrap:wrap}}
 /* Evidence courtroom */
 .court{{margin-top:64px;background:#101014;border-radius:var(--r-lg);padding:34px 36px;color:#e9e9e6}}
 .court .proven-tag{{color:#8fb0ff;background:rgba(143,176,255,.12)}}
@@ -624,6 +671,7 @@ tr.pk-row.open td{{background:var(--sunken)}}
     <a href="#sec-attribution">Attribution</a>
     <a href="#sec-reconciliation">Reconciliation</a>
     <a href="#sec-courtroom">Courtroom</a>
+    <a href="#sec-books">Books</a>
     <a href="#sec-exceptions">Exceptions</a>
     <a href="#sec-recovery">Recovery</a>
     {solver_nav}
@@ -689,6 +737,7 @@ tr.pk-row.open td{{background:var(--sunken)}}
     </div>
   </div>
 {courtroom}
+{books}
   <div class="exc-wrap" id="sec-exceptions">
     <h2>Exception queue</h2>
     <p class="sc">{exc_section_copy}</p>
@@ -857,6 +906,7 @@ _DASH_JS = """<script>
     if(psearch) psearch.addEventListener('input',function(){ renderProof(psearch.value); });
     var pj=document.getElementById('proofJson'); if(pj) pj.addEventListener('click',function(){ blob(JSON.stringify(packets,null,2),'application/json','proof_packets.json'); });
     var pc=document.getElementById('proofCsv'); if(pc) pc.addEventListener('click',function(){ blob(toCsv(packets),'text/csv','proof_packets.csv'); });
+    var jj=document.getElementById('journalJson'); if(jj) jj.addEventListener('click',function(){ blob(JSON.stringify(window.__JOURNAL__||[],null,2),'application/json','untangle_journal.json'); });
   }
 
   // Section-nav scroll-spy (rect-based; robust to positioned ancestors — sol review LOW)
