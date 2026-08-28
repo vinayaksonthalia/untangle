@@ -48,18 +48,29 @@ h1{{font-family:var(--disp);font-weight:480;font-size:50px;line-height:1.05;lett
 footer{{max-width:var(--max);margin:70px auto 0;padding:22px 40px 40px;border-top:1px solid var(--border);font-family:var(--mono);font-size:12px;color:var(--tt);display:flex;gap:24px;flex-wrap:wrap}}
 footer b{{color:var(--ts);font-weight:500}}
 /* upload */
-.drops{{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:28px 0}}
-.drop{{background:var(--surface);border:1.5px dashed var(--border2);border-radius:12px;padding:22px;text-align:center;position:relative;transition:border-color .15s,background .15s}}
-.drop.req.ok{{border-style:solid;border-color:var(--ok);background:#f4faf6}}
-.drop h4{{font-size:14px;margin:0 0 4px}}.drop .hint{{color:var(--tt);font-size:12px;margin:0 0 12px}}
-.drop .cols{{font-family:var(--mono);font-size:10.5px;color:var(--ts);background:var(--sunken);border:1px solid var(--border);border-radius:6px;padding:5px 8px;display:inline-block;margin-bottom:12px}}
-.drop input[type=file]{{font-size:12px;width:100%}}
-.drop .status{{font-size:12px;color:var(--ok);margin-top:8px;min-height:16px}}
-.note{{background:var(--sunken);border:1px solid var(--border);border-radius:10px;padding:16px 18px;color:var(--ts);font-size:13px;margin:20px 0}}
+.up{{max-width:960px}}
+.drops{{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:30px 0 0}}
+.drop{{display:block;text-align:left;position:relative;cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px 20px 22px;
+  box-shadow:0 1px 0 rgba(20,20,15,.02),0 14px 32px -28px rgba(20,20,15,.30);transition:border-color .15s,box-shadow .15s,background .15s,transform .15s}}
+.drop:hover{{border-color:var(--border2);box-shadow:0 1px 0 rgba(20,20,15,.03),0 18px 36px -24px rgba(20,20,15,.34);transform:translateY(-1px)}}
+.drop.drag{{border-color:var(--acc);background:var(--acc-tint);box-shadow:0 0 0 3px rgba(43,94,219,.12)}}
+.drop.ok{{border-color:var(--ok);background:#f5faf7}}
+.drop .num{{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--acc-tint);color:var(--acc);font-family:var(--mono);font-size:11px;font-weight:500}}
+.drop.ok .num{{background:#dbf0e4;color:var(--ok)}}
+.drop h4{{font-size:14.5px;margin:12px 0 3px}}.drop .hint{{color:var(--tt);font-size:12px;margin:0 0 12px}}
+.drop .cols{{font-family:var(--mono);font-size:10.5px;color:var(--ts);background:var(--sunken);border:1px solid var(--border);border-radius:6px;padding:6px 8px;display:block;margin-bottom:14px;line-height:1.5;word-break:break-word}}
+.drop input[type=file]{{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}}
+.pick{{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;color:var(--tp);background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:8px 13px}}
+.drop:hover .pick{{border-color:var(--tp)}}
+.drop.ok .pick,.drop.ok .droptip{{display:none}}
+.droptip{{font-size:11.5px;color:var(--tt);margin-left:10px}}
+.drop .status{{display:none;align-items:flex-start;gap:7px;font-size:12.5px;color:var(--ok);margin-top:14px;font-weight:500;word-break:break-all;line-height:1.4}}
+.drop.ok .status{{display:flex}}
+.note{{background:var(--sunken);border:1px solid var(--border);border-radius:10px;padding:16px 18px;color:var(--ts);font-size:13px;margin:22px 0}}
 .note b{{color:var(--tp)}}
-.submit{{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:8px}}
+.submit{{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:22px}}
 .roadmap{{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:20px}}
-.rc{{border:1px dashed var(--border2);border-radius:10px;padding:16px;color:var(--ts);font-size:13px;background:var(--sunken);opacity:.9}}
+.rc{{border:1px solid var(--border);border-radius:12px;padding:18px;color:var(--ts);font-size:13px;background:var(--surface)}}
 .rc .t{{font-weight:600;color:var(--tp);font-size:13px}}.rc .soon{{font-family:var(--mono);font-size:10px;color:var(--warn);text-transform:uppercase;letter-spacing:.06em;margin-left:6px}}
 @media(max-width:840px){{.wrap,.topbar .in,footer{{padding-left:22px;padding-right:22px}}h1{{font-size:36px}}
 .props,.steps,.who,.drops,.roadmap{{grid-template-columns:1fr}}}}
@@ -678,26 +689,32 @@ def upload_page() -> str:
   <p class="sub" style="margin-bottom:8px">CSV bank statement, Razorpay settlement report, and your order list.
   Processed in memory — nothing is saved.</p>
 
-  <form action="/reconcile" method="post" enctype="multipart/form-data" id="f">
+  <form action="/reconcile" method="post" enctype="multipart/form-data" id="f" class="up">
     <div class="drops">
-      <div class="drop req" data-req>
+      <label class="drop req">
+        <span class="num">1</span>
         <h4>Bank statement</h4><p class="hint">CSV from your netbanking</p>
         <div class="cols">value_date · narration · credit · debit</div>
-        <input type="file" name="bank" accept=".csv,text/csv" required onchange="mark(this)">
-        <div class="status"></div>
-      </div>
-      <div class="drop req" data-req>
+        <input type="file" name="bank" accept=".csv,text/csv" required>
+        <span class="pick">Choose file</span><span class="droptip">or drop it here</span>
+        <span class="status"></span>
+      </label>
+      <label class="drop req">
+        <span class="num">2</span>
         <h4>Razorpay settlement report</h4><p class="hint">Dashboard → Settlements → Reports</p>
         <div class="cols">entity_id · type · amount · fee · tax · settlement_utr</div>
-        <input type="file" name="recon" accept=".json,application/json" required onchange="mark(this)">
-        <div class="status"></div>
-      </div>
-      <div class="drop req" data-req>
+        <input type="file" name="recon" accept=".json,application/json" required>
+        <span class="pick">Choose file</span><span class="droptip">or drop it here</span>
+        <span class="status"></span>
+      </label>
+      <label class="drop req">
+        <span class="num">3</span>
         <h4>Order ledger</h4><p class="hint">Your orders export (CSV)</p>
         <div class="cols">order_id · amount_paise · status</div>
-        <input type="file" name="ledger" accept=".csv,text/csv" required onchange="mark(this)">
-        <div class="status"></div>
-      </div>
+        <input type="file" name="ledger" accept=".csv,text/csv" required>
+        <span class="pick">Choose file</span><span class="droptip">or drop it here</span>
+        <span class="status"></span>
+      </label>
     </div>
 
     <div class="note"><b>PDF statements: not yet.</b> PDF parsing gets money wrong silently, and we'd rather refuse
@@ -724,7 +741,30 @@ def upload_page() -> str:
   </div>
 </div>
 <script>
-function mark(inp){var d=inp.closest('.drop');var s=d.querySelector('.status');
-if(inp.files&&inp.files[0]){d.classList.add('ok');var kb=Math.max(1,Math.round(inp.files[0].size/1024));
-s.textContent='✓ '+inp.files[0].name+' ('+kb+' KB)';}else{d.classList.remove('ok');s.textContent='';}}
+(function(){
+  function update(inp){
+    var d=inp.closest('.drop'), s=d.querySelector('.status');
+    if(inp.files&&inp.files[0]){
+      d.classList.add('ok');
+      var kb=Math.max(1,Math.round(inp.files[0].size/1024));
+      s.textContent='✓ '+inp.files[0].name+' · '+kb+' KB';
+    }else{ d.classList.remove('ok'); s.textContent=''; }
+  }
+  document.querySelectorAll('.drop').forEach(function(d){
+    var inp=d.querySelector('input[type=file]');
+    inp.addEventListener('change',function(){update(inp);});
+    ['dragenter','dragover'].forEach(function(e){
+      d.addEventListener(e,function(ev){ev.preventDefault();ev.stopPropagation();d.classList.add('drag');});
+    });
+    ['dragleave','dragend'].forEach(function(e){
+      d.addEventListener(e,function(ev){ev.preventDefault();ev.stopPropagation();d.classList.remove('drag');});
+    });
+    d.addEventListener('drop',function(ev){
+      ev.preventDefault();ev.stopPropagation();d.classList.remove('drag');
+      if(ev.dataTransfer&&ev.dataTransfer.files&&ev.dataTransfer.files.length){
+        inp.files=ev.dataTransfer.files; update(inp);
+      }
+    });
+  });
+})();
 </script>""" + _FOOT
