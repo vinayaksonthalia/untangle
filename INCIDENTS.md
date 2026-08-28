@@ -102,3 +102,17 @@ Real failures, written after the fact, by me. Not generated. Each entry: what I 
 **Measured.** Razorpay recall 0.841 → **0.911** (0.821 → **0.839** sealed), precision still **1.000**, decoy false-positives still **0**. 103 Razorpay attributed (up from 95), abstentions down to 14. The recall approaches the pre-proof-gate 0.938 — but every point of it rests on a real settlement tie, not resemblance. The reconciled slice (91) and recoverable ITC (₹43,200.99) are unchanged; full entity-level reconciliation of split groups (the per-credit reconcile model can't net a group yet) is the tracked next step.
 
 **Pattern.** "Abstain rather than guess" and "high recall" are not in tension when the recovery is *provable*. The proof-gate removed a guess; reconstruction added back the same credits through a real, unique tie — precision never moved.
+
+---
+
+## 007 — Invented exception codes and mismatched key spaces in active recovery design (2026-08-28)
+
+**What happened.** During the initial design and Phase 1 implementation of the Active Recovery Controller (Feature 005), two related correctness defects surfaced during review:
+1. Reason codes for ledger discrepancies were assumed/invented (`uncredited_order`, `uncredited_settlement`, etc.) rather than inspecting `engine/ledger.py` for the genuine emitted codes (`ledger_mismatch`, `duplicate_order_booking`, `refund_not_reflected`).
+2. An action `reconcile_order_ledger` was designed under the assumption that order-ledger exceptions could be joined directly with bank-statement credit lines by key. In reality, order-ledger exceptions are keyed by synthetic order identifiers (`"ledger:*"`), not bank credit content hashes (`line_key`). They represent order-level reconciliation discrepancies, not unresolved bank credits. Consequently, the action was structurally unreachable in a credit-level recovery plan.
+
+**Why it's serious.** Inventing identifiers breaks runtime schema alignment and causes silent no-ops or dead code paths. Conflating two different key spaces (bank credit keys vs synthetic ledger order IDs) would have emitted nonsensical recommendations or caused downstream lookup misses.
+
+**Fix.** Enforced strict grounding in actual emitted identifiers (grepping both keyword and positional constructor usages). Aligned the recovery taxonomy: genuine bank-credit reconciliation failures (`razorpay_coverage_not_found`, `unbalanced_residual`, `reconstructed_split_leg`, `partial_or_duplicate_settlement`) map to `export_settlement_report`. The unreachable `reconcile_order_ledger` action was excised, keeping the recovery plan strictly focused on bank credit resolution.
+
+**Pattern.** Never assume an identifier or key schema based on intuition or doc prose without inspecting the actual constructors and dictionary emissions in code. Grounding every string in actual codebase references before implementation is mandatory.

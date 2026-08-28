@@ -48,7 +48,8 @@ def _fmt_inr(paise: int) -> str:
     return ("-" if neg else "") + "₹" + s
 
 
-def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None) -> RunReport:
+def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
+                 *, with_recovery: bool = True) -> RunReport:
     ledger = audit_mod.AuditLedger()
     ledger.append("run_start", {"engine_version": _ENGINE_VERSION, "seed": cfg.seed,
                                 "provider": cfg.provider_or_none(), "threshold": cfg.threshold,
@@ -110,6 +111,11 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None)
         "coverage_curve": [c.__dict__ for c in coverage_curve(confidences, total=len(attributions))],
     }
     from engine.proof import build_proof_packets
+    from engine.recovery import build_recovery_plan
+
+    # Additive post-pass: computed only when enabled, so a report built with_recovery=False is byte-identical
+    # to the pre-Feature-005 report (the additivity property test relies on this to compare both builds).
+    recovery_plan = build_recovery_plan(lines, attributions, index, exceptions) if with_recovery else None
     proof_packets = build_proof_packets(lines, attributions, reconciliations, recon_rows, feegst)
     return RunReport(
         totals=totals,
@@ -126,6 +132,7 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None)
             "model": cfg.model if cfg.use_ai else None,
             "threshold": cfg.threshold,
         },
+        recovery_plan=recovery_plan,
     ), ledger
 
 
@@ -203,6 +210,14 @@ def _print_summary(report: RunReport) -> None:
           f"{_fmt_inr(t['fee_gst_recoverable_paise'])}")
     by_reason = ", ".join(f"{k} {v}" for k, v in t.get("exceptions_by_reason", {}).items())
     print(f"Exceptions: {t.get('exception_count', 0)}" + (f" ({by_reason})" if by_reason else ""))
+    if report.recovery_plan and report.recovery_plan.actions:
+        plan = report.recovery_plan
+        recov_inr = _fmt_inr(plan.recoverable_if_actioned_paise)
+        print(f"Active Recovery Plan: {len(plan.actions)} action(s) · up to {recov_inr} recoverable if confirmed")
+        for i, act in enumerate(plan.actions[:3], 1):
+            print(f"    {i}. {act.description}")
+        if len(plan.actions) > 3:
+            print(f"    ... ({len(plan.actions) - 3} more action(s) in report.json)")
     print(f"Audit root: {report.audit_root}")
 
 
