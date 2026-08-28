@@ -159,6 +159,16 @@ def build_proof_packets(
                 })
             proof_data["violated_constraints"] = violated_constraints
 
+        # Evidence courtroom: the adversarial challenger's audit of THIS verdict — the proof margin
+        # (how far the Razorpay score sits above the best competing explanation) and the strongest
+        # explanation it rejected, including which tie signal, when removed, collapses the score.
+        # Present only when the non-gating audit ran (report/UI path); absent otherwise.
+        if a.proof_margin is not None:
+            proof_data["challenge"] = {
+                "proof_margin": round(a.proof_margin, 4),
+                "rejected_explanation": a.competing_explanation,
+            }
+
         packets.append({
             "line_key": a.line_key,
             "value_date": line.value_date.isoformat(),
