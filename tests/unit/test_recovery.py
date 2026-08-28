@@ -584,4 +584,27 @@ def test_resolve_delta_immutability_and_empty_safe():
     assert report_b == copy_b
 
 
+def test_build_recovery_plan_merges_overlapping_date_windows():
+    """Finding 1: Export settlement report actions with overlapping date windows are merged into one."""
+    # Line 1: value_date 2026-06-10 -> window [2026-06-05, 2026-06-15]
+    l1 = _line("k1", narr="RAZORPAY_LEANING_1", amount=100000, vd="2026-06-10")
+    # Line 2: value_date 2026-06-14 -> window [2026-06-09, 2026-06-19] (overlaps with [2026-06-05, 2026-06-15])
+    l2 = _line("k2", narr="RAZORPAY_LEANING_2", amount=200000, vd="2026-06-14")
 
+    # Both lines abstain due to brand_no_tie
+    attrs = [
+        RailAttribution("k1", Rail.UNKNOWN.value, 0.0, "NONE", [EvidenceItem("narration_brand_rzp", "brand", 0.3)], abstained=True),
+        RailAttribution("k2", Rail.UNKNOWN.value, 0.0, "NONE", [EvidenceItem("narration_brand_rzp", "brand", 0.3)], abstained=True),
+    ]
+    idx = ReconIndex([])
+    plan = build_recovery_plan([l1, l2], attrs, idx, [])
+
+    # Must be merged into ONE export_settlement_report action covering the unioned date window
+    export_actions = [a for a in plan.actions if a.action_type == ACTION_EXPORT_SETTLEMENT_REPORT]
+    assert len(export_actions) == 1
+    action = export_actions[0]
+    assert action.params == {"date_from": "2026-06-05", "date_to": "2026-06-19"}
+    assert action.resolves == ("k1", "k2")
+    assert action.recoverable_paise == 300000
+    assert action.cost == 1.0
+    assert action.gain_per_cost == 300000.0

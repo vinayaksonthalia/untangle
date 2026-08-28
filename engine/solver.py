@@ -32,6 +32,7 @@ from engine.attribute import (
     _all_sum_subsets,
     _combine,
 )
+from engine.config import DEFAULT_THRESHOLD
 from engine.evidence import (
     ReconIndex,
     extract_utr_tokens,
@@ -183,6 +184,8 @@ def build_candidate_graph(
         for rail_obj, items in sorted(rail_evs.items(), key=lambda kv: kv[0].value if hasattr(kv[0], "value") else str(kv[0])):
             rail_name = rail_obj.value if hasattr(rail_obj, "value") else str(rail_obj)
             score = _combine(items)
+            if threshold is not None and score < threshold:
+                continue
             if score > 0.0:
                 cost = (0, 0, 0, -round(score, 4), 0.5)
                 candidates.append(
@@ -247,6 +250,12 @@ def build_candidate_graph(
                 is_exact = "utr_exact" in tie_signals
                 tier = Tier.A.value if is_exact else Tier.B.value
                 conf = 0.95 if is_exact else _combine(rzp_ev)
+                # A tied Razorpay edge is proof (the proof-gate already validated the tie), so at the
+                # default threshold it is always kept. Only a STRICTER-than-default run additionally
+                # requires the confidence to clear that stricter bar (Qodo #3: single edges below
+                # threshold should not be emitted on elevated-threshold runs).
+                if threshold is not None and threshold > DEFAULT_THRESHOLD and conf < threshold:
+                    continue
                 cost = (
                     0,
                     0,
@@ -274,12 +283,25 @@ def build_candidate_graph(
     if threshold is None or _SPLIT_CONFIDENCE >= threshold:
         sig_by_key: dict[str, set[str]] = {}
         split_candidates: list[BankCreditLine] = []
+        tied_sids_by_key: dict[str, set[str]] = defaultdict(set)
+
         for ln in lines:
             if not (ln.is_credit and ln.amount_paise > 0 and not narration_rail_signals(ln)):
                 continue
-            sigs = {e.signal for e in razorpay_signals(ln, index)}
+            rzp_signals_list = razorpay_signals(ln, index)
+            sigs = {e.signal for e in rzp_signals_list}
             if "utr_exact" in sigs:
                 continue
+
+            # Record strong single-credit UTR ties to specific settlements (Finding 4)
+            for e in rzp_signals_list:
+                if e.signal == "utr_suffix":
+                    m = re.search(r"settlement_utr\s+([a-z0-9]+)", e.detail, re.I)
+                    if m:
+                        sid = index.utr_to_sid.get(m.group(1).lower())
+                        if sid:
+                            tied_sids_by_key[ln.key].add(sid)
+
             if _RZP_LEANING_SIGNALS & sigs:
                 split_candidates.append(ln)
                 sig_by_key[ln.key] = sigs
@@ -290,9 +312,12 @@ def build_candidate_graph(
             if net <= 0 or sdate is None:
                 continue
 
+            # Credits with strong UTR tie to a different settlement are excluded (Finding 4)
             elig = [
                 c for c in split_candidates
-                if c.amount_paise < net and abs((c.value_date - sdate).days) <= _SPLIT_DATE_WINDOW
+                if c.amount_paise < net
+                and abs((c.value_date - sdate).days) <= _SPLIT_DATE_WINDOW
+                and (not tied_sids_by_key.get(c.key) or sid in tied_sids_by_key[c.key])
             ]
             if len(elig) < 2:
                 continue
@@ -343,6 +368,17 @@ def build_candidate_graph(
                         is_split=True,
                     )
                 )
+
+    # A credit poisoned by ANY oversized/un-enumerable split pool must abstain from ALL split
+    # assignments — we could not enumerate its globally-competing splits, so accepting any split for it
+    # would be an unverified verdict (Qodo: "stale splits bypass abstention"). This also drops split
+    # edges emitted for an EARLIER settlement before the credit was poisoned by a later, larger pool.
+    # Its own single-credit edges are untouched (its individual tie is still proof).
+    if un_enumerable_credits:
+        candidates = [
+            c for c in candidates
+            if not (c.is_split and any(k in un_enumerable_credits for k in c.credit_keys))
+        ]
 
     # Sort candidates deterministically
     candidates.sort(key=lambda c: (c.credit_keys, c.target_id, c.assignment_id))
@@ -538,20 +574,13 @@ def solve_assignment(
     contested_credits: dict[str, dict[str, Any]] = {}
     is_overall_optimal = True
     overall_notes: list[str] = []
+    if graph.un_enumerable_credits:
+        is_overall_optimal = False
+        overall_notes.append("Oversized candidate pool marked un-enumerable (abstain)")
 
     for comp in graph.components:
         comp_credits = list(comp)
         comp_set = set(comp_credits)
-
-        # Fail-closed check: un-enumerable component
-        if any(k in graph.un_enumerable_credits for k in comp_set):
-            is_overall_optimal = False
-            overall_notes.append("Oversized candidate pool marked un-enumerable (abstain)")
-            for k in sorted(comp_set):
-                abstain_cands = [c for c in graph.candidates_by_credit.get(k, []) if c.target_id == "abstain"]
-                if abstain_cands:
-                    all_chosen_assignments.append(abstain_cands[0])
-            continue
 
         # Solve component with branch-and-bound search
         best_assignment, best_cost, timed_out = _solve_component(

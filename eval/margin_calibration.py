@@ -116,6 +116,13 @@ def calibrate_proof_margin(
 
     best: MarginCalibration | None = None
     for t in grid:
+        # A certified threshold must be STRICTLY POSITIVE to be an enforceable gate: the runtime
+        # (engine.attribute._finalize_razorpay) reads margin_threshold <= 0.0 as "skip the challenger
+        # entirely", so certifying 0.0 would deploy as NO gate and accept exactly the candidates the
+        # gate at 0.0 meant to exclude. If no positive threshold qualifies, calibration fails closed
+        # (returns None) and the feature stays disabled.
+        if t <= 0.0:
+            continue
         accepted = [(m, c) for m, c in candidates if m >= t]
         n = len(accepted)
         if n == 0:
