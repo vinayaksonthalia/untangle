@@ -208,7 +208,6 @@ def verify_proof_packet(
     # -----------------------------------------------------------------
     verdict = packet.get("verdict")
     rail = verdict.get("rail") if isinstance(verdict, dict) else None
-    tier = verdict.get("tier") if isinstance(verdict, dict) else None
 
     if rail == "razorpay_settlement":
         # The proof of a Razorpay verdict is its report-backed tie (check a) + arithmetic (check b).
