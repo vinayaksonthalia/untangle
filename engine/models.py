@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Enumerations
@@ -190,9 +191,10 @@ class RunReport:
     audit_root: str
     config: dict
     proof_packets: list[dict] = field(default_factory=list)
+    recovery_plan: Any | None = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "totals": self.totals,
             "attributions": [a.to_dict() for a in self.attributions],
             "reconciliations": [r.to_dict() for r in self.reconciliations],
@@ -202,3 +204,10 @@ class RunReport:
             "config": self.config,
             "proof_packets": self.proof_packets,
         }
+        if self.recovery_plan is not None:
+            d["recovery_plan"] = (
+                self.recovery_plan.to_dict()
+                if hasattr(self.recovery_plan, "to_dict")
+                else self.recovery_plan
+            )
+        return d
