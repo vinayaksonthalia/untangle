@@ -21,6 +21,7 @@ from engine.attribute import attribute_all
 from engine.certificate import issue_certificate
 from engine.evidence import ReconIndex
 from engine.ingest import load_bank, load_recon
+from engine.investigate import investigate
 from engine.journal import JournalEntry, build_journal_entries, to_journal_json, to_tally_xml
 from engine.reconcile import reconcile as reconcile_core
 from engine.service import reconcile
@@ -507,6 +508,78 @@ def export_journal_entries(
                 "ok": False,
                 "error": f"Unsupported format '{format}'. Use 'json' or 'tally_xml'.",
             }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+        }
+
+
+@mcp.tool()
+def investigate_variance(
+    bank_path: str,
+    recon_path: str,
+    ledger_path: str,
+    line_key: str,
+) -> dict[str, Any]:
+    """Investigate the root-cause of variance for an unresolved or recon-failure bank credit.
+
+    Returns the deterministic root-cause diagnosis, reasoning trace, candidates tried,
+    and a balanced corrective double-entry journal draft.
+
+    Args:
+        bank_path: Path to bank statement CSV.
+        recon_path: Path to Razorpay settlement recon report JSON.
+        ledger_path: Path to order ledger CSV.
+        line_key: The unique hash key of the bank credit line.
+
+    Returns:
+        Investigation dictionary containing root_cause, confidence, reasoning_trace,
+        candidates_tried, and corrective_entry draft.
+    """
+    try:
+        report = _get_report(bank_path, recon_path, ledger_path)
+        investigations = report.get("investigations", [])
+        for inv in investigations:
+            if inv.get("line_key") == line_key:
+                return {
+                    "ok": True,
+                    "investigation": inv,
+                }
+
+        # If not pre-computed in report, investigate on the fly
+        lines = load_bank(bank_path)
+        recon_rows = load_recon(recon_path)
+        index = ReconIndex(recon_rows)
+        attributions = attribute_all(lines, index, 0.55, audit_challenger=True)
+        lines_by_key = {ln.key: ln for ln in lines}
+        reconciliations, _u, _s = reconcile_core(lines_by_key, attributions, recon_rows)
+        exceptions = report.get("exceptions", [])
+
+        line = lines_by_key.get(line_key)
+        if line is None:
+            return {
+                "ok": False,
+                "error": f"Bank credit line '{line_key}' not found",
+            }
+
+        attr = next((a for a in attributions if a.line_key == line_key), None)
+        rec = next((r for r in reconciliations if r.line_key == line_key), None)
+        exc = next((e for e in exceptions if e.get("line_key") == line_key), None)
+
+        inv_res = investigate(
+            line=line,
+            attribution=attr,
+            reconciliation=rec,
+            recon_rows=recon_rows,
+            index=index,
+            exception=exc,
+        )
+        return {
+            "ok": True,
+            "investigation": inv_res.to_dict(),
+        }
     except Exception as exc:
         return {
             "ok": False,

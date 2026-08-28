@@ -207,6 +207,7 @@ class RunReport:
     recovery_plan: Any | None = None
     rejected_matches: list[dict[str, Any]] | None = None
     journal: list[dict] | None = None    # balanced Tally/Zoho journal entries for the reconciled slice
+    investigations: list[dict] | None = None  # Feature 006: root-cause investigations for recon-failure credits
 
     def to_dict(self) -> dict:
         d = {
@@ -229,4 +230,6 @@ class RunReport:
             d["rejected_matches"] = self.rejected_matches
         if self.journal is not None:
             d["journal"] = self.journal
+        if self.investigations is not None:
+            d["investigations"] = self.investigations
         return d

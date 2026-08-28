@@ -110,6 +110,12 @@ Razorpay credits whose UTR was mangled) or **fooled** (label look-alike decoys a
   `confirm_utr_with_bank`, `provide_settlement_ids`, `classify_counterparty`). Amounts are framed honestly
   as "up to ₹X if confirmed", never "owed". Includes `resolve_delta` to track newly-resolved credits and
   recovered paise across reruns.
+- **Agentic Exception-Investigation Loop** — when a credit is matched or leaning but its money does not
+  tie out (`unbalanced_residual`, `partial_or_duplicate_settlement`, `reconstructed_split_leg`, `razorpay_coverage_not_found`),
+  the engine autonomously diagnoses the root cause (`mdr_fee_drift`, `cross_cycle_refund_lag`, `on_hold_release`,
+  `dispute_deduction`, `partial_capture`, `bank_charge_or_rounding`, `rolling_reserve`, or strictly `unexplained`),
+  outputs an auditable step-by-step reasoning trace, preserves the negative space of evaluated candidates, and drafts a
+  balanced corrective double-entry journal proposal.
 - **Global Evidence-Constrained Solver** — formulates whole-period reconciliation as a single constrained
   assignment problem over a candidate graph, minimizing invalid picks, unexplained paise, and ops cost.
   Reconciles globally consistent assignments and rejects locally-plausible matches that violate global settlement

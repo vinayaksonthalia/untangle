@@ -265,7 +265,8 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
     off = circ * (1 - cov)
     mbk = months_by_key or {}
     exc_months: dict[str, int] = {}
-    exc_rows = []
+    exc_rows: list[str] = []
+    inv_by_key = {inv["line_key"]: inv for inv in report.get("investigations") or []}
     for e in report["exceptions"]:
         lbl, col = _REASON.get(e["reason_code"], (e["reason_code"], "#6B6B62"))
         mo = mbk.get(e["line_key"], "")
@@ -279,10 +280,65 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
         )
         ev_text = " ".join(f'{it.get("signal","")} {it.get("detail","")}' for it in ev_items)
         blob = html.escape(f'{lbl} {e["detail"]} {e["suggested_action"]} {ev_text}'.lower(), quote=True)
+
+        inv = inv_by_key.get(e["line_key"])
+        inv_html = ""
+        if inv:
+            rc_lbl = inv.get("root_cause", "unexplained")
+            conf = inv.get("confidence", 0.0)
+            trace_items = "".join(f"<li>{html.escape(s)}</li>" for s in inv.get("reasoning_trace", []))
+            cands_html = []
+            for c in inv.get("candidates_tried", []):
+                matched = c.get("matched", False)
+                rc_name = html.escape(c.get("root_cause", ""))
+                rc_reason = html.escape(c.get("reason", ""))
+                if matched:
+                    cands_html.append(f'<div class="cand-item cand-matched">✓ <strong>{rc_name}</strong>: {rc_reason}</div>')
+                else:
+                    cands_html.append(f'<div class="cand-item cand-rejected">✗ <span class="cand-struck">{rc_name}</span>: {rc_reason}</div>')
+            cands_block = "".join(cands_html)
+
+            corr_entry = inv.get("corrective_entry")
+            corr_html = ""
+            if corr_entry and corr_entry.get("lines"):
+                j_rows = []
+                for j_ln in corr_entry.get("lines", []):
+                    j_rows.append(
+                        f"<tr><td>{html.escape(str(j_ln.get('ledger', '')))}</td>"
+                        f"<td class='mono jr-d'>{html.escape(str(j_ln.get('debit_inr', '')))}</td>"
+                        f"<td class='mono jr-c'>{html.escape(str(j_ln.get('credit_inr', '')))}</td></tr>"
+                    )
+                corr_html = f"""
+                <div class="inv-corr-wrap">
+                  <div class="inv-corr-title mono">Proposed Corrective Voucher · {html.escape(str(corr_entry.get('ref', '')))}</div>
+                  <table class="jr-tbl inv-corr-tbl">
+                    <thead><tr><th>Ledger</th><th class="jr-d">Debit (₹)</th><th class="jr-c">Credit (₹)</th></tr></thead>
+                    <tbody>{''.join(j_rows)}</tbody>
+                  </table>
+                  <div class="inv-corr-note"><em>Note: Automated proposal for finance review, not auto-posted to ledger.</em></div>
+                </div>"""
+
+            inv_html = f"""
+            <details class="inv-card">
+              <summary class="inv-summary">
+                <span class="inv-btn">🔍 Investigate Root Cause</span>
+                <span class="inv-badge inv-badge-{html.escape(rc_lbl)}">{html.escape(rc_lbl)}</span>
+                <span class="mono rs" style="margin-left:auto;">Confidence: {conf:.2f}</span>
+              </summary>
+              <div class="inv-body">
+                <div class="inv-section-title">Autonomous Reasoning Trace</div>
+                <ol class="inv-trace-list">{trace_items}</ol>
+                <div class="inv-section-title">Candidates Evaluated (Negative Space)</div>
+                <div class="cand-list">{cands_block}</div>
+                {corr_html}
+              </div>
+            </details>
+            """
+
         exc_rows.append(f"""
       <tr class="excrow" data-reason="{html.escape(e["reason_code"])}" data-month="{html.escape(mo)}" data-text="{blob}">
       <td><span class="sev" style="--d:{col}">{html.escape(lbl)}</span></td>
-      <td class="dt">{html.escape(e["detail"])}{f'<div class="evwrap">{ev_html}</div>' if ev_html else ''}</td>
+      <td class="dt">{html.escape(e["detail"])}{f'<div class="evwrap">{ev_html}</div>' if ev_html else ''}{inv_html}</td>
       <td class="ac">{html.escape(e["suggested_action"])}</td></tr>""")
 
     cfg = report.get("config", {})
@@ -611,6 +667,32 @@ tbody tr:hover{{background:var(--sunken)}}
 .evwrap{{margin-top:7px;display:grid;gap:3px}}
 .evln{{font-family:var(--mono);font-size:11px;color:var(--tt);word-break:break-word}}
 .evs{{color:var(--acc)}}
+.inv-card{{margin-top:10px;background:var(--sunken);border:1px solid var(--border);border-radius:var(--r-md);padding:8px 12px;font-size:12.5px}}
+.inv-summary{{cursor:pointer;display:flex;align-items:center;gap:10px;font-weight:500;list-style:none}}
+.inv-summary::-webkit-details-marker{{display:none}}
+.inv-btn{{color:var(--acc);font-weight:600;display:inline-flex;align-items:center;gap:5px}}
+.inv-badge{{display:inline-block;padding:2px 8px;font-family:var(--mono);font-size:11px;font-weight:600;border-radius:4px;background:#e2e8f0;color:#334155}}
+.inv-badge-mdr_fee_drift{{background:#e0f2fe;color:#0369a1}}
+.inv-badge-cross_cycle_refund_lag{{background:#fef3c7;color:#b45309}}
+.inv-badge-on_hold_release{{background:#ede9fe;color:#6d28d9}}
+.inv-badge-dispute_deduction{{background:#fee2e2;color:#b91c1c}}
+.inv-badge-partial_capture{{background:#fce7f3;color:#be185d}}
+.inv-badge-bank_charge_or_rounding{{background:#ecfdf5;color:#047857}}
+.inv-badge-rolling_reserve{{background:#f3e8ff;color:#7e22ce}}
+.inv-badge-unexplained{{background:#f1f5f9;color:#64748b}}
+.inv-body{{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}}
+.inv-section-title{{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ts);font-weight:600;margin:8px 0 4px}}
+.inv-trace-list{{margin:4px 0 10px 18px;padding:0;color:var(--tp);font-size:12px;line-height:1.6}}
+.cand-list{{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}}
+.cand-item{{font-size:11.5px;padding:3px 6px;border-radius:4px;background:var(--surface)}}
+.cand-matched{{color:var(--ok);font-weight:500}}
+.cand-rejected{{color:var(--tt)}}
+.cand-struck{{text-decoration:line-through;color:var(--ts)}}
+.inv-corr-wrap{{margin-top:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px}}
+.inv-corr-title{{font-size:11px;font-weight:600;color:var(--ts);margin-bottom:6px}}
+.inv-corr-tbl{{font-size:12px}}
+.inv-corr-tbl th, .inv-corr-tbl td{{padding:6px 10px}}
+.inv-corr-note{{font-size:11px;color:var(--tt);margin-top:6px}}
 footer{{max-width:var(--max);margin:64px auto 0;padding:18px 48px 0;border-top:1px solid var(--border);
 font-family:var(--mono);font-size:11.5px;color:var(--tt);display:flex;gap:26px;flex-wrap:wrap}}
 footer b{{color:var(--ts);font-weight:500}}
