@@ -10,6 +10,9 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=8", "hypothesis>=6", "httpx"]
 web = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9"]
+# Optional: ECDSA-signed close certificates. The core is stdlib-only; without this extra (or a
+# signing key) the certificate is still built and content-hashed — tamper-evident, just unsigned.
+crypto = ["cryptography>=42"]
 
 [tool.setuptools]
 packages = ["engine", "engine.llm", "eval", "ui", "webapp", "generator"]

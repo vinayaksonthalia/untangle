@@ -17,10 +17,11 @@ import threading
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from engine.certificate import issue_certificate, verify_certificate
 from engine.ingest import InputError, load_bank
 from engine.service import reconcile
 from ui.dashboard import render as render_dashboard
-from webapp.pages import landing_page, upload_page
+from webapp.pages import landing_page, upload_page, verify_page
 
 app = FastAPI(title="untangle", docs_url="/api/docs")
 
@@ -170,6 +171,32 @@ async def api_reconcile(
         ln = await _save(tmp, "order_ledger.csv", ledger)
         report = _run_safely(tmp, b, r, ln)
         return JSONResponse(report)
+
+
+@app.get("/api/certificate/sample")
+def api_certificate_sample() -> JSONResponse:
+    """The signed (or hash-only) period close certificate for the bundled sample run — a portable,
+    independently-verifiable artifact. Nothing stored."""
+    _ensure_sample()
+    report = reconcile(
+        os.path.join(_SAMPLE, "bank_statement.csv"),
+        os.path.join(_SAMPLE, "recon_report.json"),
+        os.path.join(_SAMPLE, "order_ledger.csv"),
+    )
+    return JSONResponse(issue_certificate(report))
+
+
+@app.post("/api/verify")
+async def api_verify(payload: dict) -> JSONResponse:
+    """Independently verify a close-certificate envelope: re-derive its SHA-256 content hash and, when
+    signed, check the ECDSA signature. No trust in this server required — a tampered field breaks the
+    hash; a forged certificate fails the signature."""
+    return JSONResponse(verify_certificate(payload))
+
+
+@app.get("/verify", response_class=HTMLResponse)
+def verify() -> str:
+    return verify_page()
 
 
 if __name__ == "__main__":
