@@ -14,7 +14,7 @@ web = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9"]
 # signing key) the certificate is still built and content-hashed — tamper-evident, just unsigned.
 crypto = ["cryptography>=42"]
 # Optional: Model Context Protocol (MCP) server for AI agent integration.
-mcp = ["mcp>=1.0"]
+mcp = ["mcp>=1.0,<2"]  # pin to v1: the server uses mcp.server.fastmcp.FastMCP (renamed in mcp 2.x)
 
 [tool.setuptools]
 packages = ["engine", "engine.llm", "eval", "ui", "webapp", "generator"]

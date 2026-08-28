@@ -153,7 +153,12 @@ def build_journal_entries(
         # several); never keep only the first, and never invent a fallback date.
         sids = sorted({r.settlement_id for r in covered if r.settlement_id}) or [rec.line_key]
         utrs = sorted({r.settlement_utr for r in covered if r.settlement_utr})
+        # Voucher date from the earliest real settlement date, falling back to the capture date — never
+        # an invented constant (Qodo #8), but a Tally voucher must still carry a date (Qodo #1: don't
+        # emit date-less vouchers).
         sdate = min((r.settled_at for r in covered if r.settled_at), default=None)
+        if sdate is None:
+            sdate = min((r.created_at for r in covered if r.created_at), default=None)
         date = sdate.date().isoformat() if sdate is not None else ""
 
         lines: list[JournalLine] = [JournalLine(LEDGER_BANK, debit_paise=actual_net)]
@@ -227,6 +232,8 @@ def to_tally_xml(entries: list[JournalEntry], *, company: str = "Your Company Na
     ]
     for e in entries:
         tdate = e.date.replace("-", "")  # YYYYMMDD; never invent a fallback accounting date (Qodo #8)
+        if not tdate:
+            continue  # a Tally voucher must carry a real date — skip a date-less entry rather than emit one
         guid = f"UNTANGLE-RZP-{_xml_escape(e.ref)}"
         out.append('<TALLYMESSAGE xmlns:UDF="TallyUDF">')
         out.append('<VOUCHER VCHTYPE="Journal" ACTION="Create" OBJVIEW="Accounting Voucher View">')

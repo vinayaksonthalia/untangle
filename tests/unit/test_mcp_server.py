@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-pytest.importorskip("mcp")  # the MCP server needs the optional [mcp] extra; skip cleanly when absent
+pytest.importorskip("mcp.server.fastmcp")  # needs the optional [mcp] extra (v1 API); skip cleanly otherwise
 
 from mcp_server import (  # noqa: E402  — imported after the importorskip guard, by design
     explain_bank_credit,
