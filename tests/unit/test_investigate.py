@@ -222,6 +222,25 @@ def test_deduction_causes_do_not_match_a_positive_overage():
     )
 
 
+def test_on_hold_release_matches_a_positive_variance_release():
+    """on_hold_release is BIDIRECTIONAL: an explicit RELEASE credits this cycle and explains a
+    POSITIVE variance (bank received MORE than the base net). It must classify, not reject."""
+    # Base net ₹6,000; bank receives ₹8,000 → +₹2,000 (a released on-hold amount of ₹2,000).
+    line = _make_bank_line("line_release", 800000)
+    pay = _make_payment_row("pay_rel", amount_paise=600000, fee_paise=0, tax_paise=0)
+    released = _make_payment_row("pay_held", amount_paise=200000, fee_paise=0, tax_paise=0, on_hold=True)
+    recon_rows = [pay, released]
+    rec = ReconciliationResult(
+        line_key=line.key, covered_entity_ids=[("payment", "pay_rel"), ("payment", "pay_held")],
+        covered_net_paise=600000, credit_amount_paise=line.amount_paise, residual_paise=200000,
+        balanced=False,
+    )
+    inv = investigate(line, None, rec, recon_rows, ReconIndex(recon_rows))
+    assert inv.variance_paise == 200000                       # positive overage (a release)
+    assert inv.root_cause == ROOT_CAUSE_ON_HOLD_RELEASE       # bidirectional cause matches it
+    _assert_entry_balanced(inv.corrective_entry)
+
+
 def test_investigate_on_hold_release():
     """Test on-hold transaction deduction is classified."""
     # Expected net: ₹8,000 (800000 paise). Bank receives ₹6,000 (600000 paise).

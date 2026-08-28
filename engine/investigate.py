@@ -410,11 +410,13 @@ def investigate(
         on_hold_rows = [r for r in associated_rows if r.on_hold]
         on_hold_sum = sum(r.amount_paise for r in on_hold_rows) if on_hold_rows else 0
 
-        # SIGNED match: an on-hold amount withheld leaves the credit short by that amount
-        # (variance ≈ -on_hold_sum). A positive variance must not be explained as an on-hold deduction.
-        if on_hold_sum > 0 and abs(variance_paise + on_hold_sum) <= _TOLERANCE_PAISE:
+        # on_hold_release is BIDIRECTIONAL: an amount can be WITHHELD (credit short → negative
+        # variance) OR RELEASED into this cycle (→ positive variance). Match the magnitude in either
+        # direction and let matched_delta follow the actual variance direction (the voucher direction
+        # follows matched_delta). Only pure deductions (dispute/refund/partial) are sign-restricted.
+        if on_hold_sum > 0 and abs(abs(variance_paise) - on_hold_sum) <= _TOLERANCE_PAISE:
             matched_cause = ROOT_CAUSE_ON_HOLD_RELEASE
-            matched_delta = -on_hold_sum
+            matched_delta = -on_hold_sum if variance_paise < 0 else on_hold_sum
             residual_err = abs(variance_paise - matched_delta)
             confidence = round(1.0 - (residual_err / 100.0) * 0.1, 4) if residual_err <= _TOLERANCE_PAISE else 0.90
             h_detail = f"On-hold amount of {_format_inr(on_hold_sum)} matches variance exactly"
@@ -533,10 +535,13 @@ def investigate(
         ]
         reserve_sum = sum(r.amount_paise for r in reserve_rows) if reserve_rows else 0
 
-        # SIGNED match: a rolling reserve WITHHELD leaves the credit short (variance ≈ -reserve_sum).
-        if reserve_sum > 0 and abs(variance_paise + reserve_sum) <= _TOLERANCE_PAISE:
+        # rolling_reserve is BIDIRECTIONAL like on_hold: a reserve can be WITHHELD (credit short →
+        # negative variance) OR RELEASED back into this cycle (→ positive variance). Match the
+        # magnitude in either direction; matched_delta follows the actual variance direction and the
+        # voucher direction follows matched_delta.
+        if reserve_sum > 0 and abs(abs(variance_paise) - reserve_sum) <= _TOLERANCE_PAISE:
             matched_cause = ROOT_CAUSE_ROLLING_RESERVE
-            matched_delta = -reserve_sum
+            matched_delta = -reserve_sum if variance_paise < 0 else reserve_sum
             residual_err = abs(variance_paise - matched_delta)
             confidence = round(1.0 - (residual_err / 100.0) * 0.1, 4) if residual_err <= _TOLERANCE_PAISE else 0.85
             rr_detail = f"Explicit rolling reserve row matches variance: {_format_inr(reserve_sum)}"
