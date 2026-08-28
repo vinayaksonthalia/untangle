@@ -80,6 +80,35 @@ class AssignmentGraph:
     un_enumerable_credits: set[str]
 
 
+@dataclass(frozen=True)
+class CreditAssignmentVerdict:
+    """Final assignment verdict for a single bank credit."""
+
+    line_key: str
+    rail: str
+    target_id: str
+    confidence: float
+    tier: str
+    evidence: tuple[EvidenceItem, ...]
+    abstained: bool
+    residual_paise: int = 0
+    covered_split_keys: tuple[str, ...] = ()
+    competing_global_explanation: dict[str, Any] | None = None
+    rejected_local_matches: tuple[dict[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
+class SolverResult:
+    """Full period reconciliation solution from the global solver."""
+
+    verdicts: dict[str, CreditAssignmentVerdict]
+    consumed_settlements: set[str]
+    objective_cost: tuple[int, int, int, float, float]
+    rejected_matches: list[dict[str, Any]]
+    is_optimal: bool = True
+    note: str | None = None
+
+
 def build_candidate_graph(
     lines: list[BankCreditLine],
     index: ReconIndex,
@@ -341,4 +370,240 @@ def build_candidate_graph(
         candidates_by_settlement=dict(candidates_by_settlement),
         components=components,
         un_enumerable_credits=un_enumerable_credits,
+    )
+
+
+def _add_costs(
+    a: tuple[int, int, int, float, float],
+    b: tuple[int, int, int, float, float],
+) -> tuple[int, int, int, float, float]:
+    return (
+        a[0] + b[0],
+        a[1] + b[1],
+        a[2] + b[2],
+        round(a[3] + b[3], 4),
+        round(a[4] + b[4], 4),
+    )
+
+
+def solve_assignment(
+    graph: AssignmentGraph,
+    *,
+    margin_threshold: float = 0.0,
+) -> SolverResult:
+    """Solve the constrained assignment problem using deterministic branch-and-bound.
+
+    Pure function:
+    - Minimizes the 5-component lexicographic objective tuple:
+      (invalid_picks, unexplained_paise, residual_paise, -evidence_weight, ops_cost)
+    - Hard constraints:
+      1. Each credit assigned exactly once.
+      2. Each settlement net consumed at most once.
+      3. Splits provable within date window/tolerance.
+    - Connected components: solves independent credit/settlement clusters.
+    - Oversized/un-enumerable components fail-closed to safe abstention.
+    - Emits rejected_matches recording the violated constraints for non-selected options.
+    """
+    if not graph.credits:
+        return SolverResult(
+            verdicts={},
+            consumed_settlements=set(),
+            objective_cost=(0, 0, 0, 0.0, 0.0),
+            rejected_matches=[],
+            is_optimal=True,
+        )
+
+    all_chosen_assignments: list[CandidateAssignment] = []
+    consumed_settlements: set[str] = set()
+    is_overall_optimal = True
+    overall_notes: list[str] = []
+
+    for comp in graph.components:
+        comp_credits = list(comp)
+        comp_set = set(comp_credits)
+
+        # Fail-closed check: un-enumerable component
+        if any(k in graph.un_enumerable_credits for k in comp_set):
+            is_overall_optimal = False
+            overall_notes.append("Oversized candidate pool marked un-enumerable (abstain)")
+            for k in sorted(comp_set):
+                abstain_cands = [c for c in graph.candidates_by_credit.get(k, []) if c.target_id == "abstain"]
+                if abstain_cands:
+                    all_chosen_assignments.append(abstain_cands[0])
+            continue
+
+        # Solve component with branch-and-bound search
+        best_cost: tuple[int, int, int, float, float] | None = None
+        best_assignment: list[CandidateAssignment] = []
+
+        # Baseline: default abstain for all credits in component
+        default_chosen = [
+            c for k in sorted(comp_set)
+            for c in graph.candidates_by_credit.get(k, [])
+            if c.target_id == "abstain"
+        ]
+        default_cost: tuple[int, int, int, float, float] = (0, 0, 0, 0.0, 0.0)
+        for c in default_chosen:
+            default_cost = _add_costs(default_cost, c.cost_tuple)
+        best_cost = default_cost
+        best_assignment = list(default_chosen)
+
+        def search(
+            unassigned: set[str],
+            comp_consumed_sids: set[str],
+            chosen: list[CandidateAssignment],
+            current_cost: tuple[int, int, int, float, float],
+        ) -> None:
+            nonlocal best_cost, best_assignment
+            if not unassigned:
+                if best_cost is None or current_cost < best_cost:
+                    best_cost = current_cost
+                    best_assignment = list(chosen)
+                return
+
+            next_credit = min(unassigned)
+            avail = graph.candidates_by_credit.get(next_credit, [])
+
+            # Filter valid candidate edges
+            valid_cands = [
+                c for c in avail
+                if all(k in unassigned for k in c.credit_keys)
+                and (
+                    c.target_id not in graph.settlements
+                    or (c.target_id not in consumed_settlements and c.target_id not in comp_consumed_sids)
+                )
+            ]
+
+            # Sort deterministically
+            valid_cands.sort(key=lambda c: (c.cost_tuple, c.credit_keys, c.target_id, c.assignment_id))
+
+            for c in valid_cands:
+                tentative_cost = _add_costs(current_cost, c.cost_tuple)
+
+                # Pruning: if invalid or unexplained paise already exceeds best_cost[:2], prune
+                if best_cost is not None and tentative_cost[:2] > best_cost[:2]:
+                    continue
+
+                new_consumed = set(comp_consumed_sids)
+                if c.target_id in graph.settlements:
+                    new_consumed.add(c.target_id)
+
+                new_unassigned = unassigned - set(c.credit_keys)
+                chosen.append(c)
+                search(new_unassigned, new_consumed, chosen, tentative_cost)
+                chosen.pop()
+
+        search(set(comp_set), set(), [], (0, 0, 0, 0.0, 0.0))
+
+        for c in best_assignment:
+            all_chosen_assignments.append(c)
+            if c.target_id in graph.settlements:
+                consumed_settlements.add(c.target_id)
+
+    # Compute overall objective cost
+    total_invalid = sum(c.cost_tuple[0] for c in all_chosen_assignments)
+    total_unexplained = sum(c.cost_tuple[1] for c in all_chosen_assignments)
+    total_residual = sum(c.cost_tuple[2] for c in all_chosen_assignments)
+    total_neg_ev = round(sum(c.cost_tuple[3] for c in all_chosen_assignments), 4)
+    total_ops_cost = round(sum(c.cost_tuple[4] for c in all_chosen_assignments), 4)
+    overall_cost = (total_invalid, total_unexplained, total_residual, total_neg_ev, total_ops_cost)
+
+    # Determine rejected matches and violated constraints
+    chosen_assignment_ids = {c.assignment_id for c in all_chosen_assignments}
+    chosen_by_target: dict[str, CandidateAssignment] = {
+        c.target_id: c for c in all_chosen_assignments if c.target_id in graph.settlements
+    }
+
+    rejected_matches: list[dict[str, Any]] = []
+    for cand in graph.candidates:
+        if cand.assignment_id in chosen_assignment_ids:
+            continue
+        if cand.target_id == "abstain":
+            continue
+
+        if cand.target_id in graph.settlements and cand.target_id in consumed_settlements:
+            winner = chosen_by_target.get(cand.target_id)
+            winner_keys = winner.credit_keys if winner else ()
+            rejected_matches.append({
+                "credit_keys": cand.credit_keys,
+                "candidate_id": cand.assignment_id,
+                "target_id": cand.target_id,
+                "rail": cand.rail,
+                "violated_constraint": "settlement_already_consumed",
+                "detail": f"Settlement {cand.target_id} was consumed by globally consistent assignment for credit(s) {winner_keys}",
+            })
+        else:
+            rejected_matches.append({
+                "credit_keys": cand.credit_keys,
+                "candidate_id": cand.assignment_id,
+                "target_id": cand.target_id,
+                "rail": cand.rail,
+                "violated_constraint": "suboptimal_objective",
+                "detail": f"Candidate {cand.assignment_id} rejected in favor of globally higher-ranked assignment",
+            })
+
+    rejected_matches.sort(key=lambda r: (r["candidate_id"], r["credit_keys"]))
+
+    # Build verdicts
+    verdicts: dict[str, CreditAssignmentVerdict] = {}
+    chosen_by_credit: dict[str, CandidateAssignment] = {}
+    for c in all_chosen_assignments:
+        for k in c.credit_keys:
+            chosen_by_credit[k] = c
+
+    for k in sorted(graph.credits.keys()):
+        c = chosen_by_credit.get(k)
+        k_rejected = tuple(r for r in rejected_matches if k in r["credit_keys"])
+        if c is None or c.target_id == "abstain" or c.rail == Rail.UNKNOWN.value:
+            verdicts[k] = CreditAssignmentVerdict(
+                line_key=k,
+                rail=Rail.UNKNOWN.value,
+                target_id="abstain",
+                confidence=0.0,
+                tier=Tier.B.value,
+                evidence=(),
+                abstained=True,
+                residual_paise=0,
+                covered_split_keys=(),
+                competing_global_explanation=None,
+                rejected_local_matches=k_rejected,
+            )
+        elif c.rail == Rail.RAZORPAY_SETTLEMENT.value:
+            verdicts[k] = CreditAssignmentVerdict(
+                line_key=k,
+                rail=Rail.RAZORPAY_SETTLEMENT.value,
+                target_id=c.target_id,
+                confidence=c.confidence,
+                tier=c.tier,
+                evidence=c.evidence,
+                abstained=False,
+                residual_paise=c.residual_paise,
+                covered_split_keys=c.credit_keys if c.is_split else (),
+                competing_global_explanation=None,
+                rejected_local_matches=k_rejected,
+            )
+        else:
+            verdicts[k] = CreditAssignmentVerdict(
+                line_key=k,
+                rail=c.rail,
+                target_id=c.target_id,
+                confidence=c.confidence,
+                tier=c.tier,
+                evidence=c.evidence,
+                abstained=False,
+                residual_paise=0,
+                covered_split_keys=(),
+                competing_global_explanation=None,
+                rejected_local_matches=k_rejected,
+            )
+
+    note = "; ".join(overall_notes) if overall_notes else None
+
+    return SolverResult(
+        verdicts=verdicts,
+        consumed_settlements=consumed_settlements,
+        objective_cost=overall_cost,
+        rejected_matches=rejected_matches,
+        is_optimal=is_overall_optimal,
+        note=note,
     )
