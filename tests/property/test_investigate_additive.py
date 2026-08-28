@@ -131,5 +131,8 @@ def test_investigate_all_emitted_entries_balance():
             )
             assert total_debit == total_credit, f"Debits ({total_debit}) != Credits ({total_credit}) in {entry}"
         else:
-            assert inv.root_cause == "unexplained"
-            assert inv.confidence == 0.0
+            # A None corrective_entry means either the agent abstained (no root-cause class closed
+            # the delta) or the credit already balanced exactly — both are valid no-entry outcomes.
+            assert inv.root_cause in ("unexplained", "balanced")
+            if inv.root_cause == "unexplained":
+                assert inv.confidence == 0.0

@@ -562,6 +562,7 @@ def investigate_variance(
             return {
                 "ok": False,
                 "error": f"Bank credit line '{line_key}' not found",
+                "error_type": "LineNotFound",
             }
 
         attr = next((a for a in attributions if a.line_key == line_key), None)

@@ -171,6 +171,57 @@ def test_investigate_cross_cycle_refund_lag():
     assert any("cross_cycle_refund_lag" in step.lower() for step in inv.reasoning_trace)
 
 
+def test_cross_cycle_refund_lag_does_not_force_fit_unrelated_settlement():
+    """Regression: a refund of the exact variance amount that belongs to a DIFFERENT settlement must
+    NOT be classified as cross_cycle_refund_lag. Scanning the whole dataset (the original bug) would
+    force-fit any coincidental amount match — a guess, not evidence. It must abstain instead."""
+    line = _make_bank_line("line_unrelated_refund", 450000)  # variance -₹500 vs the covered ₹5,000 net
+    pay_row = _make_payment_row("pay_x", amount_paise=500000, fee_paise=0, tax_paise=0)  # setl_001
+    # A refund whose amount EXACTLY equals the variance, but in an unrelated settlement (setl_999).
+    unrelated_refund = ReconRow(
+        entity_id="rfnd_other", type="refund", amount_paise=50000, fee_paise=0, tax_paise=0,
+        debit_paise=50000, credit_paise=0, settlement_id="setl_999", settlement_utr="UTRZZZ",
+        settled_at=datetime(2024, 5, 12, 10, 0, 0), created_at=datetime(2024, 5, 10, 8, 0, 0),
+        on_hold=False, dispute_id=None, order_id=None, method="card", description="unrelated refund",
+    )
+    recon_rows = [pay_row, unrelated_refund]
+    rec = ReconciliationResult(
+        line_key=line.key, covered_entity_ids=[("payment", "pay_x")], covered_net_paise=500000,
+        credit_amount_paise=line.amount_paise, residual_paise=-50000, balanced=False,
+    )
+    inv = investigate(line, None, rec, recon_rows, ReconIndex(recon_rows))
+    assert inv.root_cause != ROOT_CAUSE_CROSS_CYCLE_REFUND_LAG  # never force-fit the unrelated refund
+    assert inv.root_cause == ROOT_CAUSE_UNEXPLAINED             # no in-settlement cause → abstain
+    assert inv.corrective_entry is None
+
+
+def test_deduction_causes_do_not_match_a_positive_overage():
+    """Regression (sign-awareness): a POSITIVE variance (bank received MORE than expected) must not be
+    explained by a deduction cause (dispute/on-hold/refund) even when a deduction of the same magnitude
+    exists. Deductions only close a negative (short) variance; a magnitude-only match was the bug."""
+    # Expected net ₹5,000; bank receives ₹5,500 → +₹500 overage (positive variance).
+    line = _make_bank_line("line_overage", 550000)
+    pay = _make_payment_row("pay_ov", amount_paise=500000, fee_paise=0, tax_paise=0)
+    # A dispute row whose amount equals the overage magnitude — must NOT be force-fit.
+    disputed = _make_payment_row("pay_disp", amount_paise=50000, fee_paise=0, tax_paise=0)
+    disputed = ReconRow(
+        entity_id="pay_disp", type="payment", amount_paise=50000, fee_paise=0, tax_paise=0,
+        debit_paise=0, credit_paise=50000, settlement_id="setl_001", settlement_utr="UTR123456",
+        settled_at=datetime(2024, 4, 10, 12, 0, 0), created_at=datetime(2024, 4, 9, 10, 0, 0),
+        on_hold=False, dispute_id="disp_1", order_id=None, method="card", description="",
+    )
+    recon_rows = [pay, disputed]
+    rec = ReconciliationResult(
+        line_key=line.key, covered_entity_ids=[("payment", "pay_ov")], covered_net_paise=500000,
+        credit_amount_paise=line.amount_paise, residual_paise=50000, balanced=False,
+    )
+    inv = investigate(line, None, rec, recon_rows, ReconIndex(recon_rows))
+    assert inv.variance_paise == 50000  # positive overage
+    assert inv.root_cause not in (
+        ROOT_CAUSE_DISPUTE_DEDUCTION, ROOT_CAUSE_ON_HOLD_RELEASE, ROOT_CAUSE_CROSS_CYCLE_REFUND_LAG,
+    )
+
+
 def test_investigate_on_hold_release():
     """Test on-hold transaction deduction is classified."""
     # Expected net: ₹8,000 (800000 paise). Bank receives ₹6,000 (600000 paise).
