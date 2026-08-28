@@ -57,8 +57,10 @@ Razorpay credits whose UTR was mangled) or **fooled** (label look-alike decoys a
 
 ## What you get
 
-- **Attribution with evidence** — every bank credit labelled Razorpay / other-gateway / direct-UPI / COD /
-  transfer / **review**, each with the exact evidence trace behind the verdict.
+- **Attribution with evidence, in four honest provenance classes** — **Razorpay-proven** (a report-backed
+  tie), **non-Razorpay** (a distinctive signal points to another rail — a claim about *not*-Razorpay, never
+  inferred from mere absence of evidence), **ambiguous**, and **unattributed** — each with the exact evidence
+  trace. Only Razorpay is *proven*; the alternate rail is recorded as finer evidence, never over-claimed.
 - **Paise-exact reconciliation** of the proven Razorpay slice — 91/91 covered sets balanced to ±₹0
   (±₹1 labelled rounding drift), zero forced balancing entries.
 - **Recoverable fee-GST (ITC)** — a per-transaction, traceable input-tax-credit schedule from Razorpay's
