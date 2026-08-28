@@ -20,7 +20,16 @@ derived net differs from the actual bank credit by a residual (rounding / labell
 from __future__ import annotations
 
 from dataclasses import dataclass
-from xml.sax.saxutils import escape
+
+
+def _xml_escape(s: object) -> str:
+    """Escape the 5 XML special characters for safe output. A local escaper (not xml.sax.saxutils) so
+    the module imports no `xml` parser — this is output-only string escaping, never XML parsing (and it
+    keeps the security scanner's XXE rule, which flags any `xml` import, satisfied)."""
+    return (
+        str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace('"', "&quot;").replace("'", "&apos;")
+    )
 
 # Ledger names (must exist in the merchant's Tally company — Tally never auto-creates on voucher import;
 # these are the standard Indian D2C chart-of-accounts names, overridable at emit time).
@@ -186,25 +195,25 @@ def to_tally_xml(entries: list[JournalEntry], *, company: str = "Your Company Na
         "<HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>",
         "<BODY><IMPORTDATA>",
         "<REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME>",
-        f"<STATICVARIABLES><SVCURRENTCOMPANY>{escape(company)}</SVCURRENTCOMPANY></STATICVARIABLES>",
+        f"<STATICVARIABLES><SVCURRENTCOMPANY>{_xml_escape(company)}</SVCURRENTCOMPANY></STATICVARIABLES>",
         "</REQUESTDESC><REQUESTDATA>",
     ]
     for e in entries:
         tdate = e.date.replace("-", "") or "20260101"
-        guid = f"UNTANGLE-RZP-{escape(e.ref)}"
+        guid = f"UNTANGLE-RZP-{_xml_escape(e.ref)}"
         out.append('<TALLYMESSAGE xmlns:UDF="TallyUDF">')
         out.append('<VOUCHER VCHTYPE="Journal" ACTION="Create" OBJVIEW="Accounting Voucher View">')
         out.append(f"<GUID>{guid}</GUID><REMOTEID>{guid}</REMOTEID>")
         out.append(f"<VOUCHERTYPENAME>Journal</VOUCHERTYPENAME><DATE>{tdate}</DATE><EFFECTIVEDATE>{tdate}</EFFECTIVEDATE>")
-        out.append(f"<VOUCHERNUMBER>{guid}</VOUCHERNUMBER><REFERENCE>{escape(e.utr)}</REFERENCE>")
-        out.append(f"<NARRATION>{escape(e.narration)}</NARRATION>")
+        out.append(f"<VOUCHERNUMBER>{guid}</VOUCHERNUMBER><REFERENCE>{_xml_escape(e.utr)}</REFERENCE>")
+        out.append(f"<NARRATION>{_xml_escape(e.narration)}</NARRATION>")
         for ln in e.lines:
             if ln.debit_paise:
                 amt, pos = -ln.debit_paise / 100, "Yes"
             else:
                 amt, pos = ln.credit_paise / 100, "No"
             out.append("<ALLLEDGERENTRIES.LIST>")
-            out.append(f"<LEDGERNAME>{escape(ln.ledger)}</LEDGERNAME>")
+            out.append(f"<LEDGERNAME>{_xml_escape(ln.ledger)}</LEDGERNAME>")
             out.append(f"<ISDEEMEDPOSITIVE>{pos}</ISDEEMEDPOSITIVE><AMOUNT>{amt:.2f}</AMOUNT>")
             out.append("</ALLLEDGERENTRIES.LIST>")
         out.append("</VOUCHER></TALLYMESSAGE>")
