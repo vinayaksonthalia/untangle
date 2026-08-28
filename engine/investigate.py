@@ -228,18 +228,27 @@ def investigate(
             if s_date:
                 date_str = s_date.date().isoformat()
     else:
-        # Look for candidate settlement via index
-        candidate_sids = set()
+        # No reconciliation object (unresolved credit): recover the candidate settlement from the
+        # narration/ref using BOTH exact and corroborated-suffix UTR ties (the same ties attribution
+        # uses), not just a verbatim full UTR. If more than one distinct settlement is implicated the
+        # association is AMBIGUOUS — we do NOT pick one arbitrarily; we leave it unassociated so the
+        # guard below abstains (association-ambiguous → abstain, never guess).
+        candidate_sids: set[str] = set()
         for tok in (line.bank_ref, line.narration):
             if tok:
                 for word in tok.replace("/", " ").replace("-", " ").split():
                     w = word.lower()
+                    sid = None
                     if index.utr_exact(w):
                         sid = index.utr_to_sid.get(w)
-                        if sid:
-                            candidate_sids.add(sid)
-        if candidate_sids:
-            sid = sorted(candidate_sids)[0]
+                    else:
+                        matched_utr = index.utr_suffix_match(w)
+                        if matched_utr:
+                            sid = index.utr_to_sid.get(matched_utr)
+                    if sid:
+                        candidate_sids.add(sid)
+        if len(candidate_sids) == 1:
+            sid = next(iter(candidate_sids))
             ref_id = sid
             expected_net = index.settlement_net.get(sid, 0)
             associated_rows = [r for r in recon_rows if r.settlement_id == sid]
@@ -464,42 +473,27 @@ def investigate(
     # Classifier 5: partial_capture
     # -------------------------------------------------------------------------
     if not matched_cause:
-        # Check payment rows for partial capture
-        payment_rows = [r for r in associated_rows if r.type == "payment"]
-        partial_match = None
-        for r in payment_rows:
-            # NOTE: ReconRow carries no authorized-vs-captured amount, so a true captured<authorized
-            # test is not expressible on this schema. We therefore fire only on an EXPLICIT "partial"
-            # marker in the row description (conservative — never inferred), and SIGNED: an uncaptured
-            # amount leaves the credit short (variance ≈ -amount), never a positive overage.
-            if r.description and "partial" in r.description.lower():
-                if abs(variance_paise + r.amount_paise) <= _TOLERANCE_PAISE:
-                    partial_match = r
-                    break
-
-        if partial_match:
-            matched_cause = ROOT_CAUSE_PARTIAL_CAPTURE
-            matched_delta = -partial_match.amount_paise
-            residual_err = abs(variance_paise - matched_delta)
-            confidence = round(1.0 - (residual_err / 100.0) * 0.1, 4) if residual_err <= _TOLERANCE_PAISE else 0.90
-            pc_detail = f"Partial capture on payment '{partial_match.entity_id}' matches variance: {_format_inr(partial_match.amount_paise)}"
-            candidates_tried.append({
-                "root_cause": ROOT_CAUSE_PARTIAL_CAPTURE,
-                "matched": True,
-                "delta_paise": matched_delta,
-                "unexplained_residual_paise": residual_err,
-                "reason": pc_detail,
-            })
-            reasoning_trace.append(f"Step 6: Evaluated '{ROOT_CAUSE_PARTIAL_CAPTURE}' -> MATCH: {pc_detail}.")
-        else:
-            candidates_tried.append({
-                "root_cause": ROOT_CAUSE_PARTIAL_CAPTURE,
-                "matched": False,
-                "delta_paise": 0,
-                "unexplained_residual_paise": abs(variance_paise),
-                "reason": "No partial capture variance detected.",
-            })
-            reasoning_trace.append(f"Step 6: Evaluated '{ROOT_CAUSE_PARTIAL_CAPTURE}' -> NO MATCH.")
+        # Partial capture (captured < authorized) is NOT deterministically expressible on this
+        # schema: ReconRow carries no authorized-vs-captured amounts. Detecting it from free text
+        # (e.g. the word "partial" in a description) would be a guess and could post a full captured
+        # payment as an uncaptured variance — so we SKIP this classifier rather than infer it. It
+        # will be enabled only if/when the settlement schema carries explicit authorized/captured
+        # fields. (Skip-not-guess, per the abstention contract.)
+        _has_capture_fields = False  # no authorized/captured columns on ReconRow today
+        if _has_capture_fields:  # pragma: no cover - reserved for a schema that carries capture data
+            pass
+        candidates_tried.append({
+            "root_cause": ROOT_CAUSE_PARTIAL_CAPTURE,
+            "matched": False,
+            "delta_paise": 0,
+            "unexplained_residual_paise": abs(variance_paise),
+            "reason": "Skipped: the settlement schema carries no authorized/captured amounts, so "
+                      "partial capture cannot be determined deterministically (never inferred from text).",
+        })
+        reasoning_trace.append(
+            f"Step 6: Evaluated '{ROOT_CAUSE_PARTIAL_CAPTURE}' -> SKIPPED "
+            f"(no deterministic authorized/captured evidence in the schema; not inferred from text)."
+        )
 
     # -------------------------------------------------------------------------
     # Classifier 6: bank_charge_or_rounding

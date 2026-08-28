@@ -278,34 +278,28 @@ def test_investigate_dispute_deduction():
     assert any("disp_999" in step for step in inv.reasoning_trace)
 
 
-def test_investigate_partial_capture():
-    """Test partial capture variance is classified."""
+def test_partial_capture_is_not_inferred_from_free_text():
+    """partial_capture is NOT deterministically expressible on this schema (no authorized/captured
+    amounts), so it must be SKIPPED — never inferred from a 'partial' word in a description. A row
+    that merely mentions 'partial' must not be force-fit; the credit abstains instead."""
     line = _make_bank_line("line_partial", 750000)
     pay = _make_payment_row(
-        "pay_05",
-        amount_paise=250000,
-        fee_paise=0,
-        tax_paise=0,
-        description="Partial capture variance",
+        "pay_05", amount_paise=250000, fee_paise=0, tax_paise=0,
+        description="Partial capture variance",  # free text — must NOT drive a classification
     )
     recon_rows = [pay]
-    index = ReconIndex(recon_rows)
-
     rec = ReconciliationResult(
-        line_key=line.key,
-        covered_entity_ids=[("payment", "pay_05")],
-        covered_net_paise=1000000,
-        credit_amount_paise=line.amount_paise,
-        residual_paise=-250000,
-        balanced=False,
+        line_key=line.key, covered_entity_ids=[("payment", "pay_05")], covered_net_paise=1000000,
+        credit_amount_paise=line.amount_paise, residual_paise=-250000, balanced=False,
     )
+    inv = investigate(line, None, rec, recon_rows, ReconIndex(recon_rows))
 
-    inv = investigate(line, None, rec, recon_rows, index)
-
-    assert inv.root_cause == ROOT_CAUSE_PARTIAL_CAPTURE
-    assert inv.variance_paise == -250000
-    assert inv.confidence >= 0.90
-    _assert_entry_balanced(inv.corrective_entry)
+    assert inv.root_cause != ROOT_CAUSE_PARTIAL_CAPTURE   # never inferred from text
+    assert inv.root_cause == ROOT_CAUSE_UNEXPLAINED        # nothing deterministic explains it → abstain
+    assert inv.corrective_entry is None
+    # And the skipped classifier is recorded transparently in the negative space.
+    pc = next(c for c in inv.candidates_tried if c["root_cause"] == ROOT_CAUSE_PARTIAL_CAPTURE)
+    assert pc["matched"] is False and "Skipped" in pc["reason"]
 
 
 def test_investigate_bank_charge_or_rounding():
