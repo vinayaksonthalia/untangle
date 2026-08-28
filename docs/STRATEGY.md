@@ -81,6 +81,25 @@ the demo. **CA-firm multi-client distribution** = go-to-market, post-buildathon.
 - Tally XML voucher import (`Gateway of Tally > Import Data > Vouchers`) + Tally HTTP port 9000;
   Zoho Books REST (`/journalentries`, `/bills`, `/creditnotes`).
 
+## 6b. Update log (findings verified against code, newest first)
+
+- **Real Razorpay settlement-report schema confirmed** (round-3 research, verified): columns
+  `entity_id, type, debit, credit, amount, currency, fee, tax, on_hold, settled, created_at,
+  settled_at, settlement_id, description, notes, payment_id, settlement_utr, order_id, order_receipt,
+  method, card_network, card_issuer, card_type, dispute_id`. **untangle's recon schema already mirrors
+  this** → a real Razorpay export is largely already ingestible (the credibility anchor, near-free).
+- **Fee/tax convention divergence found & fixed.** Real Razorpay: `credit = amount − fee − tax` (fee is
+  ex-GST, tax separate). untangle synthetic: `credit = amount − fee` (GST folded into fee). Verified on
+  data/. The journal export now DETECTS the convention per settlement (`_tax_inside_fee`) so MDR-ex-GST
+  is correct for BOTH — real uploads reconcile correctly. (Open question for later: align the generator
+  to the real tax-separate convention for max fidelity — bigger change, touches pinned tests.)
+- **Real bank-statement CSV headers captured** for HDFC/ICICI/SBI/Axis/Kotak/RBL (value date, narration,
+  ref, debit, credit, balance) + UTR-in-narration regex patterns per bank + metadata-row quirks (HDFC
+  ~5 header rows; RBL/Kotak truncation 50–100 chars). Use to make BYOD accept real bank exports.
+- **Razorpay GST invoice**: SAC `997159`, monthly e-invoice with IRN/QR, flows to GSTR-2B Table 4 (ITC).
+- **Journal-entry export shipped** (Tally XML + JSON, balanced, convention-agnostic). **MCP server** in
+  build (Antigravity) — under review before commit.
+
 ## 7. Roadmap (post-buildathon, do NOT chase now)
 
 COD/3PL remittance recon (weight-dispute auditing), CA-firm multi-client workspaces, live Razorpay/
