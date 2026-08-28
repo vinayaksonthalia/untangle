@@ -402,9 +402,9 @@ def build_recovery_plan(
             note=None,
         )
 
-    # Group identical actions (same action_type + params)
-    # group_key -> (action_type, params, cost, list_of_line_keys, list_of_amounts)
-    groups: dict[tuple[str, tuple[tuple[str, Any], ...]], dict[str, Any]] = {}
+    # Group identical actions / merge overlapping export_settlement_report date windows
+    export_items: list[dict[str, Any]] = []
+    other_groups: dict[tuple[str, tuple[tuple[str, Any], ...]], dict[str, Any]] = {}
 
     for line in unresolved_lines:
         attr = attrs_by_key.get(
@@ -415,23 +415,65 @@ def build_recovery_plan(
         blocking = _derive_blocking_reason(line, attr, index, exc)
         act_type, params, cost = _map_blocking_to_action(line, blocking, exc)
 
-        param_items = tuple(sorted(params.items()))
-        g_key = (act_type, param_items)
-
-        if g_key not in groups:
-            groups[g_key] = {
+        if act_type == ACTION_EXPORT_SETTLEMENT_REPORT:
+            export_items.append({
                 "action_type": act_type,
-                "params": params,
+                "date_from": params.get("date_from", ""),
+                "date_to": params.get("date_to", ""),
                 "cost": cost,
-                "keys": [],
-                "amounts": [],
-            }
-        groups[g_key]["keys"].append(line.key)
-        groups[g_key]["amounts"].append(line.amount_paise)
+                "keys": [line.key],
+                "amounts": [line.amount_paise],
+            })
+        else:
+            param_items = tuple(sorted(params.items()))
+            g_key = (act_type, param_items)
+            if g_key not in other_groups:
+                other_groups[g_key] = {
+                    "action_type": act_type,
+                    "params": params,
+                    "cost": cost,
+                    "keys": [],
+                    "amounts": [],
+                }
+            other_groups[g_key]["keys"].append(line.key)
+            other_groups[g_key]["amounts"].append(line.amount_paise)
+
+    # Merge overlapping export_settlement_report actions
+    merged_exports: list[dict[str, Any]] = []
+    if export_items:
+        export_items.sort(key=lambda x: (x["date_from"], x["date_to"]))
+        for item in export_items:
+            if not merged_exports:
+                merged_exports.append(item)
+                continue
+            last = merged_exports[-1]
+            if last["date_to"] >= item["date_from"]:
+                if item["date_to"] > last["date_to"]:
+                    last["date_to"] = item["date_to"]
+                last["keys"].extend(item["keys"])
+                last["amounts"].extend(item["amounts"])
+            else:
+                merged_exports.append(item)
 
     # Construct RecoveryAction for each group
     actions: list[RecoveryAction] = []
-    for g in groups.values():
+    for exp in merged_exports:
+        resolves = tuple(sorted(set(exp["keys"])))
+        rec_paise = sum(exp["amounts"])
+        cost = exp["cost"]
+        gain_per_cost = rec_paise / cost if cost > 0 else 0.0
+        actions.append(
+            RecoveryAction(
+                action_type=exp["action_type"],
+                params={"date_from": exp["date_from"], "date_to": exp["date_to"]},
+                resolves=resolves,
+                recoverable_paise=rec_paise,
+                cost=cost,
+                gain_per_cost=gain_per_cost,
+            )
+        )
+
+    for g in other_groups.values():
         resolves = tuple(sorted(set(g["keys"])))
         rec_paise = sum(g["amounts"])
         cost = g["cost"]
