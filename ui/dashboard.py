@@ -203,7 +203,7 @@ def _journal_html(report: dict) -> str:
       <tfoot><tr><td>Balanced</td><td class="mono jr-d">₹ {total_d:,.2f}</td><td class="mono jr-c">₹ {total_c:,.2f}</td></tr></tfoot></table>
     </div>
     <div class="jr-btns">
-      <a class="xbtn" href="/api/journal/sample.tally.xml">Download Tally XML</a>
+      <button type="button" class="xbtn" id="journalTally">Download Tally XML</button>
       <button type="button" class="xbtn" id="journalJson">Download journal JSON</button>
     </div>
   </div>
@@ -907,6 +907,24 @@ _DASH_JS = """<script>
     var pj=document.getElementById('proofJson'); if(pj) pj.addEventListener('click',function(){ blob(JSON.stringify(packets,null,2),'application/json','proof_packets.json'); });
     var pc=document.getElementById('proofCsv'); if(pc) pc.addEventListener('click',function(){ blob(toCsv(packets),'text/csv','proof_packets.csv'); });
     var jj=document.getElementById('journalJson'); if(jj) jj.addEventListener('click',function(){ blob(JSON.stringify(window.__JOURNAL__||[],null,2),'application/json','untangle_journal.json'); });
+    // Qodo #6: build Tally XML from THIS report's embedded journal (works for uploads too), not a sample endpoint.
+    function xEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;'); }
+    function journalToTallyXml(j){
+      var o=['<ENVELOPE>','<HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>','<BODY><IMPORTDATA>',
+        '<REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME><STATICVARIABLES><SVCURRENTCOMPANY>Your Company Name</SVCURRENTCOMPANY></STATICVARIABLES></REQUESTDESC><REQUESTDATA>'];
+      (j||[]).forEach(function(e){
+        var td=(e.date||'').replace(/-/g,''), g='UNTANGLE-RZP-'+xEsc(e.ref||'');
+        o.push('<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="Journal" ACTION="Create" OBJVIEW="Accounting Voucher View">');
+        o.push('<GUID>'+g+'</GUID><REMOTEID>'+g+'</REMOTEID><VOUCHERTYPENAME>Journal</VOUCHERTYPENAME><DATE>'+td+'</DATE><EFFECTIVEDATE>'+td+'</EFFECTIVEDATE>');
+        o.push('<VOUCHERNUMBER>'+g+'</VOUCHERNUMBER><REFERENCE>'+xEsc(e.utr||'')+'</REFERENCE><NARRATION>'+xEsc(e.narration||'')+'</NARRATION>');
+        (e.lines||[]).forEach(function(ln){ var d=parseFloat(ln.debit_inr||'0')||0,c=parseFloat(ln.credit_inr||'0')||0,a,p;
+          if(d){a=(-d).toFixed(2);p='Yes';}else{a=c.toFixed(2);p='No';}
+          o.push('<ALLLEDGERENTRIES.LIST><LEDGERNAME>'+xEsc(ln.ledger)+'</LEDGERNAME><ISDEEMEDPOSITIVE>'+p+'</ISDEEMEDPOSITIVE><AMOUNT>'+a+'</AMOUNT></ALLLEDGERENTRIES.LIST>'); });
+        o.push('</VOUCHER></TALLYMESSAGE>');
+      });
+      o.push('</REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>'); return o.join('\\n');
+    }
+    var jt=document.getElementById('journalTally'); if(jt) jt.addEventListener('click',function(){ blob(journalToTallyXml(window.__JOURNAL__||[]),'application/xml','untangle_tally_vouchers.xml'); });
   }
 
   // Section-nav scroll-spy (rect-based; robust to positioned ancestors — sol review LOW)

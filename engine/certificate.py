@@ -122,21 +122,26 @@ def verify_certificate(payload: dict) -> dict:
     body = _canonical(cert)
     recomputed = hashlib.sha256(body).hexdigest()
     claimed = payload.get("content_sha256")
-    hash_matches = None if claimed is None else (recomputed == claimed)
+    # Qodo #11: a certificate MUST carry a content hash that matches; a missing/mismatched hash fails.
+    # (A None-hash must NOT satisfy the final `ok`, or bare envelopes get reported authentic.)
+    hash_matches = isinstance(claimed, str) and recomputed == claimed
 
+    # Qodo #1 + #2: a claimed signature must verify TRUE against untangle's OWN pinned issuer key (from
+    # $UNTANGLE_SIGNING_KEY / public_key_pem()) — NEVER a key embedded in the untrusted envelope (that
+    # would let anyone sign with their own key and claim validity). If a signature is present but cannot
+    # be authenticated (no crypto, no configured issuer key, malformed, or mismatch) → invalid, not None.
     signature_valid: bool | None = None
     sig = payload.get("signature")
-    pub_pem = payload.get("public_key_pem")
-    if sig and pub_pem and _CRYPTO_AVAILABLE:
-        from cryptography.exceptions import InvalidSignature
-        try:
-            pub = _ser.load_pem_public_key(pub_pem.encode())
-            pub.verify(base64.b64decode(sig), body, _ec.ECDSA(_hashes.SHA256()))
-            signature_valid = True
-        except InvalidSignature:
-            signature_valid = False
-        except Exception:
-            signature_valid = None
+    if sig:
+        issuer_pub = public_key_pem()  # this instance's pinned public key; None if unconfigured
+        signature_valid = False
+        if _CRYPTO_AVAILABLE and issuer_pub:
+            try:
+                pub = _ser.load_pem_public_key(issuer_pub.encode())
+                pub.verify(base64.b64decode(sig), body, _ec.ECDSA(_hashes.SHA256()))
+                signature_valid = True
+            except Exception:  # InvalidSignature, malformed key/sig, etc. → not authenticated
+                signature_valid = False
 
     # Independent re-verification of the packets referenced by the certificate's own report, if given.
     embedded_report = payload.get("report") if isinstance(payload.get("report"), dict) else None
@@ -147,16 +152,22 @@ def verify_certificate(payload: dict) -> dict:
         packets_verified = len(pkt)
         packets_passed = sum(1 for r in pkt if r.ok)
 
-    ok = (hash_matches is not False) and (signature_valid is not False) and (
-        packets_passed is None or packets_passed == packets_verified
+    ok = (
+        hash_matches
+        and (sig is None or signature_valid is True)     # a claimed signature must be valid
+        and (packets_passed is None or packets_passed == packets_verified)
     )
     return {
-        "ok": ok,
+        "ok": bool(ok),
         "content_hash": recomputed,
         "claimed_hash": claimed,
         "hash_matches": hash_matches,
         "signature_valid": signature_valid,
         "signed": bool(sig),
+        # Issuer-attested packet verification recorded at issue time (Qodo #3: the standalone cert does
+        # not embed the full report, so independent re-verification needs `report` supplied above; this
+        # surfaces what the issuer attested, clearly distinct from an independent re-run).
+        "attested_verification": cert.get("verification"),
         "packets_verified": packets_verified,
         "packets_passed": packets_passed,
         "summary": cert.get("summary"),

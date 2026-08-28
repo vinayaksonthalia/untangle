@@ -18,6 +18,12 @@ mcp = ["mcp>=1.0"]
 
 [tool.setuptools]
 packages = ["engine", "engine.llm", "eval", "ui", "webapp", "generator"]
+# Qodo #9: the MCP server is a root-level module, not a package — list it explicitly so a wheel install
+# of untangle[mcp] ships the server, not just its dependency.
+py-modules = ["mcp_server"]
+
+[project.scripts]
+untangle-mcp = "mcp_server:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

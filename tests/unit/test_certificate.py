@@ -66,6 +66,59 @@ def test_signed_certificate_verifies_and_forgery_is_detected(monkeypatch):
     assert vf["ok"] is False
 
 
+def test_hashless_or_mismatched_certificate_is_rejected(monkeypatch):
+    """Qodo #11: an envelope with no content hash (or a wrong one) must never be reported authentic."""
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    assert verify_certificate({"certificate": {"summary": "x"}})["ok"] is False       # no hash
+    assert verify_certificate({"certificate": {"summary": "x"}, "content_sha256": "deadbeef"})["ok"] is False
+
+
+def test_claimed_signature_that_cannot_be_authenticated_is_invalid(monkeypatch):
+    """Qodo #1: a payload that claims a signature but cannot be authenticated against the pinned issuer
+    key (here: no issuer key configured) must be invalid, never a passthrough None."""
+    if not _CRYPTO_AVAILABLE:
+        import pytest
+        pytest.skip("cryptography extra not installed")
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)  # no issuer key
+    env = issue_certificate(_report())
+    env["signature"] = "QUJD"  # base64 'ABC' — a claimed but bogus signature
+    v = verify_certificate(env)
+    assert v["signature_valid"] is False
+    assert v["ok"] is False
+
+
+def test_forgery_with_attacker_supplied_key_is_rejected(monkeypatch):
+    """Qodo #2: signing with the attacker's own key and embedding their public key must NOT verify —
+    authentication is against untangle's pinned issuer key, not a key inside the envelope."""
+    if not _CRYPTO_AVAILABLE:
+        import pytest
+        pytest.skip("cryptography extra not installed")
+    import base64 as _b64
+
+    from cryptography.hazmat.primitives import hashes as _h
+    from cryptography.hazmat.primitives import serialization as _s
+    from cryptography.hazmat.primitives.asymmetric import ec as _e
+
+    from engine.certificate import _canonical
+
+    monkeypatch.setenv("UNTANGLE_SIGNING_KEY", generate_signing_key())  # the real issuer
+    cert = build_close_certificate(_report())
+    body = _canonical(cert)
+    attacker = _e.generate_private_key(_e.SECP256R1())  # attacker's own keypair
+    forged = {
+        "certificate": cert,
+        "content_sha256": __import__("hashlib").sha256(body).hexdigest(),  # correct hash
+        "signed": True,
+        "signature": _b64.b64encode(attacker.sign(body, _e.ECDSA(_h.SHA256()))).decode(),
+        "public_key_pem": attacker.public_key().public_bytes(
+            _s.Encoding.PEM, _s.PublicFormat.SubjectPublicKeyInfo
+        ).decode(),
+    }
+    v = verify_certificate(forged)  # verified against the ISSUER key, not the embedded attacker key
+    assert v["signature_valid"] is False
+    assert v["ok"] is False
+
+
 def test_build_close_certificate_on_real_reconciliation():
     """Build report via engine.service.reconcile on data/ (seed 42) and verify certificate contents."""
     report = reconcile(
