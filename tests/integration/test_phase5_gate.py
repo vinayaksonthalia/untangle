@@ -81,8 +81,11 @@ def test_phase5_gate_one_click_demo_reproduction(client):
     text = r.text
     assert "Attribution &amp; Calibrated Abstention" in text or "Attribution & Calibrated Abstention" in text
     assert "Proven Slice Only" in text
-    assert "43,201" in text  # ITC recoverable
+    assert "<b>826</b> bank credits" in text  # multi-month demo (Apr–Jun 2026), reproducible from seed 42
     assert "Exception queue" in text
+    # The multi-month demo drives the exception-queue month filter (Apr/May/Jun chips).
+    assert "All months" in text
+    assert "Apr 2026" in text and "May 2026" in text and "Jun 2026" in text
 
 
 def test_phase5_gate_zero_storage_and_kind_errors(client):
