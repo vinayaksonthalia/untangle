@@ -386,6 +386,82 @@ def _add_costs(
     )
 
 
+def _solve_component(
+    graph: AssignmentGraph,
+    comp_set: set[str],
+    global_consumed_settlements: set[str],
+    excluded_assignment_ids: set[str] | None = None,
+) -> tuple[list[CandidateAssignment], tuple[int, int, int, float, float]]:
+    """Solve one connected component using branch-and-bound search.
+
+    Optionally excludes specified candidate assignment IDs (to find the best alternative).
+    """
+    excluded = excluded_assignment_ids or set()
+    best_cost: tuple[int, int, int, float, float] | None = None
+    best_assignment: list[CandidateAssignment] = []
+
+    # Baseline: default abstain for all credits in component (if available)
+    default_chosen = [
+        c for k in sorted(comp_set)
+        for c in graph.candidates_by_credit.get(k, [])
+        if c.target_id == "abstain" and c.assignment_id not in excluded
+    ]
+    if len(default_chosen) == len(comp_set):
+        default_cost: tuple[int, int, int, float, float] = (0, 0, 0, 0.0, 0.0)
+        for c in default_chosen:
+            default_cost = _add_costs(default_cost, c.cost_tuple)
+        best_cost = default_cost
+        best_assignment = list(default_chosen)
+
+    def search(
+        unassigned: set[str],
+        comp_consumed_sids: set[str],
+        chosen: list[CandidateAssignment],
+        current_cost: tuple[int, int, int, float, float],
+    ) -> None:
+        nonlocal best_cost, best_assignment
+        if not unassigned:
+            if best_cost is None or current_cost < best_cost:
+                best_cost = current_cost
+                best_assignment = list(chosen)
+            return
+
+        next_credit = min(unassigned)
+        avail = graph.candidates_by_credit.get(next_credit, [])
+
+        valid_cands = [
+            c for c in avail
+            if c.assignment_id not in excluded
+            and all(k in unassigned for k in c.credit_keys)
+            and (
+                c.target_id not in graph.settlements
+                or (c.target_id not in global_consumed_settlements and c.target_id not in comp_consumed_sids)
+            )
+        ]
+
+        valid_cands.sort(key=lambda c: (c.cost_tuple, c.credit_keys, c.target_id, c.assignment_id))
+
+        for c in valid_cands:
+            tentative_cost = _add_costs(current_cost, c.cost_tuple)
+
+            if best_cost is not None and tentative_cost[:2] > best_cost[:2]:
+                continue
+
+            new_consumed = set(comp_consumed_sids)
+            if c.target_id in graph.settlements:
+                new_consumed.add(c.target_id)
+
+            new_unassigned = unassigned - set(c.credit_keys)
+            chosen.append(c)
+            search(new_unassigned, new_consumed, chosen, tentative_cost)
+            chosen.pop()
+
+    search(set(comp_set), set(), [], (0, 0, 0, 0.0, 0.0))
+    if best_cost is None:
+        return ([], (999, 999999999, 999999999, 0.0, 999.0))
+    return best_assignment, best_cost
+
+
 def solve_assignment(
     graph: AssignmentGraph,
     *,
@@ -403,6 +479,9 @@ def solve_assignment(
     - Connected components: solves independent credit/settlement clusters.
     - Oversized/un-enumerable components fail-closed to safe abstention.
     - Emits rejected_matches recording the violated constraints for non-selected options.
+    - When margin_threshold > 0.0: computes best alternative globally valid assignments.
+      If the objective gap is within margin_threshold, contested credits abstain carrying
+      both competing explanations.
     """
     if not graph.credits:
         return SolverResult(
@@ -415,6 +494,7 @@ def solve_assignment(
 
     all_chosen_assignments: list[CandidateAssignment] = []
     consumed_settlements: set[str] = set()
+    contested_credits: dict[str, dict[str, Any]] = {}
     is_overall_optimal = True
     overall_notes: list[str] = []
 
@@ -433,72 +513,55 @@ def solve_assignment(
             continue
 
         # Solve component with branch-and-bound search
-        best_cost: tuple[int, int, int, float, float] | None = None
-        best_assignment: list[CandidateAssignment] = []
+        best_assignment, best_cost = _solve_component(graph, comp_set, consumed_settlements)
 
-        # Baseline: default abstain for all credits in component
-        default_chosen = [
-            c for k in sorted(comp_set)
-            for c in graph.candidates_by_credit.get(k, [])
-            if c.target_id == "abstain"
-        ]
-        default_cost: tuple[int, int, int, float, float] = (0, 0, 0, 0.0, 0.0)
-        for c in default_chosen:
-            default_cost = _add_costs(default_cost, c.cost_tuple)
-        best_cost = default_cost
-        best_assignment = list(default_chosen)
-
-        def search(
-            unassigned: set[str],
-            comp_consumed_sids: set[str],
-            chosen: list[CandidateAssignment],
-            current_cost: tuple[int, int, int, float, float],
-        ) -> None:
-            nonlocal best_cost, best_assignment
-            if not unassigned:
-                if best_cost is None or current_cost < best_cost:
-                    best_cost = current_cost
-                    best_assignment = list(chosen)
-                return
-
-            next_credit = min(unassigned)
-            avail = graph.candidates_by_credit.get(next_credit, [])
-
-            # Filter valid candidate edges
-            valid_cands = [
-                c for c in avail
-                if all(k in unassigned for k in c.credit_keys)
-                and (
-                    c.target_id not in graph.settlements
-                    or (c.target_id not in consumed_settlements and c.target_id not in comp_consumed_sids)
-                )
-            ]
-
-            # Sort deterministically
-            valid_cands.sort(key=lambda c: (c.cost_tuple, c.credit_keys, c.target_id, c.assignment_id))
-
-            for c in valid_cands:
-                tentative_cost = _add_costs(current_cost, c.cost_tuple)
-
-                # Pruning: if invalid or unexplained paise already exceeds best_cost[:2], prune
-                if best_cost is not None and tentative_cost[:2] > best_cost[:2]:
+        # Global competing-explanation margin evaluation (Phase 3)
+        if margin_threshold > 0.0 and best_assignment:
+            for c_star in best_assignment:
+                if c_star.target_id == "abstain" or c_star.rail == Rail.UNKNOWN.value:
                     continue
 
-                new_consumed = set(comp_consumed_sids)
-                if c.target_id in graph.settlements:
-                    new_consumed.add(c.target_id)
+                # Search for best alternative assignment excluding c_star
+                alt_assignment, alt_cost = _solve_component(
+                    graph,
+                    comp_set,
+                    consumed_settlements,
+                    excluded_assignment_ids={c_star.assignment_id},
+                )
 
-                new_unassigned = unassigned - set(c.credit_keys)
-                chosen.append(c)
-                search(new_unassigned, new_consumed, chosen, tentative_cost)
-                chosen.pop()
-
-        search(set(comp_set), set(), [], (0, 0, 0, 0.0, 0.0))
+                if alt_assignment and alt_cost[:2] == best_cost[:2]:
+                    gap = round(alt_cost[3] - best_cost[3], 4)
+                    if gap <= margin_threshold:
+                        alt_by_credit = {k: c for c in alt_assignment for k in c.credit_keys}
+                        for k in c_star.credit_keys:
+                            c_alt = alt_by_credit.get(k, c_star)
+                            contested_credits[k] = {
+                                "chosen": {
+                                    "assignment_id": c_star.assignment_id,
+                                    "target_id": c_star.target_id,
+                                    "rail": c_star.rail,
+                                    "confidence": c_star.confidence,
+                                },
+                                "competing": {
+                                    "assignment_id": c_alt.assignment_id,
+                                    "target_id": c_alt.target_id,
+                                    "rail": c_alt.rail,
+                                    "confidence": c_alt.confidence,
+                                },
+                                "objective_gap": gap,
+                                "margin_threshold": margin_threshold,
+                                "detail": (
+                                    f"Competing global assignment exists with objective gap "
+                                    f"{gap:.4f} <= {margin_threshold:.4f}"
+                                ),
+                            }
 
         for c in best_assignment:
             all_chosen_assignments.append(c)
+            # Only record settlement as consumed if not all of its credits are contested
             if c.target_id in graph.settlements:
-                consumed_settlements.add(c.target_id)
+                if not all(k in contested_credits for k in c.credit_keys):
+                    consumed_settlements.add(c.target_id)
 
     # Compute overall objective cost
     total_invalid = sum(c.cost_tuple[0] for c in all_chosen_assignments)
@@ -554,7 +617,21 @@ def solve_assignment(
     for k in sorted(graph.credits.keys()):
         c = chosen_by_credit.get(k)
         k_rejected = tuple(r for r in rejected_matches if k in r["credit_keys"])
-        if c is None or c.target_id == "abstain" or c.rail == Rail.UNKNOWN.value:
+        if k in contested_credits:
+            verdicts[k] = CreditAssignmentVerdict(
+                line_key=k,
+                rail=Rail.UNKNOWN.value,
+                target_id="abstain",
+                confidence=0.0,
+                tier=Tier.B.value,
+                evidence=(),
+                abstained=True,
+                residual_paise=0,
+                covered_split_keys=(),
+                competing_global_explanation=contested_credits[k],
+                rejected_local_matches=k_rejected,
+            )
+        elif c is None or c.target_id == "abstain" or c.rail == Rail.UNKNOWN.value:
             verdicts[k] = CreditAssignmentVerdict(
                 line_key=k,
                 rail=Rail.UNKNOWN.value,
