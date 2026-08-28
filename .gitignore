@@ -35,3 +35,5 @@ data/sealed/
 
 # webapp multi-month demo data (generated on first run)
 sample_data/
+
+*.egg-info/
