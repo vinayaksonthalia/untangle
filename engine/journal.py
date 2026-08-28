@@ -156,6 +156,27 @@ def to_journal_json(entries: list[JournalEntry]) -> list[dict]:
     return [e.to_dict() for e in entries]
 
 
+def journal_json_to_tally_xml(journal: list[dict], *, company: str = "Your Company Name") -> str:
+    """Serialize the report's journal JSON (as emitted by to_journal_json / report['journal']) to Tally
+    XML, so the web layer can offer a download from the report dict alone."""
+    entries = [
+        JournalEntry(
+            ref=str(e.get("ref", "")), date=str(e.get("date", "")), utr=str(e.get("utr", "")),
+            narration=str(e.get("narration", "")),
+            lines=tuple(
+                JournalLine(
+                    ln["ledger"],
+                    debit_paise=round(float(ln.get("debit_inr", "0") or 0) * 100),
+                    credit_paise=round(float(ln.get("credit_inr", "0") or 0) * 100),
+                )
+                for ln in e.get("lines", [])
+            ),
+        )
+        for e in journal
+    ]
+    return to_tally_xml(entries, company=company)
+
+
 def to_tally_xml(entries: list[JournalEntry], *, company: str = "Your Company Name") -> str:
     """A Tally Prime voucher-import file (Gateway of Tally > Import > Vouchers, or HTTP port 9000).
     Sign convention: Debit → ISDEEMEDPOSITIVE Yes + NEGATIVE amount; Credit → No + POSITIVE amount;

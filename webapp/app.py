@@ -15,7 +15,7 @@ import tempfile
 import threading
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from engine.certificate import issue_certificate, verify_certificate
 from engine.ingest import InputError, load_bank
@@ -184,6 +184,24 @@ def api_certificate_sample() -> JSONResponse:
         os.path.join(_SAMPLE, "order_ledger.csv"),
     )
     return JSONResponse(issue_certificate(report))
+
+
+@app.get("/api/journal/sample.tally.xml")
+def api_journal_tally() -> Response:
+    """The reconciled Razorpay slice as a Tally Prime voucher-import XML — download and import via
+    Gateway of Tally > Import > Vouchers. Balanced to the paise. Nothing stored."""
+    from engine.journal import journal_json_to_tally_xml
+    _ensure_sample()
+    report = reconcile(
+        os.path.join(_SAMPLE, "bank_statement.csv"),
+        os.path.join(_SAMPLE, "recon_report.json"),
+        os.path.join(_SAMPLE, "order_ledger.csv"),
+    )
+    xml = journal_json_to_tally_xml(report.get("journal") or [], company="Your Company Name")
+    return Response(
+        content=xml, media_type="application/xml",
+        headers={"Content-Disposition": 'attachment; filename="untangle_tally_vouchers.xml"'},
+    )
 
 
 @app.post("/api/verify")
