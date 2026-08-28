@@ -20,6 +20,7 @@ from mcp_server import (  # noqa: E402  — imported after the importorskip guar
     export_proof_packet,
     generate_close_certificate,
     get_competing_explanations,
+    investigate_variance,
     list_unresolved_cash,
     reconcile_files,
     suggest_next_evidence,
@@ -169,6 +170,18 @@ def test_export_journal_entries_tally_xml():
     assert "</ENVELOPE>" in xml_content
 
 
+def test_investigate_variance_tool():
+    """investigate_variance returns deterministic root-cause diagnosis and reasoning trace."""
+    res = investigate_variance(_BANK_PATH, _RECON_PATH, _LEDGER_PATH, _KNOWN_RZP_KEY)
+    assert res["ok"] is True
+    inv = res["investigation"]
+    assert inv["line_key"] == _KNOWN_RZP_KEY
+    assert "root_cause" in inv
+    assert "reasoning_trace" in inv
+    assert "candidates_tried" in inv
+    assert isinstance(inv["reasoning_trace"], list)
+
+
 def test_error_handling_invalid_paths():
     """Tools return structured errors when given nonexistent paths without raising unhandled exceptions."""
     res = reconcile_files("invalid/bank.csv", "invalid/recon.json", "invalid/ledger.csv")
@@ -179,3 +192,7 @@ def test_error_handling_invalid_paths():
     res_journal = export_journal_entries("invalid/bank.csv", "invalid/recon.json", format="unknown_format")
     assert res_journal["ok"] is False
     assert "error" in res_journal
+
+    res_inv = investigate_variance("invalid/bank.csv", "invalid/recon.json", "invalid/ledger.csv", "missing_key")
+    assert res_inv["ok"] is False
+    assert "error" in res_inv

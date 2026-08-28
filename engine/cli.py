@@ -50,7 +50,8 @@ def _fmt_inr(paise: int) -> str:
 
 
 def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
-                 *, with_recovery: bool = True, global_solver: bool = False,
+                 *, with_recovery: bool = True, with_investigation: bool = True,
+                 global_solver: bool = False,
                  solver_result: Any | None = None) -> tuple[RunReport, audit_mod.AuditLedger]:
     solver_active = global_solver or getattr(cfg, "global_solver", False)
     rejected_matches = None
@@ -141,6 +142,13 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
     )
     from engine.journal import build_journal_entries, to_journal_json
     journal = to_journal_json(build_journal_entries(reconciliations, recon_rows))
+    from engine.investigate import build_investigations
+    investigations = [
+        inv.to_dict()
+        for inv in build_investigations(
+            lines, attributions, reconciliations, recon_rows, index, exceptions
+        )
+    ] if with_investigation else None
     report_cfg = {
         "engine_version": _ENGINE_VERSION,
         "seed": cfg.seed,
@@ -163,6 +171,7 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
         recovery_plan=recovery_plan,
         rejected_matches=rejected_matches,
         journal=journal,
+        investigations=investigations,
     ), ledger
 
 
