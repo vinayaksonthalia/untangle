@@ -17,7 +17,7 @@ import threading
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from engine.ingest import InputError
+from engine.ingest import InputError, load_bank
 from engine.service import reconcile
 from ui.dashboard import render as render_dashboard
 from webapp.pages import landing_page, upload_page
@@ -25,7 +25,19 @@ from webapp.pages import landing_page, upload_page
 app = FastAPI(title="untangle", docs_url="/api/docs")
 
 _MAX_BYTES = 15 * 1024 * 1024  # 15 MB per file — a month of settlements is far smaller
-_SAMPLE = "data"
+# Dedicated demo dir — kept separate from data/ (the seed-42 single-month test/README baseline) so
+# the multi-month demo can never overwrite the fixture the property tests pin to.
+_SAMPLE = "sample_data"
+
+
+def _months_by_key(bank_path: str) -> dict[str, str]:
+    """Map each bank-credit line_key → its statement month ('YYYY-MM'), read straight from the
+    source file via the same ingest the pipeline uses (so keys match the report exactly). Used only
+    to filter the exception queue by month — it drives no metric."""
+    try:
+        return {ln.key: ln.value_date.strftime("%Y-%m") for ln in load_bank(bank_path)}
+    except InputError:
+        return {}
 
 
 # The engine's own messages already name the file kind; we just strip the server path.
@@ -97,7 +109,10 @@ def _ensure_sample() -> None:
         if os.path.exists(staging):
             shutil.rmtree(staging)
         try:
-            gen(["--seed", "42", "--scale", "0.4", "--out", staging])
+            # Multi-month sample (Apr–Jun 2026) so the dashboard's month filter has real content.
+            # base-epoch 1775001600 = 2026-04-01 UTC; 91 days spans three calendar months.
+            gen(["--seed", "42", "--scale", "0.15", "--base-epoch", "1775001600",
+                 "--days", "91", "--out", staging])
             # publish non-marker files first, the marker last (True sorts after False)
             for name in sorted(os.listdir(staging), key=lambda n: n == _SAMPLE_MARKER):
                 os.replace(os.path.join(staging, name), os.path.join(_SAMPLE, name))
@@ -118,12 +133,13 @@ def app_page() -> str:
 @app.get("/try-sample", response_class=HTMLResponse)
 def try_sample() -> str:
     _ensure_sample()
+    bank = os.path.join(_SAMPLE, "bank_statement.csv")
     report = reconcile(
-        os.path.join(_SAMPLE, "bank_statement.csv"),
+        bank,
         os.path.join(_SAMPLE, "recon_report.json"),
         os.path.join(_SAMPLE, "order_ledger.csv"),
     )
-    return render_dashboard(report)
+    return render_dashboard(report, _months_by_key(bank))
 
 
 @app.post("/reconcile", response_class=HTMLResponse)
@@ -137,7 +153,7 @@ async def reconcile_upload(
         r = await _save(tmp, "recon_report.json", recon)
         ln = await _save(tmp, "order_ledger.csv", ledger)
         report = _run_safely(tmp, b, r, ln)
-        return render_dashboard(report)
+        return render_dashboard(report, _months_by_key(b))
     # temp dir (and every uploaded byte) is deleted here — nothing is kept.
 
 

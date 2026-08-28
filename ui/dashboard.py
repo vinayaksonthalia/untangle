@@ -70,7 +70,19 @@ def _embed_json(obj) -> str:
     )
 
 
-def render(report: dict) -> str:
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _month_label(ym: str) -> str:
+    """'2026-06' → 'Jun 2026'; passes anything unexpected through untouched."""
+    try:
+        y, m = ym.split("-")
+        return f"{_MONTHS[int(m) - 1]} {y}"
+    except (ValueError, IndexError):
+        return ym
+
+
+def render(report: dict, months_by_key: dict | None = None) -> str:
     t = report["totals"]
     bp = t["by_rail_paise"]
     bc = t["by_rail_count"]
@@ -123,9 +135,14 @@ def render(report: dict) -> str:
     r = 54
     circ = 2 * math.pi * r
     off = circ * (1 - cov)
+    mbk = months_by_key or {}
+    exc_months: dict[str, int] = {}
     exc_rows = []
     for e in report["exceptions"]:
         lbl, col = _REASON.get(e["reason_code"], (e["reason_code"], "#6B6B62"))
+        mo = mbk.get(e["line_key"], "")
+        if mo:
+            exc_months[mo] = exc_months.get(mo, 0) + 1
         # Render the evidence trace (each exception claims one) — the example/affected ids etc.
         ev_items = e.get("evidence") or []
         ev_html = "".join(
@@ -135,7 +152,7 @@ def render(report: dict) -> str:
         ev_text = " ".join(f'{it.get("signal","")} {it.get("detail","")}' for it in ev_items)
         blob = html.escape(f'{lbl} {e["detail"]} {e["suggested_action"]} {ev_text}'.lower(), quote=True)
         exc_rows.append(f"""
-      <tr class="excrow" data-reason="{html.escape(e["reason_code"])}" data-text="{blob}">
+      <tr class="excrow" data-reason="{html.escape(e["reason_code"])}" data-month="{html.escape(mo)}" data-text="{blob}">
       <td><span class="sev" style="--d:{col}">{html.escape(lbl)}</span></td>
       <td class="dt">{html.escape(e["detail"])}{f'<div class="evwrap">{ev_html}</div>' if ev_html else ''}</td>
       <td class="ac">{html.escape(e["suggested_action"])}</td></tr>""")
@@ -154,11 +171,26 @@ def render(report: dict) -> str:
         chips.append(f'<button type="button" class="chip" data-reason="{html.escape(k)}" aria-pressed="false">{lbl} <span class="ct">{v}</span></button>')
     filter_chips = "".join(chips)
 
+    # Month filter chips — only when the queue genuinely spans more than one month. This filters the
+    # review work-list by each credit's statement month; it recomputes no metric and invents no
+    # per-month number (reconciliation lags across month boundaries, so per-month totals would be
+    # dishonest). "All months" carries a dedicated data-allm flag, never a data-month sentinel.
+    month_chips = ""
+    if len(exc_months) >= 2:
+        mparts = ['<button type="button" class="chip mchip active" data-allm="1" aria-pressed="true">All months</button>']
+        for m in sorted(exc_months):
+            mparts.append(
+                f'<button type="button" class="chip mchip" data-month="{html.escape(m)}" '
+                f'aria-pressed="false">{_month_label(m)} <span class="ct">{exc_months[m]}</span></button>'
+            )
+        month_chips = ('<div class="chips mrow" role="group" aria-label="Filter by month">' + "".join(mparts) + "</div>")
+
     # Toolbar + count only make sense when there is a queue to filter (sol review MEDIUM).
     if exc_n:
         exc_toolbar = (
-            '<div class="exc-toolbar"><div class="chips" role="group" aria-label="Filter by reason">'
+            '<div class="exc-toolbar"><div class="chipcol"><div class="chips" role="group" aria-label="Filter by reason">'
             + filter_chips
+            + "</div>" + month_chips
             + '</div><div class="search"><input id="excSearch" type="search" '
             'placeholder="Search reason, detail, action…" autocomplete="off" '
             'aria-label="Search exceptions"/></div></div>'
@@ -407,8 +439,12 @@ a.logo{{text-decoration:none;color:var(--tp)}}
 .secnav a.on{{color:var(--tp);border-color:var(--acc)}}
 a.pill{{text-decoration:none}}
 [id^="sec-"]{{scroll-margin-top:74px}}
-.exc-toolbar{{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap}}
+.exc-toolbar{{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px;flex-wrap:wrap}}
+.chipcol{{display:flex;flex-direction:column;gap:10px}}
 .chips{{display:flex;gap:8px;flex-wrap:wrap}}
+.chips.mrow{{padding-top:2px;border-top:1px dashed var(--border);margin-top:2px}}
+.mchip.active{{background:var(--acc);border-color:var(--acc);color:#fff}}
+.mchip.active .ct{{opacity:.85}}
 .chip{{font-family:var(--ui);font-size:12.5px;color:var(--ts);background:var(--surface);border:1px solid var(--border);border-radius:100px;padding:6px 13px;cursor:pointer;transition:all .13s;display:inline-flex;align-items:center;gap:7px}}
 .chip:hover{{border-color:var(--border2);color:var(--tp)}}
 .chip.active{{background:var(--tp);color:#fff;border-color:var(--tp)}}
@@ -559,16 +595,19 @@ tr.pk-row.open td{{background:var(--sunken)}}
 _DASH_JS = """<script>
 (function(){
   var rows = Array.prototype.slice.call(document.querySelectorAll('#excTable tbody tr.excrow'));
-  var chips = Array.prototype.slice.call(document.querySelectorAll('.chip'));
+  // Two independent chip groups: reason (data-all / data-reason) and month (data-allm / data-month).
+  var reasonChips = Array.prototype.slice.call(document.querySelectorAll('.chip:not(.mchip)'));
+  var monthChips = Array.prototype.slice.call(document.querySelectorAll('.chip.mchip'));
   var search = document.getElementById('excSearch');
   var empty = document.getElementById('excEmpty');
   var count = document.getElementById('excCount');
   var clear = document.getElementById('excClear');
   var total = rows.length;
-  var reason = null; // null = all; never a data-reason sentinel, so no collision with real codes
+  var reason = null; // null = all reasons; never a data-reason sentinel, so no collision with real codes
+  var month = null;  // null = all months
 
-  function setActive(chip){
-    chips.forEach(function(x){
+  function setActive(group, chip){
+    group.forEach(function(x){
       var on = x === chip;
       x.classList.toggle('active', on);
       x.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -579,8 +618,9 @@ _DASH_JS = """<script>
     var shown = 0;
     rows.forEach(function(tr){
       var okR = (reason === null) || (tr.getAttribute('data-reason') === reason);
+      var okM = (month === null) || (tr.getAttribute('data-month') === month);
       var okQ = !q || (tr.getAttribute('data-text') || '').indexOf(q) !== -1;
-      var vis = okR && okQ;
+      var vis = okR && okM && okQ;
       tr.classList.toggle('hide', !vis);
       if (vis) shown++;
     });
@@ -589,18 +629,27 @@ _DASH_JS = """<script>
       ? total + ' exceptions'
       : 'Showing ' + shown + ' of ' + total + ' exceptions';
   }
-  chips.forEach(function(c){
+  reasonChips.forEach(function(c){
     c.addEventListener('click', function(){
-      setActive(c);
+      setActive(reasonChips, c);
       reason = c.hasAttribute('data-all') ? null : c.getAttribute('data-reason');
+      apply();
+    });
+  });
+  monthChips.forEach(function(c){
+    c.addEventListener('click', function(){
+      setActive(monthChips, c);
+      month = c.hasAttribute('data-allm') ? null : c.getAttribute('data-month');
       apply();
     });
   });
   if (search) search.addEventListener('input', apply);
   if (clear) clear.addEventListener('click', function(){
-    reason = null; if (search) search.value = '';
-    var all = chips.filter(function(x){ return x.hasAttribute('data-all'); })[0];
-    if (all) setActive(all);
+    reason = null; month = null; if (search) search.value = '';
+    var allR = reasonChips.filter(function(x){ return x.hasAttribute('data-all'); })[0];
+    if (allR) setActive(reasonChips, allR);
+    var allM = monthChips.filter(function(x){ return x.hasAttribute('data-allm'); })[0];
+    if (allM) setActive(monthChips, allM);
     apply();
   });
   apply();

@@ -32,3 +32,6 @@ data_large/
 out_large/
 data/sealed/
 !.env.example
+
+# webapp multi-month demo data (generated on first run)
+sample_data/
