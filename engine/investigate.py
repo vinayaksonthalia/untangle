@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from engine.evidence import ReconIndex
+from engine.evidence import _DATE_WINDOW_DAYS, ReconIndex
 from engine.journal import (
     LEDGER_CLEARING,
     LEDGER_MDR,
@@ -238,15 +238,26 @@ def investigate(
             if tok:
                 for word in tok.replace("/", " ").replace("-", " ").split():
                     w = word.lower()
-                    sid = None
                     if index.utr_exact(w):
+                        # Exact UTR is a decisive tie — accept.
                         sid = index.utr_to_sid.get(w)
-                    else:
-                        matched_utr = index.utr_suffix_match(w)
-                        if matched_utr:
-                            sid = index.utr_to_sid.get(matched_utr)
-                    if sid:
-                        candidate_sids.add(sid)
+                        if sid:
+                            candidate_sids.add(sid)
+                        continue
+                    # A bare suffix is WEAK: it must be CORROBORATED by value-date proximity or an
+                    # exact amount match to be a real tie — exactly as razorpay_signals() requires. An
+                    # uncorroborated coincidental suffix must NOT select a settlement (abstain instead),
+                    # or it would manufacture a false variance diagnosis.
+                    matched_utr = index.utr_suffix_match(w)
+                    if matched_utr:
+                        cand = index.utr_to_sid.get(matched_utr)
+                        if cand:
+                            sdate = index.settlement_date.get(cand)
+                            snet = index.settlement_net.get(cand)
+                            date_ok = sdate is not None and abs((line.value_date - sdate).days) <= _DATE_WINDOW_DAYS
+                            amt_ok = line.is_credit and snet is not None and line.amount_paise == snet
+                            if date_ok or amt_ok:
+                                candidate_sids.add(cand)
         if len(candidate_sids) == 1:
             sid = next(iter(candidate_sids))
             ref_id = sid
