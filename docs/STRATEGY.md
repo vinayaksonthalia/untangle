@@ -100,6 +100,45 @@ the demo. **CA-firm multi-client distribution** = go-to-market, post-buildathon.
 - **Journal-entry export shipped** (Tally XML + JSON, balanced, convention-agnostic). **MCP server** in
   build (Antigravity) — under review before commit.
 
+## 6c. OFFICIAL Track 4 rubric & winning plan (round-4 research — the north star)
+
+**Official Track 4 prompt (grade against THIS):** "Run the books and the cash position: build an agent
+that closes one finance-ops loop across a 50+ record batch, reporting its match rate and the exceptions
+it could not resolve. Show the audit trail and one failure handled gracefully."
+
+**Rubric weights (research):** Autonomous ops + agentic architecture + match-rate accuracy, zero
+hallucinated debits **30%** · Audit trail + explainable reasoning **25%** · Graceful failure + exception
+recovery **20%** · Production eng (MCP/APIs, Docker, real Tally/Zoho import) **15%** · Pitch/video incl.
+the "2 AM bug" **10%**. Judges = Razorpay settlement/payments eng + product leaders (built Razorpay Recon)
++ fintech VCs. Winner = deterministic pipeline + agentic exception investigator + real accounting output;
+runner-up = an "ask your data" LLM chat wrapper that breaks on messy edge cases.
+
+**untangle already hits ~80%** (audit trail, abstention/exceptions, journal export). **The gap is the 30%
+agentic pillar.** Top remaining builds, ranked:
+1. **Agentic exception-investigation loop** (the show-stopper): for an unresolved variance, autonomously
+   detect → classify ROOT CAUSE from the data (cross-cycle refund, MDR/fee drift, missing UTR, bank
+   charge) → draft the corrective balanced journal + next action, with a visible reasoning trace and an
+   "Investigate" button. MUST be deterministic-core (root-cause from data) + LLM only for narration —
+   NOT an LLM guessing (that's the disqualifier the rubric warns about). Extends the recovery controller.
+2. **Our MCP server** (Antigravity, in progress) — the multi-surface + agent checkbox. Optionally CONSUME
+   Razorpay's official MCP (github.com/razorpay/razorpay-mcp-server) if deployed against a real test acct
+   (won't work on synthetic data — don't fake it).
+3. **Journal export UI** (download Tally XML/JSON + "Post to your books" section) — surfacing, mine.
+4. **Demo to the official prompt** + one graceful-failure story + the "2 AM bug" (the real fee-inside-fee
+   / Tally sign-convention bug we hit are honest candidates).
+
+**Judge attacks + defenses (rehearse):**
+- "Why wouldn't Razorpay build this?" → Razorpay can't cross the merchant boundary into their *bank
+  statement*, 3PL COD, or on-prem Tally; untangle is the merchant-side external verification controller.
+- "Why not a 200-line Python script?" → scripts break on truncated narrations / split settlements; we add
+  abstention + agentic root-cause investigation + audit-grade proof.
+- "Will a CA trust automated books?" → every match carries a verifiable proof + we ABSTAIN below proof,
+  never guess (and a wrong match in India risks a 78%-tax-class unexplained credit).
+
+**Reframe the pitch to the official language:** "an agent that closes the settlement finance-ops loop
+over 50+ records, reports match rate + the exceptions it refuses to guess, proves every verdict, hands
+you the postable Tally entry, and handles failure gracefully."
+
 ## 7. Roadmap (post-buildathon, do NOT chase now)
 
 COD/3PL remittance recon (weight-dispute auditing), CA-firm multi-client workspaces, live Razorpay/
