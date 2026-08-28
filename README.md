@@ -25,7 +25,9 @@ or abstained. Never a guessed match.*
 > A real merchant's current account receives money from many rails at once — Razorpay settlements,
 > a second gateway, direct UPI, COD remittances, loan disbursals, personal transfers — all as
 > undifferentiated bank credits. **Before you can reconcile anything, you have to know which credit
-> is even Razorpay's.** Nobody solves that step. They assume it away.
+> is even Razorpay's.** Most reconciliation tools start *after* that line — they take a credit already
+> labelled Razorpay and decompose it into payments, fees, and GST. untangle solves the step before:
+> proving, against look-alike decoys from every other rail, which bank credits are Razorpay's at all.
 
 untangle solves it — and it is **precision-first**: a credit is only called Razorpay's when there is a
 genuine tie back to the settlement report (an exact UTR, a corroborated UTR suffix, a provably-unique
