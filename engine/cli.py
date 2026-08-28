@@ -49,7 +49,13 @@ def _fmt_inr(paise: int) -> str:
 
 
 def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
-                 *, with_recovery: bool = True) -> RunReport:
+                 *, with_recovery: bool = True, global_solver: bool = False) -> tuple[RunReport, audit_mod.AuditLedger]:
+    solver_active = global_solver or getattr(cfg, "global_solver", False)
+    if solver_active:
+        from engine.solver import run_global_solver
+
+        attributions, _ = run_global_solver(lines, index, attributions)
+
     ledger = audit_mod.AuditLedger()
     ledger.append("run_start", {"engine_version": _ENGINE_VERSION, "seed": cfg.seed,
                                 "provider": cfg.provider_or_none(), "threshold": cfg.threshold,
@@ -117,6 +123,16 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
     # to the pre-Feature-005 report (the additivity property test relies on this to compare both builds).
     recovery_plan = build_recovery_plan(lines, attributions, index, exceptions) if with_recovery else None
     proof_packets = build_proof_packets(lines, attributions, reconciliations, recon_rows, feegst)
+    report_cfg = {
+        "engine_version": _ENGINE_VERSION,
+        "seed": cfg.seed,
+        "provider": cfg.provider_or_none(),
+        "model": cfg.model if cfg.use_ai else None,
+        "threshold": cfg.threshold,
+    }
+    if solver_active:
+        report_cfg["global_solver"] = True
+
     return RunReport(
         totals=totals,
         attributions=attributions,
@@ -125,21 +141,22 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
         exceptions=exceptions,
         proof_packets=proof_packets,
         audit_root=ledger.root,
-        config={
-            "engine_version": _ENGINE_VERSION,
-            "seed": cfg.seed,
-            "provider": cfg.provider_or_none(),
-            "model": cfg.model if cfg.use_ai else None,
-            "threshold": cfg.threshold,
-        },
+        config=report_cfg,
         recovery_plan=recovery_plan,
     ), ledger
 
 
 def _cmd_run(args) -> int:
+    global_solver = getattr(args, "global_solver", False)
     try:
-        cfg = build_config(no_ai=not args.ai, provider=args.provider, model=args.model,
-                           threshold=args.threshold, seed=args.seed)
+        cfg = build_config(
+            no_ai=not args.ai,
+            provider=args.provider,
+            model=args.model,
+            threshold=args.threshold,
+            seed=args.seed,
+            global_solver=global_solver,
+        )
     except ConfigError as exc:
         print(f"Config error: {exc}", file=sys.stderr)
         return 3
@@ -152,7 +169,7 @@ def _cmd_run(args) -> int:
         return 2
 
     index = ReconIndex(recon_rows)
-    attributions = attribute_all(lines, index, cfg.threshold)
+    attributions = attribute_all(lines, index, cfg.threshold, global_solver=cfg.global_solver)
 
     if cfg.use_ai:
         client = LLMClient(enabled=True, provider=cfg.provider, model=cfg.model,
@@ -272,6 +289,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--model")
     run.add_argument("--threshold", type=float, default=None)
     run.add_argument("--seed", type=int, default=42)
+    run.add_argument(
+        "--global-solver",
+        action="store_true",
+        default=False,
+        help="enable global evidence-constrained reconciliation solver (default: False)",
+    )
     run.set_defaults(func=_cmd_run)
 
     why = sub.add_parser("why", help="explain one credit's verdict")

@@ -14,6 +14,7 @@ Constitutional constraints:
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import date
@@ -218,13 +219,12 @@ def build_candidate_graph(
             if "utr_suffix" in tie_signals:
                 for e in rzp_ev:
                     if e.signal == "utr_suffix":
-                        # Token tails settlement_utr; extract matching sid
-                        for tok in extract_utr_tokens(ln.narration):
-                            u = index.utr_suffix_match(tok)
-                            if u:
-                                sid = index.utr_to_sid.get(u.lower())
-                                if sid:
-                                    matched_sids.add(sid)
+                        # Token tails settlement_utr; extract matching sid from detail or index
+                        m = re.search(r"settlement_utr\s+([a-z0-9]+)", e.detail, re.I)
+                        if m:
+                            sid = index.utr_to_sid.get(m.group(1).lower())
+                            if sid:
+                                matched_sids.add(sid)
 
             # Unique amount correlation tie
             if "amount_corr" in tie_signals:
@@ -684,3 +684,119 @@ def solve_assignment(
         is_optimal=is_overall_optimal,
         note=note,
     )
+
+
+def run_global_solver(
+    lines: list[BankCreditLine],
+    index: ReconIndex,
+    base_attributions: list[RailAttribution],
+    *,
+    margin_threshold: float = 0.0,
+) -> tuple[list[RailAttribution], SolverResult]:
+    """Run the global evidence-constrained reconciliation solver.
+
+    Takes initial per-line candidate attributions, builds the candidate graph,
+    solves the constrained assignment problem, and returns:
+    1. Adjusted list[RailAttribution] reflecting globally consistent verdicts.
+    2. SolverResult containing verdicts, objective costs, and rejected matches.
+    """
+    graph = build_candidate_graph(lines, index, base_attributions)
+    result = solve_assignment(graph, margin_threshold=margin_threshold)
+
+    out: list[RailAttribution] = []
+    base_by_key = {a.line_key: a for a in base_attributions}
+
+    for ln in lines:
+        if ln.key not in result.verdicts:
+            orig = base_by_key.get(ln.key)
+            if orig is not None:
+                out.append(orig)
+            continue
+
+        v = result.verdicts[ln.key]
+        orig = base_by_key.get(ln.key)
+
+        if v.abstained:
+            if orig is not None and v.competing_global_explanation is not None:
+                out.append(
+                    RailAttribution(
+                        line_key=ln.key,
+                        rail=Rail.UNKNOWN.value,
+                        confidence=orig.confidence,
+                        tier=orig.tier,
+                        evidence=orig.evidence,
+                        abstained=True,
+                        llm_used=orig.llm_used,
+                        proof_margin=v.competing_global_explanation.get("objective_gap"),
+                        competing_explanation=v.competing_global_explanation,
+                    )
+                )
+            elif orig is not None:
+                out.append(
+                    RailAttribution(
+                        line_key=ln.key,
+                        rail=Rail.UNKNOWN.value,
+                        confidence=0.0,
+                        tier=Tier.B.value,
+                        evidence=orig.evidence,
+                        abstained=True,
+                        llm_used=orig.llm_used,
+                    )
+                )
+            else:
+                out.append(
+                    RailAttribution(
+                        line_key=ln.key,
+                        rail=Rail.UNKNOWN.value,
+                        confidence=0.0,
+                        tier=Tier.B.value,
+                        evidence=[],
+                        abstained=True,
+                    )
+                )
+        elif v.rail == Rail.RAZORPAY_SETTLEMENT.value:
+            if v.covered_split_keys:
+                ev = [
+                    EvidenceItem(
+                        "split_reconstruction",
+                        f"1 of {len(v.covered_split_keys)} bank legs whose amounts uniquely sum to balance the settlement net for {v.target_id}",
+                        _SPLIT_CONFIDENCE,
+                    )
+                ]
+                out.append(
+                    RailAttribution(
+                        line_key=ln.key,
+                        rail=Rail.RAZORPAY_SETTLEMENT.value,
+                        confidence=v.confidence,
+                        tier=Tier.C.value,
+                        evidence=ev,
+                        abstained=False,
+                    )
+                )
+            else:
+                ev = list(v.evidence) if v.evidence else (orig.evidence if orig else [])
+                tier_val = Tier.A.value if any(e.signal == "utr_exact" for e in ev) else Tier.B.value
+                out.append(
+                    RailAttribution(
+                        line_key=ln.key,
+                        rail=Rail.RAZORPAY_SETTLEMENT.value,
+                        confidence=v.confidence,
+                        tier=tier_val,
+                        evidence=ev,
+                        abstained=False,
+                    )
+                )
+        else:
+            ev = list(v.evidence) if v.evidence else (orig.evidence if orig else [])
+            out.append(
+                RailAttribution(
+                    line_key=ln.key,
+                    rail=v.rail,
+                    confidence=v.confidence,
+                    tier=v.tier,
+                    evidence=ev,
+                    abstained=False,
+                )
+            )
+
+    return out, result

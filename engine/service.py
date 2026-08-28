@@ -26,14 +26,22 @@ def reconcile(
     model: str | None = None,
     threshold: float | None = None,
     seed: int = 42,
+    global_solver: bool = False,
 ) -> dict:
     """Ingest → attribute → reconcile → fee-GST → exceptions; return report.to_dict()."""
-    cfg = build_config(no_ai=no_ai, provider=provider, model=model, threshold=threshold, seed=seed)
+    cfg = build_config(
+        no_ai=no_ai,
+        provider=provider,
+        model=model,
+        threshold=threshold,
+        seed=seed,
+        global_solver=global_solver,
+    )
     lines = load_bank(bank_path)
     recon_rows = load_recon(recon_path)
     order_ledger = load_ledger(ledger_path)  # Feature 003: cross-checked against the proven slice
     index = ReconIndex(recon_rows)
-    attributions = attribute_all(lines, index, cfg.threshold)
+    attributions = attribute_all(lines, index, cfg.threshold, global_solver=cfg.global_solver)
     if cfg.use_ai:
         client = LLMClient(enabled=True, provider=cfg.provider, model=cfg.model, api_key=cfg.api_key)
         attributions = resolve_unknowns(attributions, {ln.key: ln for ln in lines}, index, client)
