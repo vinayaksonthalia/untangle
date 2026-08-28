@@ -82,6 +82,96 @@ def _month_label(ym: str) -> str:
         return ym
 
 
+def _pick_courtroom_exemplar(packets: list[dict]) -> dict | None:
+    """The most compelling proven verdict to cross-examine: a reconciled credit whose challenger
+    audit shows the largest proof margin (its verdict is furthest from any competing explanation).
+    Prefer a decisive-identifier (Tier A) tie. Returns None if no audited packet exists."""
+    audited = [p for p in packets if p.get("proof", {}).get("challenge")]
+    if not audited:
+        return None
+
+    def rank(p: dict) -> tuple:
+        ch = p["proof"]["challenge"]
+        return (
+            1 if p.get("reconciled") else 0,
+            1 if p["verdict"]["tier"] == "A" else 0,
+            ch.get("proof_margin", 0.0),
+        )
+
+    return max(audited, key=rank)
+
+
+def _courtroom_html(report: dict) -> str:
+    """The Evidence Courtroom: one proven verdict, cross-examined — the decisive tie(s), the proof
+    margin, the strongest explanation the challenger rejected, and what happens if the tie is removed."""
+    ex = _pick_courtroom_exemplar(report.get("proof_packets", []))
+    if ex is None:
+        return ""
+    ch = ex["proof"]["challenge"]
+    margin = float(ch.get("proof_margin", 0.0))
+    rej = ch.get("rejected_explanation") or {}
+    removed = ", ".join(rej.get("removed_signals", [])) or "the decisive tie"
+    rej_score = float(rej.get("score", 0.0))
+    conf = ex["verdict"]["confidence"]
+
+    ties_html = "".join(
+        f'<li><span class="ct-sig">{html.escape(t["signal"])}</span>'
+        f'<span class="ct-exp">{html.escape(t.get("explains") or t.get("detail",""))}</span></li>'
+        for t in ex["proof"].get("ties", [])
+    )
+    corr = ex["proof"].get("corroboration", [])
+    corr_line = (
+        "Corroborated by " + ", ".join(html.escape(c["signal"]) for c in corr) + " — but corroboration is never proof."
+        if corr else "No competing rail keyword was present."
+    )
+    settle = ex.get("settlement") or {}
+    n_legs = len(settle.get("covered_entities", []))
+    consequence = (
+        f'Reconciled to {n_legs} settlement entit{"y" if n_legs == 1 else "ies"} '
+        f'({html.escape(str(settle.get("covered_net_inr","")))}), residual '
+        f'{settle.get("residual_paise", 0)}p · recoverable fee-GST {html.escape(str(ex.get("fee_gst_recoverable_inr","")))}'
+        if ex.get("reconciled") else "Attributed Razorpay; per-leg reconciliation pending."
+    )
+
+    return f"""
+  <div class="court" id="sec-courtroom">
+    <span class="proven-tag">One verdict, cross-examined</span>
+    <h2>Evidence courtroom</h2>
+    <p class="court-sub">Every Razorpay verdict is challenged before it is accepted. Here is the strongest —
+    shown with the tie that proves it, and what remains if that tie is taken away.</p>
+    <div class="court-grid">
+      <div class="court-credit">
+        <div class="cc-amt mono">{html.escape(str(ex["amount_inr"]))}</div>
+        <div class="cc-meta mono">{html.escape(str(ex["value_date"]))} · {html.escape((ex.get("narration") or "")[:70])}</div>
+        <div class="cc-verdict">Razorpay settlement · {html.escape(str(ex["verdict"]["tier_label"]))} · conf {conf}</div>
+      </div>
+      <div class="court-proof">
+        <div class="cp-block">
+          <h5>The tie that decides it</h5>
+          <ul class="ct-ties">{ties_html}</ul>
+          <p class="ct-corr">{corr_line}</p>
+        </div>
+        <div class="cp-block">
+          <h5>Proof margin <span class="cp-m mono">{margin:.2f}</span></h5>
+          <div class="cp-bar"><i style="width:{max(2, min(100, margin*100)):.0f}%"></i></div>
+          <p class="ct-corr">The Razorpay score outranks the best competing explanation by {margin:.2f}.</p>
+        </div>
+        <div class="cp-block cp-reject">
+          <h5>Strongest explanation the challenger rejected</h5>
+          <p class="ct-rej">{html.escape(str(rej.get("detail","")))}</p>
+          <p class="ct-collapse">Remove <span class="mono">{html.escape(removed)}</span> and the verdict
+          collapses to a score of <span class="mono">{rej_score:.2f}</span> — resemblance, not proof.
+          That is why this credit is Razorpay's and a look-alike is not.</p>
+        </div>
+        <div class="cp-block">
+          <h5>Consequence</h5>
+          <p class="ct-conseq">{consequence}</p>
+        </div>
+      </div>
+    </div>
+  </div>"""
+
+
 def render(report: dict, months_by_key: dict | None = None) -> str:
     t = report["totals"]
     bp = t["by_rail_paise"]
@@ -344,6 +434,7 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
         recovery_section=recovery_section,
         solver_section=solver_section,
         solver_nav=solver_nav,
+        courtroom=_courtroom_html(report),
         proof_json=_embed_json(report.get("proof_packets", [])),
         proof_count=len(report.get("proof_packets", [])),
         seed=cfg.get("seed", "?"), n_recon=f'{t["n_recon_rows"]:,}',
@@ -410,6 +501,33 @@ h2{{font-family:var(--disp);font-weight:480;font-size:20px;letter-spacing:-.01em
 .covbar{{height:8px;background:var(--border);border-radius:100px;margin:16px 0 8px;max-width:620px;overflow:hidden}}
 .covbar i{{display:block;height:100%;background:var(--ok);border-radius:100px}}
 .covmeta{{font-size:12.5px;color:var(--ts)}}
+/* Evidence courtroom */
+.court{{margin-top:64px;background:#101014;border-radius:var(--r-lg);padding:34px 36px;color:#e9e9e6}}
+.court .proven-tag{{color:#8fb0ff;background:rgba(143,176,255,.12)}}
+.court h2{{font-family:var(--disp);font-weight:480;font-size:28px;color:#fff;margin:2px 0 6px;letter-spacing:-.01em}}
+.court-sub{{color:#b7b7b2;font-size:14px;margin:0 0 24px;max-width:78ch;line-height:1.55}}
+.court-grid{{display:grid;grid-template-columns:.85fr 1.15fr;gap:26px;align-items:start}}
+.court-credit{{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:22px}}
+.cc-amt{{font-family:var(--disp);font-size:34px;font-weight:480;color:#fff;letter-spacing:-.02em;line-height:1}}
+.cc-meta{{font-size:11.5px;color:#8a8a86;margin-top:12px;word-break:break-word;line-height:1.5}}
+.cc-verdict{{margin-top:16px;font-size:12.5px;color:#57c98a;font-weight:500}}
+.court-proof{{display:flex;flex-direction:column;gap:18px}}
+.cp-block h5{{font-family:var(--mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:#8a8a86;margin:0 0 8px;font-weight:500}}
+.cp-block .cp-m{{color:#57c98a;font-size:13px;margin-left:6px}}
+.ct-ties{{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}}
+.ct-ties li{{display:flex;gap:10px;align-items:baseline;font-size:13px}}
+.ct-sig{{font-family:var(--mono);font-size:11.5px;color:#8fb0ff;flex:0 0 auto}}
+.ct-exp{{color:#d7d7d2}}
+.ct-corr{{font-size:12px;color:#8a8a86;margin:8px 0 0;line-height:1.5}}
+.cp-bar{{height:8px;background:rgba(255,255,255,.1);border-radius:100px;overflow:hidden;max-width:420px}}
+.cp-bar i{{display:block;height:100%;background:linear-gradient(90deg,#57c98a,#8fb0ff);border-radius:100px}}
+.cp-reject{{background:rgba(240,179,87,.07);border:1px solid rgba(240,179,87,.18);border-radius:10px;padding:14px 16px}}
+.cp-reject h5{{color:#f0b357}}
+.ct-rej{{font-size:13px;color:#e9e9e6;margin:0 0 8px}}
+.ct-collapse{{font-size:13px;color:#d7d7d2;margin:0;line-height:1.55}}
+.ct-collapse .mono,.cc-meta.mono,.cc-amt.mono{{font-family:var(--mono)}}
+.ct-conseq{{font-size:13px;color:#d7d7d2;margin:0;line-height:1.5}}
+@media(max-width:820px){{.court-grid{{grid-template-columns:1fr;gap:18px}}.court{{padding:26px 22px}}}}
 
 .pac-table{{width:100%;border-collapse:collapse;font-size:13px}}
 .pac-table th{{text-align:left;padding:8px 10px;background:var(--sunken);color:var(--ts);font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border)}}
@@ -488,6 +606,7 @@ tr.pk-row.open td{{background:var(--sunken)}}
   <nav class="secnav">
     <a href="#sec-attribution">Attribution</a>
     <a href="#sec-reconciliation">Reconciliation</a>
+    <a href="#sec-courtroom">Courtroom</a>
     <a href="#sec-exceptions">Exceptions</a>
     <a href="#sec-recovery">Recovery</a>
     {solver_nav}
@@ -551,7 +670,7 @@ tr.pk-row.open td{{background:var(--sunken)}}
         <div class="n">within ±₹1 labelled drift tolerance</div></div>
     </div>
   </div>
-
+{courtroom}
   <div class="exc-wrap" id="sec-exceptions">
     <h2>Exception queue</h2>
     <p class="sc">{exc_section_copy}</p>
