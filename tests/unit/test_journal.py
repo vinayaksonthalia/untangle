@@ -46,6 +46,22 @@ def test_every_entry_balances_and_gst_not_double_counted():
     assert e.total_debit_paise == e.total_credit_paise
 
 
+def test_residual_posts_an_explicit_rounding_line():
+    """Qodo #13: an accepted ±₹1 residual (bank credit ≠ covered settlement net) appears as an explicit
+    Bank Charges & Rounding line and gross is derived from the settlement net — not hidden in Clearing."""
+    rows = [_row("pay_1", amount=1000000, fee=1000, tax=180)]  # fee incl GST → MDR 820, ITC 180
+    rec = ReconciliationResult(
+        line_key="k1", covered_entity_ids=[("payment", "pay_1")],
+        covered_net_paise=999000, credit_amount_paise=999005, residual_paise=5, balanced=True,
+    )
+    e = build_journal_entries([rec], rows, intra_state=True)[0]
+    led = {ln.ledger: (ln.debit_paise, ln.credit_paise) for ln in e.lines}
+    assert led["Bank Current A/c"] == (999005, 0)               # actual bank credit
+    assert led["Bank Charges & Rounding"] == (0, 5)             # +5p residual booked explicitly (credit)
+    assert led["Razorpay Clearing A/c"] == (0, 999000 + 1000)   # gross from SETTLEMENT net + total fee
+    assert e.balanced
+
+
 def test_real_razorpay_convention_tax_separate_from_fee():
     """A REAL Razorpay report keeps fee (ex-GST) and tax separate: credit = amount − fee − tax. The
     export must detect this and set MDR = fee (NOT fee − tax) so real uploads reconcile correctly."""
@@ -87,6 +103,19 @@ def test_tally_xml_sign_convention_and_balance():
             amt = float(le.find("AMOUNT").text)
             # Debit → ISDEEMEDPOSITIVE Yes + negative amount; Credit → No + positive.
             assert (pos == "Yes" and amt < 0) or (pos == "No" and amt > 0)
+
+
+def test_tally_xml_strips_xml_illegal_control_chars():
+    """Qodo: uploaded settlement id/UTR with XML-1.0-forbidden control characters must not produce a
+    non-well-formed Tally download — illegal code points are stripped before serialization."""
+    row = ReconRow(
+        entity_id="pay_1", type="payment", amount_paise=1000000, fee_paise=1000, tax_paise=180,
+        debit_paise=0, credit_paise=999000, settlement_id="setl_\x01\x02X", settlement_utr="U\x0bTR",
+        settled_at=datetime(2026, 6, 10), created_at=datetime(2026, 6, 10),
+        on_hold=False, dispute_id=None, order_id=None, method="card", description=None,
+    )
+    xml = to_tally_xml(build_journal_entries([_recon(["pay_1"], 999000)], [row]))
+    ET.fromstring(xml)  # raises if control chars leaked through and broke well-formedness
 
 
 def test_deterministic_on_real_data():

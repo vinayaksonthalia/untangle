@@ -17,17 +17,23 @@ derived net differs from the actual bank credit by a residual (rounding / labell
 "Bank Charges & Rounding" line absorbs it so the voucher still balances.
 """
 
-from __future__ import annotations
-
+import re
 from dataclasses import dataclass
+
+# Code points NOT permitted in XML 1.0 text (control chars other than tab/LF/CR, surrogates, etc.).
+_XML_ILLEGAL_RE = re.compile(
+    "[^\u0009\u000a\u000d\u0020-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]"
+)
 
 
 def _xml_escape(s: object) -> str:
-    """Escape the 5 XML special characters for safe output. A local escaper (not xml.sax.saxutils) so
-    the module imports no `xml` parser — this is output-only string escaping, never XML parsing (and it
-    keeps the security scanner's XXE rule, which flags any `xml` import, satisfied)."""
+    """Escape the 5 XML metacharacters AND drop XML 1.0-forbidden code points (control characters etc.)
+    for safe output. A local escaper (not xml.sax.saxutils) so the module imports no `xml` parser — this
+    is output-only string escaping, never parsing. Qodo #: uploaded settlement ids/UTRs flow into GUID/
+    reference/narration verbatim, so illegal control chars must be stripped or the Tally XML won't parse."""
+    text = _XML_ILLEGAL_RE.sub("", str(s))
     return (
-        str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         .replace('"', "&quot;").replace("'", "&apos;")
     )
 
@@ -116,29 +122,56 @@ def build_journal_entries(
 ) -> list[JournalEntry]:
     """One balanced journal voucher per reconciled Razorpay credit. `intra_state` splits the ITC into
     CGST+SGST (same state as the gateway GSTIN) vs a single IGST line (inter-state)."""
-    by_entity = {(r.type, r.entity_id): r for r in recon_rows}
-    # Deterministic order: by settlement date then id (fall back to line_key).
+    from collections import defaultdict
+
+    # Qodo #7: index recon rows as a MULTIMAP so duplicate (type, entity_id) rows are not collapsed to
+    # the last one — each covered-key occurrence consumes a distinct row.
+    rows_by_key: dict[tuple[str, str], list] = defaultdict(list)
+    for r in recon_rows:
+        rows_by_key[(r.type, r.entity_id)].append(r)
+
     entries: list[JournalEntry] = []
     for rec in sorted(reconciliations, key=lambda x: x.line_key):
-        covered = [by_entity[k] for k in rec.covered_entity_ids if k in by_entity]
+        seen: dict[tuple[str, str], int] = defaultdict(int)
+        covered = []
+        for k in rec.covered_entity_ids:
+            bucket = rows_by_key.get(k, [])
+            if seen[k] < len(bucket):
+                covered.append(bucket[seen[k]])
+            seen[k] += 1
         if not covered:
             continue
-        # Model the SETTLEMENT leg robustly to (a) a settlement mixing payments/refunds/adjustments,
-        # and (b) EITHER fee/tax convention: untangle's synthetic data folds GST inside `fee`
-        # (credit = amount − fee), while a REAL Razorpay report keeps them separate
-        # (credit = amount − fee − tax). We detect which, so the MDR expense (ex-GST) is always right.
+        # Fees/tax over the covered rows; convention-agnostic MDR (untangle folds GST inside `fee`;
+        # a real Razorpay report keeps fee ex-GST and tax separate — detect which).
         fee_sum = sum(r.fee_paise for r in covered)
         itc = sum(r.tax_paise for r in covered)          # the GST amount (an ITC asset) — unambiguous
         mdr_ex_gst = fee_sum - itc if _tax_inside_fee(covered) else fee_sum
-        actual_net = rec.credit_amount_paise             # what actually hit the bank
-        gross = actual_net + mdr_ex_gst + itc            # clearing relieved → balances exactly, no drift
 
-        sid = next((r.settlement_id for r in covered if r.settlement_id), rec.line_key)
-        utr = next((r.settlement_utr for r in covered if r.settlement_utr), "")
-        sdate = next((r.settled_at for r in covered if r.settled_at), None)
+        # Qodo #13: derive the clearing (gross) from the covered SETTLEMENT net (not the bank credit),
+        # and post the bank-vs-settlement residual (±₹1) EXPLICITLY to a rounding ledger — never hide it
+        # in Razorpay Clearing (which would misstate the settlement waterfall).
+        covered_net = rec.covered_net_paise
+        actual_net = rec.credit_amount_paise             # what actually hit the bank
+        drift = actual_net - covered_net                 # the accepted ±₹1 reconciliation residual
+        gross = covered_net + mdr_ex_gst + itc           # clearing relieved = settlement gross
+
+        # Qodo #8: identify ALL settlements this voucher clears (a set-sum reconciliation may span
+        # several); never keep only the first, and never invent a fallback date.
+        sids = sorted({r.settlement_id for r in covered if r.settlement_id}) or [rec.line_key]
+        utrs = sorted({r.settlement_utr for r in covered if r.settlement_utr})
+        # Voucher date from the earliest real settlement date, falling back to the capture date — never
+        # an invented constant (Qodo #8), but a Tally voucher must still carry a date (Qodo #1: don't
+        # emit date-less vouchers).
+        sdate = min((r.settled_at for r in covered if r.settled_at), default=None)
+        if sdate is None:
+            sdate = min((r.created_at for r in covered if r.created_at), default=None)
         date = sdate.date().isoformat() if sdate is not None else ""
 
         lines: list[JournalLine] = [JournalLine(LEDGER_BANK, debit_paise=actual_net)]
+        if drift > 0:
+            lines.append(JournalLine(LEDGER_ROUNDING, credit_paise=drift))
+        elif drift < 0:
+            lines.append(JournalLine(LEDGER_ROUNDING, debit_paise=-drift))
         if mdr_ex_gst:
             lines.append(JournalLine(LEDGER_MDR, debit_paise=mdr_ex_gst))
         if itc:
@@ -150,13 +183,18 @@ def build_journal_entries(
                 lines.append(JournalLine(LEDGER_ITC_IGST, debit_paise=itc))
         lines.append(JournalLine(LEDGER_CLEARING, credit_paise=gross))
 
+        settle_lbl = ", ".join(sids) if len(sids) <= 3 else f"{', '.join(sids[:3])} +{len(sids) - 3} more"
         narration = (
-            f"Razorpay settlement {sid} | UTR {utr or 'n/a'} | gross {_inr(gross)}, "
+            f"Razorpay settlement(s) {settle_lbl} | UTR {', '.join(utrs) or 'n/a'} | gross {_inr(gross)}, "
             f"MDR {_inr(mdr_ex_gst)}, GST-ITC {_inr(itc)}, net {_inr(actual_net)}"
         )
-        entry = JournalEntry(ref=str(sid), date=date, utr=utr or "", narration=narration, lines=tuple(lines))
+        entry = JournalEntry(
+            ref=str(sids[0]), date=date, utr=utrs[0] if utrs else "", narration=narration, lines=tuple(lines)
+        )
         # Invariant: never emit an unbalanced voucher.
-        assert entry.balanced, f"unbalanced journal entry for {sid}: {entry.total_debit_paise} != {entry.total_credit_paise}"
+        assert entry.balanced, (
+            f"unbalanced journal entry for {sids[0]}: {entry.total_debit_paise} != {entry.total_credit_paise}"
+        )
         entries.append(entry)
     return entries
 
@@ -199,7 +237,9 @@ def to_tally_xml(entries: list[JournalEntry], *, company: str = "Your Company Na
         "</REQUESTDESC><REQUESTDATA>",
     ]
     for e in entries:
-        tdate = e.date.replace("-", "") or "20260101"
+        tdate = e.date.replace("-", "")  # YYYYMMDD; never invent a fallback accounting date (Qodo #8)
+        if not tdate:
+            continue  # a Tally voucher must carry a real date — skip a date-less entry rather than emit one
         guid = f"UNTANGLE-RZP-{_xml_escape(e.ref)}"
         out.append('<TALLYMESSAGE xmlns:UDF="TallyUDF">')
         out.append('<VOUCHER VCHTYPE="Journal" ACTION="Create" OBJVIEW="Accounting Voucher View">')
