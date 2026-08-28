@@ -369,6 +369,17 @@ def build_candidate_graph(
                     )
                 )
 
+    # A credit poisoned by ANY oversized/un-enumerable split pool must abstain from ALL split
+    # assignments — we could not enumerate its globally-competing splits, so accepting any split for it
+    # would be an unverified verdict (Qodo: "stale splits bypass abstention"). This also drops split
+    # edges emitted for an EARLIER settlement before the credit was poisoned by a later, larger pool.
+    # Its own single-credit edges are untouched (its individual tie is still proof).
+    if un_enumerable_credits:
+        candidates = [
+            c for c in candidates
+            if not (c.is_split and any(k in un_enumerable_credits for k in c.credit_keys))
+        ]
+
     # Sort candidates deterministically
     candidates.sort(key=lambda c: (c.credit_keys, c.target_id, c.assignment_id))
 

@@ -68,6 +68,24 @@ def _row(
     )
 
 
+def test_poisoned_credit_never_appears_in_a_split_candidate():
+    """Qodo (PR#20): a credit poisoned by an oversized/un-enumerable split pool must not appear in ANY
+    split candidate (even one emitted for an earlier settlement before it was poisoned)."""
+    # 35 RATN-IFSC legs eligible for one settlement → oversized (combos > max_combinations) → poisoned.
+    legs = [
+        _line(f"k_split_{i}", narr="RTGS-RATN0000088-SPLIT", amount=10000 + i * 100, vd="2026-06-10")
+        for i in range(35)
+    ]
+    idx = ReconIndex([_row("s_split", utr="UTR_SPLIT_LARGE", net=500000, dt=date(2026, 6, 10))])
+    graph = build_candidate_graph(legs, idx, threshold=0.55, max_combinations=5000)
+    assert graph.un_enumerable_credits, "test did not force an un-enumerable pool"
+    for c in graph.candidates:
+        if c.is_split:
+            assert not (set(c.credit_keys) & graph.un_enumerable_credits), (
+                f"split candidate {c.assignment_id} references a poisoned credit"
+            )
+
+
 def test_split_candidate_carries_proof_evidence_and_packets():
     """Bug 7 & Bug 1: Split CandidateAssignments carry split_reconstruction evidence
     plus strong-origin proof, verdicts carry evidence, and proof packets receive the tie.
