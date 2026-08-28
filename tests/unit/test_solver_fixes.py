@@ -195,3 +195,82 @@ def test_build_report_captures_solver_result_without_double_run():
         solver_result=solver_sink["solver_result"],
     )
     assert rep.rejected_matches is not None
+
+
+def test_single_credit_tie_preserved_when_split_pool_oversized():
+    """Finding 2: An oversized split pool poisons credits for the split path, but credits with their own single-credit tie remain assignable."""
+    # S_split has 35 eligible credits with max_combinations=5000 -> oversized split pool
+    split_lines = [
+        _line(f"k_split_{i}", narr="RTGS-RATN0000088-SPLIT", amount=10000 + i * 100, vd="2026-06-10")
+        for i in range(35)
+    ]
+    # S_single has an exact UTR match on k_single_tied
+    l_single = _line("k_single_tied", narr="RTGS/1780000000009999/SINGLE MATCH", amount=500000, vd="2026-06-10")
+
+    recon_rows = [
+        _row("s_split", utr="UTR_SPLIT_LARGE", net=500000, dt=date(2026, 6, 10)),
+        _row("s_single", utr="1780000000009999", net=500000, dt=date(2026, 6, 10)),
+    ]
+    idx = ReconIndex(recon_rows)
+
+    all_lines = split_lines + [l_single]
+    graph = build_candidate_graph(all_lines, idx, threshold=0.55, max_combinations=5000)
+
+    # s_split split candidates are dropped due to oversized combinations
+    assert len(graph.un_enumerable_credits) > 0
+
+    # Solve assignment
+    res = solve_assignment(graph)
+
+    # k_single_tied has its own valid single-credit tie to s_single and MUST be assigned
+    v_single = res.verdicts["k_single_tied"]
+    assert not v_single.abstained
+    assert v_single.rail == Rail.RAZORPAY_SETTLEMENT.value
+    assert v_single.target_id == "s_single"
+
+
+def test_candidate_graph_threshold_guard_on_single_edges():
+    """Finding 3: Single-credit candidate edges below threshold are not emitted."""
+    # Non-Razorpay line with low confidence score (e.g. 0.40)
+    l_weak_upi = _line("k_weak_upi", narr="UPI/WEAK REF 123", amount=50000, vd="2026-06-10")
+    recon_rows = [_row("s1", utr="UTR1", net=100000, dt=date(2026, 6, 10))]
+    idx = ReconIndex(recon_rows)
+
+    # At threshold=0.55, weak non-rzp edge with score < 0.55 is not created
+    graph = build_candidate_graph([l_weak_upi], idx, threshold=0.55)
+    candidates = graph.candidates_by_credit.get("k_weak_upi", [])
+    # Only the default abstain candidate should exist
+    assert all(c.target_id == "abstain" or c.confidence >= 0.55 for c in candidates)
+
+    # At elevated threshold (e.g. 0.80), single-credit Razorpay edge with conf 0.52 is suppressed
+    l_amt_only = _line("k_amt_only", narr="RTGS TRANSFER 123", amount=100000, vd="2026-06-10")
+    graph_high = build_candidate_graph([l_amt_only], idx, threshold=0.80)
+    cands_high = graph_high.candidates_by_credit.get("k_amt_only", [])
+    assert all(c.target_id == "abstain" or c.confidence >= 0.80 for c in cands_high)
+
+
+def test_credit_tied_to_s1_excluded_from_s2_split_pool():
+    """Finding 4: A credit with a corroborated utr_suffix tie to S1 is excluded from S2's split candidate pool."""
+    # Settlement S1 with UTR 1780000000001111
+    # Settlement S2 with UTR 1780000000002222
+    recon_rows = [
+        _row("s1", utr="1780000000001111", net=500000, dt=date(2026, 6, 10)),
+        _row("s2", utr="1780000000002222", net=1000000, dt=date(2026, 6, 10)),
+    ]
+    idx = ReconIndex(recon_rows)
+
+    # Credit C1 has unique suffix '001111' tied to S1
+    c1 = _line("k_c1", narr="RTGS/001111/RAZORPAY", amount=400000, vd="2026-06-10")
+    # Credit C2 is a generic Razorpay credit
+    c2 = _line("k_c2", narr="RAZORPAY SETTLEMENT LEG 2", amount=600000, vd="2026-06-10")
+
+    graph = build_candidate_graph([c1, c2], idx, threshold=0.55)
+
+    # C1 must NOT be in any split candidate targeting S2
+    s2_split_cands = [
+        c for c in graph.candidates
+        if c.is_split and c.target_id == "s2"
+    ]
+    for sc in s2_split_cands:
+        assert "k_c1" not in sc.credit_keys
+
