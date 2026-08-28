@@ -529,7 +529,11 @@ def solve_assignment(
                     excluded_assignment_ids={c_star.assignment_id},
                 )
 
-                if alt_assignment and alt_cost[:2] == best_cost[:2]:
+                # Two worlds are "equally valid" only when they tie on the harder objective tiers —
+                # invalid picks, unexplained paise, AND residual paise. Only then is the evidence-weight
+                # gap (tier 4) the deciding margin. (Bug: comparing only [:2] let a worse-residual
+                # alternative trigger a false abstention.)
+                if alt_assignment and alt_cost[:3] == best_cost[:3]:
                     gap = round(alt_cost[3] - best_cost[3], 4)
                     if gap <= margin_threshold:
                         alt_by_credit = {k: c for c in alt_assignment for k in c.credit_keys}
