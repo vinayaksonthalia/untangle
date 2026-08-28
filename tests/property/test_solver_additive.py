@@ -88,8 +88,12 @@ def test_solver_on_preserves_precision_and_recall_on_dev_and_sealed():
 
     # 1. Dev dataset (seed 42)
     cfg_on = build_config(no_ai=True, provider=None, model=None, threshold=None, seed=42, global_solver=True)
-    attrs_on = attribute_all(lines, index, cfg_on.threshold, global_solver=True)
-    rep_on, _ = build_report(cfg_on, lines, recon_rows, index, attrs_on, order_ledger, global_solver=True)
+    solver_sink: dict = {}
+    attrs_on = attribute_all(lines, index, cfg_on.threshold, global_solver=True, solver_result_out=solver_sink)
+    rep_on, _ = build_report(
+        cfg_on, lines, recon_rows, index, attrs_on, order_ledger,
+        global_solver=True, solver_result=solver_sink.get("solver_result"),
+    )
     dict_on = rep_on.to_dict()
 
     dev_metrics = score(dict_on, "data/ground_truth.json", "data/bank_statement.csv")
@@ -114,7 +118,8 @@ def test_solver_on_preserves_precision_and_recall_on_dev_and_sealed():
 
     assert rzp_sealed["precision"] == 1.000, f"Sealed precision dropped: {rzp_sealed['precision']}"
     assert decoy_sealed["predicted_razorpay"] == 0, f"Sealed decoy false positives found: {decoy_sealed}"
-    assert rzp_sealed["recall"] >= 0.839, f"Sealed recall below baseline: {rzp_sealed['recall']} < 0.839"
+    assert rzp_sealed["recall"] >= 0.857, f"Sealed recall below baseline: {rzp_sealed['recall']} < 0.857"
+    assert sealed_res_on["totals"]["reconciled_count"] == 91, f"Sealed reconciled_count != 91: {sealed_res_on['totals']['reconciled_count']}"
 
 
 def test_solver_on_is_deterministic():
@@ -122,12 +127,14 @@ def test_solver_on_is_deterministic():
     lines, recon_rows, order_ledger, index = _setup_dev_pipeline()
 
     cfg1 = build_config(no_ai=True, provider=None, model=None, threshold=None, seed=42, global_solver=True)
-    attrs1 = attribute_all(lines, index, cfg1.threshold, global_solver=True)
-    rep1, _ = build_report(cfg1, lines, recon_rows, index, attrs1, order_ledger, global_solver=True)
+    sink1: dict = {}
+    attrs1 = attribute_all(lines, index, cfg1.threshold, global_solver=True, solver_result_out=sink1)
+    rep1, _ = build_report(cfg1, lines, recon_rows, index, attrs1, order_ledger, global_solver=True, solver_result=sink1.get("solver_result"))
 
     cfg2 = build_config(no_ai=True, provider=None, model=None, threshold=None, seed=42, global_solver=True)
-    attrs2 = attribute_all(lines, index, cfg2.threshold, global_solver=True)
-    rep2, _ = build_report(cfg2, lines, recon_rows, index, attrs2, order_ledger, global_solver=True)
+    sink2: dict = {}
+    attrs2 = attribute_all(lines, index, cfg2.threshold, global_solver=True, solver_result_out=sink2)
+    rep2, _ = build_report(cfg2, lines, recon_rows, index, attrs2, order_ledger, global_solver=True, solver_result=sink2.get("solver_result"))
 
     assert json.dumps(rep1.to_dict(), sort_keys=True) == json.dumps(rep2.to_dict(), sort_keys=True)
 

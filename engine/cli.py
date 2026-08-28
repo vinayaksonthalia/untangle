@@ -15,6 +15,7 @@ import json
 import os
 import sys
 from collections import Counter, defaultdict
+from typing import Any
 
 from engine import audit as audit_mod
 from engine.abstain import coverage_curve, required_precision
@@ -49,14 +50,25 @@ def _fmt_inr(paise: int) -> str:
 
 
 def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
-                 *, with_recovery: bool = True, global_solver: bool = False) -> tuple[RunReport, audit_mod.AuditLedger]:
+                 *, with_recovery: bool = True, global_solver: bool = False,
+                 solver_result: Any | None = None) -> tuple[RunReport, audit_mod.AuditLedger]:
     solver_active = global_solver or getattr(cfg, "global_solver", False)
     rejected_matches = None
     if solver_active:
-        from engine.solver import run_global_solver
+        if solver_result is not None:
+            rejected_matches = solver_result.rejected_matches
+        else:
+            # Guard: do not double-run if attributions were already solved by global solver (Bug 2)
+            already_solved = any(
+                any(e.signal == "split_reconstruction" for e in a.evidence) for a in attributions
+            )
+            if not already_solved:
+                from engine.solver import run_global_solver
 
-        attributions, solver_result = run_global_solver(lines, index, attributions)
-        rejected_matches = solver_result.rejected_matches
+                attributions, solver_result = run_global_solver(
+                    lines, index, attributions, threshold=cfg.threshold
+                )
+                rejected_matches = solver_result.rejected_matches
 
     ledger = audit_mod.AuditLedger()
     ledger.append("run_start", {"engine_version": _ENGINE_VERSION, "seed": cfg.seed,
@@ -174,7 +186,14 @@ def _cmd_run(args) -> int:
         return 2
 
     index = ReconIndex(recon_rows)
-    attributions = attribute_all(lines, index, cfg.threshold, global_solver=cfg.global_solver)
+    solver_out: dict[str, Any] = {}
+    attributions = attribute_all(
+        lines,
+        index,
+        cfg.threshold,
+        global_solver=cfg.global_solver,
+        solver_result_out=solver_out if cfg.global_solver else None,
+    )
 
     if cfg.use_ai:
         client = LLMClient(enabled=True, provider=cfg.provider, model=cfg.model,
@@ -182,7 +201,16 @@ def _cmd_run(args) -> int:
         lines_by_key = {ln.key: ln for ln in lines}
         attributions = resolve_unknowns(attributions, lines_by_key, index, client)
 
-    report, _ledger = build_report(cfg, lines, recon_rows, index, attributions, order_ledger)
+    report, _ledger = build_report(
+        cfg,
+        lines,
+        recon_rows,
+        index,
+        attributions,
+        order_ledger,
+        global_solver=cfg.global_solver,
+        solver_result=solver_out.get("solver_result"),
+    )
 
     os.makedirs(args.out, exist_ok=True)
     report_path = os.path.join(args.out, "report.json")

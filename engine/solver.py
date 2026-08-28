@@ -110,12 +110,18 @@ class SolverResult:
     note: str | None = None
 
 
+_MAX_SPLIT_COMBINATIONS = 50000
+_MAX_BRANCH_STEPS = 10000
+
+
 def build_candidate_graph(
     lines: list[BankCreditLine],
     index: ReconIndex,
     attributions: list[RailAttribution] | None = None,
     *,
     max_candidates: int = _SPLIT_MAX_CANDIDATES,
+    max_combinations: int = _MAX_SPLIT_COMBINATIONS,
+    threshold: float | None = None,
 ) -> AssignmentGraph:
     """Construct bounded candidate assignment graph for one period.
 
@@ -125,7 +131,7 @@ def build_candidate_graph(
     - Edges: only proof-valid candidate assignments. For Razorpay, an edge
       MUST carry a tie in _RZP_TIE_SIGNALS or be part of a provable subset-sum.
     - Connected components: partitions credits into independent solvable clusters.
-    - Bounded: components exceeding max_candidates combinations are marked un-enumerable.
+    - Bounded: components exceeding max_candidates or max_combinations are marked un-enumerable.
     """
     credit_nodes: dict[str, SolverNode] = {}
     for ln in lines:
@@ -264,58 +270,79 @@ def build_candidate_graph(
                 )
 
     # 2. Generate multi-credit split candidate edges
-    # Eligible credits: credit > 0, no competing rail keyword, carries Razorpay-leaning signal
-    sig_by_key: dict[str, set[str]] = {}
-    split_candidates: list[BankCreditLine] = []
-    for ln in lines:
-        if not (ln.is_credit and ln.amount_paise > 0 and not narration_rail_signals(ln)):
-            continue
-        sigs = {e.signal for e in razorpay_signals(ln, index)}
-        if _RZP_LEANING_SIGNALS & sigs:
-            split_candidates.append(ln)
-            sig_by_key[ln.key] = sigs
-
-    for sid in sorted(index.settlement_net):
-        net = index.settlement_net[sid]
-        sdate = index.settlement_date.get(sid)
-        if net <= 0 or sdate is None:
-            continue
-
-        elig = [
-            c for c in split_candidates
-            if c.amount_paise < net and abs((c.value_date - sdate).days) <= _SPLIT_DATE_WINDOW
-        ]
-        if len(elig) < 2:
-            continue
-
-        if len(elig) > max_candidates:
-            un_enumerable_credits.update(c.key for c in elig)
-            continue
-
-        for sub in _all_sum_subsets(elig, net, _SPLIT_DRIFT_PAISE, _SPLIT_MAX_LEGS):
-            # Must carry at least one strong Razorpay signal (IFSC RATN or verified UTR suffix)
-            if not any(_STRONG_RZP_SIGNALS & sig_by_key[c.key] for c in sub):
+    # Guard: if split confidence is below the runtime threshold, splits abstain (Bug 3)
+    if threshold is None or _SPLIT_CONFIDENCE >= threshold:
+        sig_by_key: dict[str, set[str]] = {}
+        split_candidates: list[BankCreditLine] = []
+        for ln in lines:
+            if not (ln.is_credit and ln.amount_paise > 0 and not narration_rail_signals(ln)):
                 continue
-            if any(c.key in un_enumerable_credits for c in sub):
+            sigs = {e.signal for e in razorpay_signals(ln, index)}
+            if "utr_exact" in sigs:
+                continue
+            if _RZP_LEANING_SIGNALS & sigs:
+                split_candidates.append(ln)
+                sig_by_key[ln.key] = sigs
+
+        for sid in sorted(index.settlement_net):
+            net = index.settlement_net[sid]
+            sdate = index.settlement_date.get(sid)
+            if net <= 0 or sdate is None:
                 continue
 
-            sub_keys = tuple(sorted(c.key for c in sub))
-            residual = sum(c.amount_paise for c in sub) - net
-            cost = (0, 0, abs(residual), -_SPLIT_CONFIDENCE, 1.5)
-            candidates.append(
-                CandidateAssignment(
-                    assignment_id=f"split:{sid}:{'+'.join(sub_keys)}",
-                    credit_keys=sub_keys,
-                    target_id=sid,
-                    rail=Rail.RAZORPAY_SETTLEMENT.value,
-                    tier=Tier.C.value,
-                    confidence=_SPLIT_CONFIDENCE,
-                    evidence=(),
-                    residual_paise=residual,
-                    cost_tuple=cost,
-                    is_split=True,
+            elig = [
+                c for c in split_candidates
+                if c.amount_paise < net and abs((c.value_date - sdate).days) <= _SPLIT_DATE_WINDOW
+            ]
+            if len(elig) < 2:
+                continue
+
+            # Bound actual work: combinations check per SC-005 (Bug 6)
+            n_elig = len(elig)
+            n_combos = (n_elig * (n_elig - 1)) // 2 + (n_elig * (n_elig - 1) * (n_elig - 2)) // 6
+            if n_elig > max_candidates or n_combos > max_combinations:
+                un_enumerable_credits.update(c.key for c in elig)
+                continue
+
+            for sub in _all_sum_subsets(elig, net, _SPLIT_DRIFT_PAISE, _SPLIT_MAX_LEGS):
+                # Must carry at least one strong Razorpay signal (IFSC RATN or verified UTR suffix)
+                if not any(_STRONG_RZP_SIGNALS & sig_by_key[c.key] for c in sub):
+                    continue
+                if any(c.key in un_enumerable_credits for c in sub):
+                    continue
+
+                sub_keys = tuple(sorted(c.key for c in sub))
+                residual = sum(c.amount_paise for c in sub) - net
+                cost = (0, 0, abs(residual), -_SPLIT_CONFIDENCE, 1.5)
+                # Attach split_reconstruction evidence + strong-signal proof (Bug 7)
+                split_ev: list[EvidenceItem] = [
+                    EvidenceItem(
+                        "split_reconstruction",
+                        f"1 of {len(sub)} bank legs whose amounts uniquely sum to balance the settlement net for {sid}",
+                        _SPLIT_CONFIDENCE,
+                    )
+                ]
+                for c in sub:
+                    for sig in _STRONG_RZP_SIGNALS:
+                        if sig in sig_by_key.get(c.key, set()):
+                            for item in razorpay_signals(c, index):
+                                if item.signal == sig and item not in split_ev:
+                                    split_ev.append(item)
+
+                candidates.append(
+                    CandidateAssignment(
+                        assignment_id=f"split:{sid}:{'+'.join(sub_keys)}",
+                        credit_keys=sub_keys,
+                        target_id=sid,
+                        rail=Rail.RAZORPAY_SETTLEMENT.value,
+                        tier=Tier.C.value,
+                        confidence=_SPLIT_CONFIDENCE,
+                        evidence=tuple(split_ev),
+                        residual_paise=residual,
+                        cost_tuple=cost,
+                        is_split=True,
+                    )
                 )
-            )
 
     # Sort candidates deterministically
     candidates.sort(key=lambda c: (c.credit_keys, c.target_id, c.assignment_id))
@@ -391,14 +418,18 @@ def _solve_component(
     comp_set: set[str],
     global_consumed_settlements: set[str],
     excluded_assignment_ids: set[str] | None = None,
-) -> tuple[list[CandidateAssignment], tuple[int, int, int, float, float]]:
+    max_steps: int = _MAX_BRANCH_STEPS,
+) -> tuple[list[CandidateAssignment], tuple[int, int, int, float, float], bool]:
     """Solve one connected component using branch-and-bound search.
 
     Optionally excludes specified candidate assignment IDs (to find the best alternative).
+    Returns (best_assignment, best_cost, timed_out).
     """
     excluded = excluded_assignment_ids or set()
     best_cost: tuple[int, int, int, float, float] | None = None
     best_assignment: list[CandidateAssignment] = []
+    steps = 0
+    step_budget_exceeded = False
 
     # Baseline: default abstain for all credits in component (if available)
     default_chosen = [
@@ -406,8 +437,8 @@ def _solve_component(
         for c in graph.candidates_by_credit.get(k, [])
         if c.target_id == "abstain" and c.assignment_id not in excluded
     ]
+    default_cost: tuple[int, int, int, float, float] = (0, 0, 0, 0.0, 0.0)
     if len(default_chosen) == len(comp_set):
-        default_cost: tuple[int, int, int, float, float] = (0, 0, 0, 0.0, 0.0)
         for c in default_chosen:
             default_cost = _add_costs(default_cost, c.cost_tuple)
         best_cost = default_cost
@@ -419,7 +450,12 @@ def _solve_component(
         chosen: list[CandidateAssignment],
         current_cost: tuple[int, int, int, float, float],
     ) -> None:
-        nonlocal best_cost, best_assignment
+        nonlocal best_cost, best_assignment, steps, step_budget_exceeded
+        steps += 1
+        if steps > max_steps:
+            step_budget_exceeded = True
+            return
+
         if not unassigned:
             if best_cost is None or current_cost < best_cost:
                 best_cost = current_cost
@@ -442,6 +478,8 @@ def _solve_component(
         valid_cands.sort(key=lambda c: (c.cost_tuple, c.credit_keys, c.target_id, c.assignment_id))
 
         for c in valid_cands:
+            if step_budget_exceeded:
+                return
             tentative_cost = _add_costs(current_cost, c.cost_tuple)
 
             if best_cost is not None and tentative_cost[:2] > best_cost[:2]:
@@ -457,15 +495,18 @@ def _solve_component(
             chosen.pop()
 
     search(set(comp_set), set(), [], (0, 0, 0, 0.0, 0.0))
+    if step_budget_exceeded:
+        return (default_chosen, default_cost, True)
     if best_cost is None:
-        return ([], (999, 999999999, 999999999, 0.0, 999.0))
-    return best_assignment, best_cost
+        return ([], (999, 999999999, 999999999, 0.0, 999.0), False)
+    return best_assignment, best_cost, False
 
 
 def solve_assignment(
     graph: AssignmentGraph,
     *,
     margin_threshold: float = 0.0,
+    max_steps: int = _MAX_BRANCH_STEPS,
 ) -> SolverResult:
     """Solve the constrained assignment problem using deterministic branch-and-bound.
 
@@ -513,7 +554,12 @@ def solve_assignment(
             continue
 
         # Solve component with branch-and-bound search
-        best_assignment, best_cost = _solve_component(graph, comp_set, consumed_settlements)
+        best_assignment, best_cost, timed_out = _solve_component(
+            graph, comp_set, consumed_settlements, max_steps=max_steps
+        )
+        if timed_out:
+            is_overall_optimal = False
+            overall_notes.append(f"Component branch-and-bound step limit exceeded ({max_steps} steps); failed-closed to abstention")
 
         # Global competing-explanation margin evaluation (Phase 3)
         if margin_threshold > 0.0 and best_assignment:
@@ -522,11 +568,12 @@ def solve_assignment(
                     continue
 
                 # Search for best alternative assignment excluding c_star
-                alt_assignment, alt_cost = _solve_component(
+                alt_assignment, alt_cost, _ = _solve_component(
                     graph,
                     comp_set,
                     consumed_settlements,
                     excluded_assignment_ids={c_star.assignment_id},
+                    max_steps=max_steps,
                 )
 
                 # Two worlds are "equally valid" only when they tie on the harder objective tiers —
@@ -695,7 +742,10 @@ def run_global_solver(
     index: ReconIndex,
     base_attributions: list[RailAttribution],
     *,
+    threshold: float = 0.55,
     margin_threshold: float = 0.0,
+    max_candidates: int = _SPLIT_MAX_CANDIDATES,
+    max_combinations: int = _MAX_SPLIT_COMBINATIONS,
 ) -> tuple[list[RailAttribution], SolverResult]:
     """Run the global evidence-constrained reconciliation solver.
 
@@ -704,7 +754,14 @@ def run_global_solver(
     1. Adjusted list[RailAttribution] reflecting globally consistent verdicts.
     2. SolverResult containing verdicts, objective costs, and rejected matches.
     """
-    graph = build_candidate_graph(lines, index, base_attributions)
+    graph = build_candidate_graph(
+        lines,
+        index,
+        base_attributions,
+        max_candidates=max_candidates,
+        max_combinations=max_combinations,
+        threshold=threshold,
+    )
     result = solve_assignment(graph, margin_threshold=margin_threshold)
 
     out: list[RailAttribution] = []

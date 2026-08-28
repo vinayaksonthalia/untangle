@@ -484,12 +484,17 @@ def attribute_all(
     *,
     margin_threshold: float = 0.0,
     global_solver: bool = False,
+    solver_result_out: dict | None = None,
 ) -> list[RailAttribution]:
     base = [attribute_line(ln, index, threshold, margin_threshold=margin_threshold) for ln in lines]
     if global_solver:
         from engine.solver import run_global_solver
 
-        base, _ = run_global_solver(lines, index, base, margin_threshold=margin_threshold)
+        base, solver_res = run_global_solver(
+            lines, index, base, threshold=threshold, margin_threshold=margin_threshold
+        )
+        if solver_result_out is not None:
+            solver_result_out["solver_result"] = solver_res
     else:
         base = reconstruct_splits(lines, index, base, threshold, margin_threshold=margin_threshold)
     if not rules:
