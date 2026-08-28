@@ -192,6 +192,7 @@ def _finalize_razorpay(
     rzp_score: float,
     tier: Tier,
     margin_threshold: float,
+    audit: bool = False,
 ) -> RailAttribution:
     """Accept a machine Razorpay verdict — but first let the adversarial challenger try to disprove it.
 
@@ -199,11 +200,20 @@ def _finalize_razorpay(
     pre-Feature-004 (additivity). With a positive, calibrated threshold, a verdict whose proof margin is
     below it (or whose challenger overflowed) is demoted to an abstention carrying the strongest
     competing explanation. The gate can only ever turn a Razorpay verdict into 'unknown'.
+
+    ``audit=True`` runs the challenger in a NON-GATING pass even at threshold 0: it attaches the proof
+    margin and strongest rejected explanation for the evidence courtroom, but NEVER changes the verdict.
+    This is display-only (report/UI), so verdicts and metrics stay byte-identical to the ungated path.
     """
     accept = RailAttribution(
         line.key, Rail.RAZORPAY_SETTLEMENT.value, rzp_score, tier.value, rzp_ev
     )
     if margin_threshold <= 0.0:
+        if audit:
+            res = challenge_razorpay(line, index, rzp_ev, non_rzp, rzp_score, _combine)
+            accept.proof_margin = res.proof_margin
+            if res.strongest is not None:
+                accept.competing_explanation = res.strongest.as_dict()
         return accept
 
     result = challenge_razorpay(line, index, rzp_ev, non_rzp, rzp_score, _combine)
@@ -240,6 +250,7 @@ def attribute_line(
     threshold: float,
     *,
     margin_threshold: float = 0.0,
+    audit: bool = False,
 ) -> RailAttribution:
     non_rzp = narration_rail_signals(line)
 
@@ -263,7 +274,7 @@ def attribute_line(
     # Tier A: clean UTR exact match is decisive — but still challenged before acceptance.
     if any(e.signal == "utr_exact" for e in rzp_ev):
         conf = _combine(rzp_ev)
-        return _finalize_razorpay(line, index, rzp_ev, non_rzp, conf, Tier.A, margin_threshold)
+        return _finalize_razorpay(line, index, rzp_ev, non_rzp, conf, Tier.A, margin_threshold, audit=audit)
 
     # Tier C: no single-net/UTR tie yet, but the line looks Razorpay-ish → try set-sum.
     tier_used = Tier.B
@@ -333,7 +344,7 @@ def attribute_line(
 
     if best_rail == Rail.RAZORPAY_SETTLEMENT.value:
         return _finalize_razorpay(
-            line, index, best_ev, non_rzp, best_conf, best_tier, margin_threshold
+            line, index, best_ev, non_rzp, best_conf, best_tier, margin_threshold, audit=audit
         )
     return RailAttribution(line.key, best_rail, best_conf, Tier.B.value, best_ev)
 
@@ -485,8 +496,12 @@ def attribute_all(
     margin_threshold: float = 0.0,
     global_solver: bool = False,
     solver_result_out: dict | None = None,
+    audit_challenger: bool = False,
 ) -> list[RailAttribution]:
-    base = [attribute_line(ln, index, threshold, margin_threshold=margin_threshold) for ln in lines]
+    base = [
+        attribute_line(ln, index, threshold, margin_threshold=margin_threshold, audit=audit_challenger)
+        for ln in lines
+    ]
     if global_solver:
         from engine.solver import run_global_solver
 
