@@ -13,9 +13,11 @@ import os
 import shutil
 import tempfile
 import threading
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+from starlette.middleware.cors import CORSMiddleware
 
 from engine.certificate import issue_certificate, verify_certificate
 from engine.ingest import InputError, load_bank
@@ -23,7 +25,106 @@ from engine.service import reconcile
 from ui.dashboard import render as render_dashboard
 from webapp.pages import landing_page, upload_page, verify_page
 
-app = FastAPI(title="untangle", docs_url="/api/docs")
+# The public /mcp endpoint must be sandboxed so an unauthenticated remote caller cannot open arbitrary
+# server files. FAIL CLOSED: force the flag on (never `setdefault`, which would leave an inherited `0`
+# in place) and pin the sandbox to the seed-42 demo dataset in data/, which is generated at startup
+# (see `_ensure_demo_data` in the lifespan). Real user data goes through the web upload (BYOD), never
+# the public MCP. Set BEFORE importing mcp_server — it reads these at import time.
+os.environ["UNTANGLE_MCP_SANDBOX"] = "1"
+os.environ.setdefault("UNTANGLE_MCP_DATA_DIR", os.path.abspath("data"))
+
+try:
+    from mcp_server import mcp
+
+    # Create the streamable-HTTP ASGI app ONCE at import. This is what lazily constructs the FastMCP
+    # session manager, so `mcp.session_manager` is accessible in the lifespan below (no poking of
+    # FastMCP internals). Starlette does not propagate a mounted app's lifespan, so the parent app
+    # runs the session manager itself.
+    _mcp_asgi = mcp.streamable_http_app()
+    _MCP_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _MCP_AVAILABLE = False
+
+
+_DATA_LOCK = threading.Lock()
+
+
+def _ensure_demo_data() -> None:
+    """The sandboxed remote MCP reconciles the seed-42 demo dataset in `data/`. That directory is
+    git/docker-ignored (regenerated from seed), so in a fresh container it is absent — generate it once
+    at startup (the image ships the generator) so the MCP tools have files to operate on. In dev/CI the
+    files already exist and this is a no-op.
+
+    Generates into the SAME directory the MCP sandbox reads (`UNTANGLE_MCP_DATA_DIR`, set above to
+    abspath(data/)) — never a hard-coded `data/` — so the generated files and the sandbox root can never
+    diverge under an env override.
+
+    Race-safe like `_ensure_sample`: serialise under a lock, generate into a private per-process staging
+    dir, then publish with the marker (`bank_statement.csv`) moved LAST via atomic `os.replace` — so a
+    concurrent lock-free reader (or a sibling worker process) that sees the marker is guaranteed to find
+    every sibling file already in place, never a half-written dataset."""
+    root = os.environ.get("UNTANGLE_MCP_DATA_DIR", os.path.abspath("data"))
+    marker = os.path.join(root, "bank_statement.csv")
+    if os.path.exists(marker):
+        return
+    from generator.generate import main as gen  # image includes generator/
+
+    with _DATA_LOCK:
+        if os.path.exists(marker):  # another thread finished while we waited
+            return
+        os.makedirs(root, exist_ok=True)
+        staging = os.path.join(root, f".staging-{os.getpid()}")
+        if os.path.exists(staging):
+            shutil.rmtree(staging)
+        try:
+            gen(["--seed", "42", "--scale", "1.0", "--out", staging])
+            for name in sorted(os.listdir(staging), key=lambda n: n == "bank_statement.csv"):
+                os.replace(os.path.join(staging, name), os.path.join(root, name))
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Run the FastMCP session manager for the app's lifetime (stateless — no per-client state
+    # accumulates). One app instance → one run; tests use a single module-scoped client, so this is
+    # never re-entered.
+    if _MCP_AVAILABLE:
+        _ensure_demo_data()  # the sandbox points at data/ — make sure it exists in a fresh container
+        async with mcp.session_manager.run():
+            yield
+    else:
+        yield
+
+
+app = FastAPI(title="untangle", docs_url="/api/docs", lifespan=lifespan)
+
+if _MCP_AVAILABLE:
+    # Align CORS with the MCP transport-security origin allowlist so a browser origin that clears the
+    # preflight also clears the MCP handler (no "CORS says yes, MCP says no" mismatch). Read-only +
+    # no credentials. Include DELETE (session teardown) and the MCP protocol headers.
+    # The allowlist mixes EXACT origins (https://claude.ai) with port-wildcard entries (http://localhost:*)
+    # that Starlette CORS matches only EXACTLY — so pass exact origins as allow_origins and translate any
+    # ":*" port-wildcard into an allow_origin_regex (localhost/127.0.0.1 on any port).
+    import re as _re
+
+    _raw = list(getattr(mcp.settings.transport_security, "allowed_origins", None) or ["*"])
+    _exact = [o for o in _raw if "*" not in o]
+    _regex_parts = [
+        _re.escape(o[:-2]) + r"(:\d+)?" for o in _raw if o.endswith(":*")
+    ]  # "http://localhost:*" -> "http://localhost(:\d+)?"
+    _origin_regex = "^(" + "|".join(_regex_parts) + ")$" if _regex_parts else None
+    mcp_subapp = CORSMiddleware(
+        app=_mcp_asgi,
+        allow_origins=_exact,
+        allow_origin_regex=_origin_regex,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["content-type", "accept", "mcp-session-id", "mcp-protocol-version", "last-event-id"],
+        expose_headers=["mcp-session-id"],
+    )
+    app.mount("/mcp", mcp_subapp)
+
 
 _MAX_BYTES = 15 * 1024 * 1024  # 15 MB per file — a month of settlements is far smaller
 # Dedicated demo dir — kept separate from data/ (the seed-42 single-month test/README baseline) so
