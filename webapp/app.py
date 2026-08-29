@@ -25,11 +25,13 @@ from engine.service import reconcile
 from ui.dashboard import render as render_dashboard
 from webapp.pages import landing_page, upload_page, verify_page
 
-# The public /mcp endpoint must be sandboxed: an unauthenticated remote caller must not be able to
-# open arbitrary server files, so confine the tools' file access to the bundled demo dataset. Set
-# BEFORE importing mcp_server so the flag is read at its import time. Real user data goes through the
-# web upload (BYOD), never the public MCP.
-os.environ.setdefault("UNTANGLE_MCP_SANDBOX", "1")
+# The public /mcp endpoint must be sandboxed so an unauthenticated remote caller cannot open arbitrary
+# server files. FAIL CLOSED: force the flag on (never `setdefault`, which would leave an inherited `0`
+# in place) and pin the sandbox to the seed-42 demo dataset in data/, which is generated at startup
+# (see `_ensure_demo_data` in the lifespan). Real user data goes through the web upload (BYOD), never
+# the public MCP. Set BEFORE importing mcp_server — it reads these at import time.
+os.environ["UNTANGLE_MCP_SANDBOX"] = "1"
+os.environ.setdefault("UNTANGLE_MCP_DATA_DIR", os.path.abspath("data"))
 
 try:
     from mcp_server import mcp
@@ -44,12 +46,24 @@ except ImportError:  # pragma: no cover
     _MCP_AVAILABLE = False
 
 
+def _ensure_demo_data() -> None:
+    """The sandboxed remote MCP reconciles the seed-42 demo dataset in `data/`. That directory is
+    git/docker-ignored (regenerated from seed), so in a fresh container it is absent — generate it once
+    at startup (the image ships the generator) so the MCP tools have files to operate on. In dev/CI the
+    files already exist and this is a no-op."""
+    if os.path.exists(os.path.join("data", "bank_statement.csv")):
+        return
+    from generator.generate import main as gen  # image includes generator/
+    gen(["--seed", "42", "--scale", "1.0", "--out", "data"])
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Run the FastMCP session manager for the app's lifetime (stateless — no per-client state
     # accumulates). One app instance → one run; tests use a single module-scoped client, so this is
     # never re-entered.
     if _MCP_AVAILABLE:
+        _ensure_demo_data()  # the sandbox points at data/ — make sure it exists in a fresh container
         async with mcp.session_manager.run():
             yield
     else:

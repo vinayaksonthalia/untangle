@@ -699,10 +699,10 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.http:
-        # A standalone HTTP server is a PUBLIC surface — sandbox file access by default (unless the
-        # operator explicitly opted out), so it can never expose arbitrary server files like the web
-        # mount. stdio (below) stays unsandboxed: it is a trusted local process on the user's machine.
-        os.environ.setdefault("UNTANGLE_MCP_SANDBOX", "1")
+        # A standalone HTTP server is a PUBLIC surface — FAIL CLOSED: force the sandbox on regardless of
+        # any inherited env value, so it can never expose arbitrary server files. stdio (below) stays
+        # unsandboxed: it is a trusted local process on the user's own machine.
+        os.environ["UNTANGLE_MCP_SANDBOX"] = "1"
         mcp.run(transport="streamable-http", host=args.host, port=args.port)
     else:
         mcp.run(transport="stdio")
