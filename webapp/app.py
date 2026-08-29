@@ -55,11 +55,16 @@ def _ensure_demo_data() -> None:
     at startup (the image ships the generator) so the MCP tools have files to operate on. In dev/CI the
     files already exist and this is a no-op.
 
+    Generates into the SAME directory the MCP sandbox reads (`UNTANGLE_MCP_DATA_DIR`, set above to
+    abspath(data/)) — never a hard-coded `data/` — so the generated files and the sandbox root can never
+    diverge under an env override.
+
     Race-safe like `_ensure_sample`: serialise under a lock, generate into a private per-process staging
     dir, then publish with the marker (`bank_statement.csv`) moved LAST via atomic `os.replace` — so a
     concurrent lock-free reader (or a sibling worker process) that sees the marker is guaranteed to find
     every sibling file already in place, never a half-written dataset."""
-    marker = os.path.join("data", "bank_statement.csv")
+    root = os.environ.get("UNTANGLE_MCP_DATA_DIR", os.path.abspath("data"))
+    marker = os.path.join(root, "bank_statement.csv")
     if os.path.exists(marker):
         return
     from generator.generate import main as gen  # image includes generator/
@@ -67,14 +72,14 @@ def _ensure_demo_data() -> None:
     with _DATA_LOCK:
         if os.path.exists(marker):  # another thread finished while we waited
             return
-        os.makedirs("data", exist_ok=True)
-        staging = os.path.join("data", f".staging-{os.getpid()}")
+        os.makedirs(root, exist_ok=True)
+        staging = os.path.join(root, f".staging-{os.getpid()}")
         if os.path.exists(staging):
             shutil.rmtree(staging)
         try:
             gen(["--seed", "42", "--scale", "1.0", "--out", staging])
             for name in sorted(os.listdir(staging), key=lambda n: n == "bank_statement.csv"):
-                os.replace(os.path.join(staging, name), os.path.join("data", name))
+                os.replace(os.path.join(staging, name), os.path.join(root, name))
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
