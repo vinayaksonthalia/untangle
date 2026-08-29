@@ -13,9 +13,11 @@ import os
 import shutil
 import tempfile
 import threading
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+from starlette.middleware.cors import CORSMiddleware
 
 from engine.certificate import issue_certificate, verify_certificate
 from engine.ingest import InputError, load_bank
@@ -23,7 +25,57 @@ from engine.service import reconcile
 from ui.dashboard import render as render_dashboard
 from webapp.pages import landing_page, upload_page, verify_page
 
-app = FastAPI(title="untangle", docs_url="/api/docs")
+try:
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+
+    from mcp_server import mcp
+
+    _MCP_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _MCP_AVAILABLE = False
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if _MCP_AVAILABLE:
+        # Reset session manager if previously run (e.g. in test suites with multiple TestClient contexts)
+        if mcp._session_manager is not None and getattr(mcp._session_manager, "_has_started", False):
+            mcp._session_manager = None
+        if mcp._session_manager is None:
+            mcp._session_manager = StreamableHTTPSessionManager(
+                app=mcp._mcp_server,
+                event_store=mcp._event_store,
+                retry_interval=mcp._retry_interval,
+                json_response=mcp.settings.json_response,
+                stateless=mcp.settings.stateless_http,
+                security_settings=mcp.settings.transport_security,
+                max_request_body_size=mcp.settings.max_request_body_size,
+            )
+        async with mcp.session_manager.run():
+            yield
+    else:
+        yield
+
+
+app = FastAPI(title="untangle", docs_url="/api/docs", lifespan=lifespan)
+
+if _MCP_AVAILABLE:
+    class _DynamicMCPApp:
+        """ASGI app dynamically delegating to mcp.session_manager for streamable-HTTP requests."""
+
+        async def __call__(self, scope, receive, send):
+            await mcp.session_manager.handle_request(scope, receive, send)
+
+    mcp_subapp = CORSMiddleware(
+        app=_DynamicMCPApp(),
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS", "HEAD"],
+        allow_headers=["*"],
+        expose_headers=["mcp-session-id"],
+    )
+    app.mount("/mcp", mcp_subapp)
+
 
 _MAX_BYTES = 15 * 1024 * 1024  # 15 MB per file — a month of settlements is far smaller
 # Dedicated demo dir — kept separate from data/ (the seed-42 single-month test/README baseline) so

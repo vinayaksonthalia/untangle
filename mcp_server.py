@@ -37,6 +37,42 @@ mcp = FastMCP(
     ),
 )
 
+# Streamable-HTTP transport configuration
+mcp.settings.streamable_http_path = "/"
+mcp.settings.transport_security.enable_dns_rebinding_protection = True
+
+# Whitelist allowed hosts and origins for DNS rebinding protection (env-driven with safe defaults)
+_env_hosts = os.environ.get("UNTANGLE_MCP_ALLOWED_HOSTS", "")
+if _env_hosts:
+    mcp.settings.transport_security.allowed_hosts = [h.strip() for h in _env_hosts.split(",") if h.strip()]
+else:
+    mcp.settings.transport_security.allowed_hosts = [
+        "localhost",
+        "localhost:*",
+        "127.0.0.1",
+        "127.0.0.1:*",
+        "0.0.0.0",
+        "0.0.0.0:*",
+        "testserver",
+        "testserver:*",
+        "untangle.onrender.com",
+        "untangle.onrender.com:*",
+    ]
+
+_env_origins = os.environ.get("UNTANGLE_MCP_ALLOWED_ORIGINS", "")
+if _env_origins:
+    mcp.settings.transport_security.allowed_origins = [o.strip() for o in _env_origins.split(",") if o.strip()]
+else:
+    mcp.settings.transport_security.allowed_origins = [
+        "http://localhost",
+        "http://localhost:*",
+        "http://127.0.0.1",
+        "http://127.0.0.1:*",
+        "https://claude.ai",
+        "https://chatgpt.com",
+        "https://untangle.onrender.com",
+    ]
+
 
 # -----------------------------------------------------------------------------
 # Caching helpers for deterministic read-only file processing
@@ -593,9 +629,34 @@ def investigate_variance(
 # Server Entry Point
 # -----------------------------------------------------------------------------
 def main() -> None:
-    """Run the MCP server via stdio transport."""
-    mcp.run(transport="stdio")
+    """Run the MCP server via stdio (default) or streamable-HTTP transport."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="untangle read-only MCP server")
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Run remote streamable-HTTP transport instead of stdio",
+    )
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host interface for HTTP transport (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8081,
+        help="Port for HTTP transport (default: 8081)",
+    )
+    args = parser.parse_args()
+
+    if args.http:
+        mcp.run(transport="streamable-http", host=args.host, port=args.port)
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":
     main()
+

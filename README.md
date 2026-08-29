@@ -116,6 +116,13 @@ Razorpay credits whose UTR was mangled) or **fooled** (label look-alike decoys a
   `dispute_deduction`, `partial_capture`, `bank_charge_or_rounding`, `rolling_reserve`, or strictly `unexplained`),
   outputs an auditable step-by-step reasoning trace, preserves the negative space of evaluated candidates, and drafts a
   balanced corrective double-entry journal proposal.
+- **Model Context Protocol (MCP) Server (Local Stdio & Remote Streamable-HTTP)** — exposes 10 read-only
+  tools (`reconcile_files`, `list_unresolved_cash`, `explain_bank_credit`, `get_competing_explanations`,
+  `suggest_next_evidence`, `export_proof_packet`, `verify_proof_packet`, `generate_close_certificate`,
+  `export_journal_entries`, `investigate_variance`) to desktop AI agents over stdio (`untangle-mcp`), and
+  hosted agents (ChatGPT, claude.ai, Claude Code) over remote streamable-HTTP mounted at `/mcp` with **zero
+  local installation**. 100% read-only and analytical — never mutates state or moves money. Full guide:
+  [`docs/MCP.md`](docs/MCP.md).
 - **Global Evidence-Constrained Solver** — formulates whole-period reconciliation as a single constrained
   assignment problem over a candidate graph, minimizing invalid picks, unexplained paise, and ops cost.
   Reconciles globally consistent assignments and rejects locally-plausible matches that violate global settlement
@@ -181,6 +188,15 @@ Both options serve the same routes:
 python -m engine.cli run --bank data/bank_statement.csv --recon data/recon_report.json \
   --ledger data/order_ledger.csv --out out/
 ```
+
+### Option D — Remote MCP for AI Agents (ChatGPT / claude.ai / Claude Code)
+
+Connect hosted or local agents directly to untangle's 10 read-only tools:
+- **Hosted Agent URL (zero local install):** `https://<your-app-url>/mcp` (e.g. `https://untangle.onrender.com/mcp`)
+- **Local Desktop MCP (Claude Desktop / Cursor):** `untangle-mcp` (stdio)
+- **Local HTTP MCP:** `untangle-mcp --http --port 8081`
+
+Full instructions & tool schemas: [`docs/MCP.md`](docs/MCP.md).
 
 ## How it works
 
