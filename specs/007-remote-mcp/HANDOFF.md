@@ -42,8 +42,15 @@ exact same FastMCP server and its 10 tools** — we are only adding a transport,
 In `webapp/app.py`, mount the FastMCP streamable-HTTP ASGI app at **`/mcp`** so the SINGLE deployed app
 serves both the web UI and the remote MCP endpoint (so once we deploy to Render, the remote MCP is live at
 `https://<our-app>/mcp` for free):
-- **Set the sandbox flag BEFORE importing the server**: `os.environ.setdefault("UNTANGLE_MCP_SANDBOX","1")`
-  then `from mcp_server import mcp` (so the public surface is sandboxed at import time).
+- **FAIL-CLOSED sandbox, BEFORE importing the server**: `os.environ["UNTANGLE_MCP_SANDBOX"] = "1"` (force
+  — NOT `setdefault`, which would leave an inherited `0` in place and start the public surface
+  unsandboxed), and pin `UNTANGLE_MCP_DATA_DIR = os.path.abspath("data")`; then `from mcp_server import mcp`.
+- **The demo dataset must exist in a fresh container.** `data/` is git/docker-ignored (regenerated from
+  seed), so generate it at startup (`_ensure_demo_data()` in the lifespan runs the seeded generator if the
+  files are absent). Otherwise every sandboxed tool call fails with no files to read.
+- **Set `mcp.settings.streamable_http_path = "/"` BEFORE calling `streamable_http_app()`.** FastMCP's
+  default is `/mcp`; mounting that under `/mcp` would expose the endpoint at `/mcp/mcp`. With the path set
+  to `/`, the mount serves it at `/mcp/`. The handshake test must hit the FINAL public path (`/mcp/`).
 - Create the ASGI app ONCE at import: `_mcp_asgi = mcp.streamable_http_app()`. This lazily constructs the
   FastMCP session manager, so `mcp.session_manager` becomes accessible (do NOT poke FastMCP private
   internals like `_session_manager`/`_mcp_server` to build it by hand).
@@ -60,14 +67,18 @@ serves both the web UI and the remote MCP endpoint (so once we deploy to Render,
   (`UNTANGLE_MCP_ALLOWED_HOSTS` / `_ORIGINS`) — the deploy MUST set the real host (§3c).
 
 ### 3c. Ship it — Dockerfile + deploy (without this the endpoint won't exist in production)
-The Render image currently installs only `[web]` and never copies `mcp_server.py`, so `/mcp` would be a
-no-op in production. The Dockerfile MUST `pip install -e ".[web,mcp]"` and `COPY mcp_server.py ./`. On
-deploy, set `UNTANGLE_MCP_ALLOWED_HOSTS` to the real Render hostname.
+The Render image must `pip install -e ".[web,mcp]"` and `COPY mcp_server.py ./` (else `/mcp` is a no-op in
+production). Auto-accept the deploy host: read `RENDER_EXTERNAL_HOSTNAME` (Render injects it) into
+`allowed_hosts`/`allowed_origins` so the real hostname works with zero manual config;
+`UNTANGLE_MCP_ALLOWED_HOSTS` remains the explicit override for custom domains / other platforms (document
+it in `docs/DEPLOY.md`). The seed generator ships in the image, so `_ensure_demo_data()` can build `data/`
+at startup.
 
 ### 3b. A standalone HTTP mode on the CLI (secondary, for local/other deploys)
 Extend `mcp_server.py::main()` (and `[project.scripts] untangle-mcp`) to accept a transport flag:
-- `untangle-mcp` (default) → stdio, unchanged.
-- `untangle-mcp --http [--host 0.0.0.0] [--port 8081]` → `mcp.run(transport="streamable-http", ...)`.
+- `untangle-mcp` (default) → stdio, unchanged (unsandboxed — trusted local).
+- `untangle-mcp --http [--host 0.0.0.0] [--port 8081]` → FORCE `os.environ["UNTANGLE_MCP_SANDBOX"]="1"`
+  (it is a public bind), then `mcp.run(transport="streamable-http", ...)`.
 Keep it a thin argument switch; do not duplicate tool code.
 
 ## 4. Tests (required)
