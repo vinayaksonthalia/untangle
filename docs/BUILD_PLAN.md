@@ -24,40 +24,74 @@ Deadline: **5 Sep 2026**. Track 4 — AI Finance Controller.
 - **U (Vinayak)** — runs the research prompts (GPT + Gemini), deploys (Render), records the demo video,
   provides/sources one real statement, final product judgment.
 
-## 2. Current state (as of last update)
+## 2. Current state (updated 29 Aug 2026)
 
-Everything below is **merged to main, reviewed, zero known bugs**:
-Evidence Courtroom · honest 4-label taxonomy · journal export (Tally XML + JSON, convention-agnostic) ·
-independent verifier + signed close certificate + /verify · MCP server (9 read-only tools) ·
-**Active Recovery Controller** (ranked next-best actions, info-gain, recovery trail) · BYOD upload polish.
+**Merged to main, reviewed, zero known bugs** — Evidence Courtroom · honest 4-label taxonomy · journal
+export (Tally XML + JSON, convention-agnostic) · independent verifier + close certificate + /verify ·
+**MCP server (stdio, read-only)** · **Active Recovery Controller** · **Agentic Exception-Investigation
+Loop (feature 006 — the 30% pillar, PR #26, 14 correctness bugs caught+fixed in review)** · README
+overclaim fixes (#25) · UTC-determinism fix (#27) · BYOD polish.
 
-We estimate ~80% of the Track-4 rubric is already covered. **The gap is the 30% "agentic" pillar** —
-that is the top of the queue below.
+**UI (in Stitch, not yet in the app):** all 5 screens designed + premium-polished (motion, count-ups,
+copy-to-clipboard, tooltips, FAQ, framed hero preview). Stitch MCP connected. **Not yet wired into the
+FastAPI app** — that's the next big C task.
 
-## 3. The plan — sequenced by (impact on winning ÷ effort)
+The Track-4 rubric is now well covered. The remaining work is about **competitive differentiation,
+polish, shipping (deploy), and the demo** — informed by a competitor review (Agent-Audit, Track 01) and
+our own research (see §4a competitive learnings).
 
-### NOW (in flight / next up)
+## 3. The master backlog — sequenced by (impact on winning ÷ effort)
 
-| Seq | Item | Owner | Definition of done |
-|-----|------|-------|--------------------|
-| 1 | **Agentic exception-investigation loop** (feature 006) — the 30% pillar. Spec: [specs/006-agentic-investigation/HANDOFF.md](../specs/006-agentic-investigation/HANDOFF.md) | **A** builds, **C** specs+reviews | For an unresolved variance: deterministic root-cause classification + drafted corrective journal + visible reasoning trace + "Investigate" UI. LLM narrates only. Tests per root-cause class. |
-| 2 | **README + pitch reframe** to §1 + official Track-4 language | **C** | Headline leads with validated pain (5%-eats-80%, 78%-tax abstention, "closes one finance-ops loop over 50+ records"), not "which credit is Razorpay's". |
-| 3 | **Deploy public URL** (Render) | **U** | Judge can click a live URL; sample data loads; BYOD works. |
+Owner: **C**=Claude · **A**=Antigravity (behind a C spec, C reviews) · **U**=Vinayak. Everything ships via
+branch → PR → `/review` → fix all bot findings → **manual** merge (never auto-merge, never direct-to-main).
 
-### SOON
+### NOW — highest leverage
 
-| Seq | Item | Owner | Definition of done |
-|-----|------|-------|--------------------|
-| 4 | **Docs pass** — web/CLI/MCP/API usage, 60-sec quickstart | **C** | A judge can run every surface from the docs alone (the Lethe lesson). |
-| 5 | **Real bank-statement / Razorpay-export ingestion** — HDFC/ICICI/SBI/Axis/Kotak/RBL adapters (headers+UTR regex already in STRATEGY §6b) | **A** (spec by C) | A real bank CSV + a real Razorpay settlement export ingest and reconcile. |
-| 6 | **One real statement in the demo** | **U/C** | Razorpay's published sample (or a real merchant export) runs end-to-end. |
+| # | Item | Owner | Risk | Definition of done |
+|---|------|-------|------|--------------------|
+| 1 | **Wire the polished Stitch UI into the real FastAPI app** — export the 5 screens' HTML, integrate with real data/routes, then click-through-and-break it live | **C** | **HIGH** (integration; C does it) | Every screen renders from real engine output; motion/copy/tooltips/FAQ work; no interaction bugs; responsive. |
+| 2 | **Remote (streamable-HTTP) MCP** — a public endpoint a judge can call from ChatGPT / Claude.ai with no local install (matches Agent-Audit's shipped differentiator; our stdio server is local-only) | **A** (spec by C), C reviews | MED | Public `/mcp` streamable-HTTP transport exposing the read-only tools; handshake works from claude.ai + ChatGPT; stays read-only. |
+| 3 | **Confidence intervals on headline metrics** — wrap precision/recall (and the coverage curve) in bootstrap CIs; label any partial/degraded run (rigor, like Agent-Audit) | **C** | LOW | Eval reports each headline number with a 95% CI; README/dashboard show "± CI"; no bare point claims. |
+| 4 | **Deploy public URL** (Render) | **U** | — | Judge clicks a live URL; sample loads; BYOD works. |
+| 5 | **Duplicate-key covered-row identity fix** — reconcile must preserve WHICH covered row (feegst/proof/journal/investigate pick by lossy key today). Deferred from #27; task chip spawned. | **C leads** (spec + build; correctness-sensitive, touches core) | **HIGH** | covered rows carry unambiguous identity; feegst/proof/journal/investigate sum from exact rows; regression test with a non-first duplicate; metrics byte-identical for the common case. |
 
-### LATER (only if time; do not chase)
+### SOON — credibility + polish
 
-| Seq | Item | Owner | Note |
-|-----|------|-------|------|
-| 7 | TDS / statutory-correctness layer (194-O, ITC-vs-GSTR-2B) | A/C | Neutralizes a peer's only edge (STRATEGY §6d). Not P0. |
-| 8 | Demo video (5-min: fake-UTR refusal + forge-cert-live + the "2 AM bug") | U | Submission requirement — record once features freeze. |
+| # | Item | Owner | Risk | Definition of done |
+|---|------|-------|------|--------------------|
+| 6 | **`SAFETY.md` + public checkbox roadmap in README** — articulate our guarantees (read-only, no money movement, abstain-not-guess, every verdict proof-backed, independently verifiable) and a ✅/☐ roadmap (Agent-Audit honesty pattern) | **C** | LOW | SAFETY.md exists; README has a done/pending checklist; "safer by design (read-only)" stated. |
+| 7 | **₹-at-risk / ₹-recoverable headline model** — one clear business-value number up front (Agent-Audit's Revenue-at-Risk pattern), from unresolved cash + recoverable GST-ITC we already compute | **C** | LOW | Landing + dashboard surface a single ₹ headline with honest "up to / if confirmed" framing. |
+| 8 | **Docs pass** — web/CLI/MCP/API usage, 60-sec quickstart | **C** | LOW | A judge can run every surface from the docs alone (Lethe lesson). |
+| 9 | **Real bank-statement / Razorpay-export ingestion** — HDFC/ICICI/SBI/Axis/Kotak/RBL adapters (headers + UTR regex in STRATEGY §6b) | **A** (spec by C) | MED | A real bank CSV + a real Razorpay settlement export ingest and reconcile. |
+| 10 | **One real statement in the demo** (Razorpay's published sample) | **U/C** | — | Runs end-to-end; closes the "toy?" question. |
+
+### LATER — only if time
+
+| # | Item | Owner | Note |
+|---|------|-------|------|
+| 11 | **Demo video** (5-min: fake-UTR refusal + forge-cert-live + the "2 AM bug" = the 14-bug review saga) | U | Record once features freeze. |
+| 12 | TDS / statutory-correctness layer (194-O, ITC-vs-GSTR-2B) | A/C | Neutralizes a peer's only edge (STRATEGY §6d). Not P0. |
+
+### What Antigravity builds next (C writes the spec, C reviews adversarially)
+- **#2 Remote streamable-HTTP MCP** (well-bounded; untangle is read-only so low blast radius).
+- **#9 Real bank/Razorpay-export ingestion adapters** (well-bounded, schema already mirrors real).
+- NOT #1 (UI wiring), #3 (CIs), or #5 (duplicate-key fix) — those are correctness/integration-sensitive
+  and **C keeps** them (higher risk; do not delegate).
+
+## 4a. Competitive learnings — from Agent-Audit (Track 01, rated "best overall" by another agent)
+Blunt read: genuinely excellent — novel problem + research rigor (CIs on every metric) + **deployed live**
++ **remote MCP callable by ChatGPT/Claude.ai** + safety-by-design. What we steal: **remote MCP (#2)**,
+**CIs on metrics (#3)**, **SAFETY.md + checkbox roadmap (#6)**, **₹-at-risk headline (#7)**. Where we win by
+design: we're **read-only** (their MCP payment tool is unauthenticated + on their pending list), and we have
+no multi-model dependency to stabilize. Their one crack: a "640-trial" headline that's actually 220 in the
+live build (multi-model is ☐ pending) — a reminder to keep untangle's **zero-overclaim** discipline.
+
+## 4b. Research status (U runs prompts, C verifies + lands in STRATEGY §6b)
+The major research (2 GPT reviews + 4 Gemini rounds) is synthesized in STRATEGY and already built against.
+Three open prompts remain in [RESEARCH_QUEUE.md](RESEARCH_QUEUE.md): **Q1** variance root-cause taxonomy
+(now validates the shipped 006 — optional), **Q2** Razorpay Agentic Recon (sharpens the defense), **Q3** CA
+trust bar. **We are research-sufficient to win** — run Q1 to double-check 006 if desired; otherwise pour
+energy into build + deploy + demo. Do NOT over-research.
 
 **Explicitly NOT now** (STRATEGY §5): COD/3PL recon, fraud, chargebacks, forecasting, generic CFO chat,
 multi-agent framework. These dilute the identity. Post-buildathon roadmap only.
