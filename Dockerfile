@@ -17,8 +17,9 @@ COPY eval ./eval
 COPY ui ./ui
 COPY webapp ./webapp
 COPY generator ./generator
+COPY mcp_server.py ./
 
-RUN pip install --upgrade pip && pip install -e ".[web]"
+RUN pip install --upgrade pip && pip install -e ".[web,mcp]"
 
 # Run as an unprivileged user; give it a writable home for the runtime sample dataset.
 RUN useradd --create-home --uid 10001 app && chown -R app:app /app
