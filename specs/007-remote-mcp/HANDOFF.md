@@ -68,11 +68,20 @@ serves both the web UI and the remote MCP endpoint (so once we deploy to Render,
 
 ### 3c. Ship it — Dockerfile + deploy (without this the endpoint won't exist in production)
 The Render image must `pip install -e ".[web,mcp]"` and `COPY mcp_server.py ./` (else `/mcp` is a no-op in
-production). Auto-accept the deploy host: read `RENDER_EXTERNAL_HOSTNAME` (Render injects it) into
-`allowed_hosts`/`allowed_origins` so the real hostname works with zero manual config;
+production). Auto-accept the deploy host: read `RENDER_EXTERNAL_HOSTNAME` (Render injects it) — but mind the
+SHAPE: it is a **bare hostname**, so use it unchanged for `allowed_hosts` (host validation) and construct
+`https://<hostname>` for `allowed_origins` (MCP compares the full browser `Origin`, scheme included).
 `UNTANGLE_MCP_ALLOWED_HOSTS` remains the explicit override for custom domains / other platforms (document
 it in `docs/DEPLOY.md`). The seed generator ships in the image, so `_ensure_demo_data()` can build `data/`
-at startup.
+at startup — race-safe (lock + staging dir + atomic marker-last publish, mirroring `_ensure_sample`).
+
+### 3d. Resource bounds (accepted posture + one deferred item)
+The public endpoint is bounded by construction: tools are **sandboxed to the small seed-42 demo dataset**
+(no arbitrary/large file parsing), `verify_proof_packet` **caps its input at 512 KB** (string AND dict),
+and results are **`lru_cache`d** (repeat calls are cheap). Full per-IP **rate limiting + execution
+timeouts + a concurrency cap** are deliberately deferred as post-deploy hardening (tracked task) — they
+are not a demo blocker given the above, but MUST be added before treating this as real public production,
+for BOTH the mounted and `--http` surfaces.
 
 ### 3b. A standalone HTTP mode on the CLI (secondary, for local/other deploys)
 Extend `mcp_server.py::main()` (and `[project.scripts] untangle-mcp`) to accept a transport flag:
