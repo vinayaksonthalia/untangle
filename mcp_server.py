@@ -37,6 +37,74 @@ mcp = FastMCP(
     ),
 )
 
+# Streamable-HTTP transport configuration
+mcp.settings.streamable_http_path = "/"
+# Stateless: no per-client session state accumulates in the container — correct for a public,
+# read-only endpoint and simpler for hosted clients (no session-id round-trip to maintain).
+mcp.settings.stateless_http = True
+mcp.settings.transport_security.enable_dns_rebinding_protection = True
+
+# Whitelist allowed hosts/origins for DNS-rebinding protection (env-driven with safe defaults).
+# `UNTANGLE_MCP_ALLOWED_HOSTS` (comma-separated) is the explicit override for any deploy host / custom
+# domain. On Render, RENDER_EXTERNAL_HOSTNAME is injected automatically — pick it up so the real deploy
+# hostname is accepted without manual config.
+_render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
+_env_hosts = os.environ.get("UNTANGLE_MCP_ALLOWED_HOSTS", "")
+if _env_hosts:
+    mcp.settings.transport_security.allowed_hosts = [h.strip() for h in _env_hosts.split(",") if h.strip()]
+else:
+    mcp.settings.transport_security.allowed_hosts = [
+        "localhost", "localhost:*", "127.0.0.1", "127.0.0.1:*",
+        "0.0.0.0", "0.0.0.0:*", "testserver", "testserver:*",
+        "untangle.onrender.com", "untangle.onrender.com:*",
+    ]
+    if _render_host:
+        mcp.settings.transport_security.allowed_hosts += [_render_host, f"{_render_host}:*"]
+
+_env_origins = os.environ.get("UNTANGLE_MCP_ALLOWED_ORIGINS", "")
+if _env_origins:
+    mcp.settings.transport_security.allowed_origins = [o.strip() for o in _env_origins.split(",") if o.strip()]
+else:
+    mcp.settings.transport_security.allowed_origins = [
+        "http://localhost", "http://localhost:*", "http://127.0.0.1", "http://127.0.0.1:*",
+        "https://claude.ai", "https://chatgpt.com", "https://untangle.onrender.com",
+    ]
+    if _render_host:
+        mcp.settings.transport_security.allowed_origins.append(f"https://{_render_host}")
+
+
+# -----------------------------------------------------------------------------
+# Sandbox: confine file access when exposed over the public HTTP surface.
+# -----------------------------------------------------------------------------
+# The tools take file PATHS, which is fine for LOCAL stdio (a trusted agent on the user's machine).
+# But over the PUBLIC remote endpoint an unauthenticated caller must NOT be able to open arbitrary
+# server files. When UNTANGLE_MCP_SANDBOX is on (set by the web app / --http surface), every path is
+# confined to the bundled demo-data directory. Real user data goes through the web BYOD upload, not
+# the public MCP.
+_DATA_DIR = os.path.realpath(
+    os.environ.get("UNTANGLE_MCP_DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+)
+# Cap the one tool that parses a caller-supplied JSON string (verify_proof_packet) — a public endpoint
+# must not be forced to parse an unbounded body.
+_MAX_PACKET_JSON_BYTES = 512 * 1024
+
+
+def _sandboxed() -> bool:
+    return os.environ.get("UNTANGLE_MCP_SANDBOX", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _safe_path(p: str) -> str:
+    """In sandbox mode, confine a caller-supplied path to the demo-data dir; otherwise pass through."""
+    if not _sandboxed():
+        return p
+    rp = os.path.realpath(p)
+    if os.path.commonpath([rp, _DATA_DIR]) != _DATA_DIR:
+        raise ValueError(
+            "path is outside the allowed data directory — the remote MCP is sandboxed to the bundled "
+            "demo dataset; upload your own files through the web app instead."
+        )
+    return rp
+
 
 # -----------------------------------------------------------------------------
 # Caching helpers for deterministic read-only file processing
@@ -53,6 +121,7 @@ def _cached_reconcile(
 
 def _get_report(bank_path: str, recon_path: str, ledger_path: str) -> dict[str, Any]:
     """Load and reconcile files, using mtime caching for speed."""
+    bank_path, recon_path, ledger_path = _safe_path(bank_path), _safe_path(recon_path), _safe_path(ledger_path)
     try:
         t_bank = os.path.getmtime(bank_path)
         t_recon = os.path.getmtime(recon_path)
@@ -79,6 +148,7 @@ def _cached_journal_entries(
 
 
 def _get_journal_entries(bank_path: str, recon_path: str) -> list[JournalEntry]:
+    bank_path, recon_path = _safe_path(bank_path), _safe_path(recon_path)
     try:
         t_bank = os.path.getmtime(bank_path)
         t_recon = os.path.getmtime(recon_path)
@@ -403,6 +473,12 @@ def verify_proof_packet(packet_json: str | dict) -> dict[str, Any]:
     """
     try:
         if isinstance(packet_json, str):
+            if len(packet_json.encode("utf-8")) > _MAX_PACKET_JSON_BYTES:
+                return {
+                    "ok": False,
+                    "error": f"packet JSON exceeds the {_MAX_PACKET_JSON_BYTES // 1024} KB limit",
+                    "error_type": "PayloadTooLarge",
+                }
             try:
                 packet = json.loads(packet_json)
             except Exception as exc:
@@ -411,6 +487,13 @@ def verify_proof_packet(packet_json: str | dict) -> dict[str, Any]:
                     "error": f"Invalid JSON string: {exc}",
                 }
         elif isinstance(packet_json, dict):
+            # Bound dict inputs too — a caller can otherwise pass an arbitrarily large object.
+            if len(json.dumps(packet_json, default=str).encode("utf-8")) > _MAX_PACKET_JSON_BYTES:
+                return {
+                    "ok": False,
+                    "error": f"packet exceeds the {_MAX_PACKET_JSON_BYTES // 1024} KB limit",
+                    "error_type": "PayloadTooLarge",
+                }
             packet = packet_json
         else:
             return {
@@ -549,8 +632,8 @@ def investigate_variance(
                 }
 
         # If not pre-computed in report, investigate on the fly
-        lines = load_bank(bank_path)
-        recon_rows = load_recon(recon_path)
+        lines = load_bank(_safe_path(bank_path))
+        recon_rows = load_recon(_safe_path(recon_path))
         index = ReconIndex(recon_rows)
         attributions = attribute_all(lines, index, 0.55, audit_challenger=True)
         lines_by_key = {ln.key: ln for ln in lines}
@@ -593,9 +676,38 @@ def investigate_variance(
 # Server Entry Point
 # -----------------------------------------------------------------------------
 def main() -> None:
-    """Run the MCP server via stdio transport."""
-    mcp.run(transport="stdio")
+    """Run the MCP server via stdio (default) or streamable-HTTP transport."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="untangle read-only MCP server")
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Run remote streamable-HTTP transport instead of stdio",
+    )
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host interface for HTTP transport (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8081,
+        help="Port for HTTP transport (default: 8081)",
+    )
+    args = parser.parse_args()
+
+    if args.http:
+        # A standalone HTTP server is a PUBLIC surface — FAIL CLOSED: force the sandbox on regardless of
+        # any inherited env value, so it can never expose arbitrary server files. stdio (below) stays
+        # unsandboxed: it is a trusted local process on the user's own machine.
+        os.environ["UNTANGLE_MCP_SANDBOX"] = "1"
+        mcp.run(transport="streamable-http", host=args.host, port=args.port)
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":
     main()
+
