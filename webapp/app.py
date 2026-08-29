@@ -25,11 +25,20 @@ from engine.service import reconcile
 from ui.dashboard import render as render_dashboard
 from webapp.pages import landing_page, upload_page, verify_page
 
-try:
-    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+# The public /mcp endpoint must be sandboxed: an unauthenticated remote caller must not be able to
+# open arbitrary server files, so confine the tools' file access to the bundled demo dataset. Set
+# BEFORE importing mcp_server so the flag is read at its import time. Real user data goes through the
+# web upload (BYOD), never the public MCP.
+os.environ.setdefault("UNTANGLE_MCP_SANDBOX", "1")
 
+try:
     from mcp_server import mcp
 
+    # Create the streamable-HTTP ASGI app ONCE at import. This is what lazily constructs the FastMCP
+    # session manager, so `mcp.session_manager` is accessible in the lifespan below (no poking of
+    # FastMCP internals). Starlette does not propagate a mounted app's lifespan, so the parent app
+    # runs the session manager itself.
+    _mcp_asgi = mcp.streamable_http_app()
     _MCP_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _MCP_AVAILABLE = False
@@ -37,20 +46,10 @@ except ImportError:  # pragma: no cover
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Run the FastMCP session manager for the app's lifetime (stateless — no per-client state
+    # accumulates). One app instance → one run; tests use a single module-scoped client, so this is
+    # never re-entered.
     if _MCP_AVAILABLE:
-        # Reset session manager if previously run (e.g. in test suites with multiple TestClient contexts)
-        if mcp._session_manager is not None and getattr(mcp._session_manager, "_has_started", False):
-            mcp._session_manager = None
-        if mcp._session_manager is None:
-            mcp._session_manager = StreamableHTTPSessionManager(
-                app=mcp._mcp_server,
-                event_store=mcp._event_store,
-                retry_interval=mcp._retry_interval,
-                json_response=mcp.settings.json_response,
-                stateless=mcp.settings.stateless_http,
-                security_settings=mcp.settings.transport_security,
-                max_request_body_size=mcp.settings.max_request_body_size,
-            )
         async with mcp.session_manager.run():
             yield
     else:
@@ -60,18 +59,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="untangle", docs_url="/api/docs", lifespan=lifespan)
 
 if _MCP_AVAILABLE:
-    class _DynamicMCPApp:
-        """ASGI app dynamically delegating to mcp.session_manager for streamable-HTTP requests."""
-
-        async def __call__(self, scope, receive, send):
-            await mcp.session_manager.handle_request(scope, receive, send)
-
+    # Align CORS with the MCP transport-security origin allowlist so a browser origin that clears the
+    # preflight also clears the MCP handler (no "CORS says yes, MCP says no" mismatch). Read-only +
+    # no credentials. Include DELETE (session teardown) and the MCP protocol headers.
+    _mcp_allowed_origins = list(getattr(mcp.settings.transport_security, "allowed_origins", None) or ["*"])
     mcp_subapp = CORSMiddleware(
-        app=_DynamicMCPApp(),
-        allow_origins=["*"],
+        app=_mcp_asgi,
+        allow_origins=_mcp_allowed_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS", "HEAD"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["content-type", "accept", "mcp-session-id", "mcp-protocol-version", "last-event-id"],
         expose_headers=["mcp-session-id"],
     )
     app.mount("/mcp", mcp_subapp)

@@ -15,12 +15,20 @@ journal engine via the **Model Context Protocol (MCP)** across two complementary
 - **Strictly Read-Only**: Every tool in untangle is analytical and read-only. The server analyzes files, derives
   mathematical attributions, verifies proof receipts, and drafts journal proposals. It **never writes**, **never
   mutates financial state**, and **never moves money**.
-- **DNS-Rebinding Protection**: Streamable-HTTP transport retains host validation enabled by default, whitelisting
-  trusted hosts and origins (`UNTANGLE_MCP_ALLOWED_HOSTS` / `UNTANGLE_MCP_ALLOWED_ORIGINS`).
-- **Scoped CORS**: Cross-origin requests to `/mcp` are permitted (`*` origin, no credentials) so hosted web clients
-  can discover and invoke tools seamlessly.
-- **Stateless Discovery & Single-Instance Session State**: Session IDs (`mcp-session-id`) manage active streamable-HTTP
-  transports in-memory for the container lifecycle.
+- **Sandboxed file access (public endpoint)**: the tools take file *paths*. Over the public HTTP surface an
+  unauthenticated caller must not be able to open arbitrary server files, so when `UNTANGLE_MCP_SANDBOX=1` (set
+  automatically by the web app) every path is confined to the bundled demo-data directory
+  (`UNTANGLE_MCP_DATA_DIR`, default `data/`); a path outside it is rejected. **The remote MCP runs against the
+  demo dataset** — to reconcile your *own* files, use the web upload (BYOD), not the public MCP. Local `stdio`
+  (a trusted agent on your machine) is unsandboxed.
+- **Stateless**: `stateless_http=True` — no per-client session state accumulates in the container; hosted clients
+  need not maintain a session across calls.
+- **DNS-Rebinding Protection**: streamable-HTTP keeps Host validation enabled; set the deploy host(s) via
+  `UNTANGLE_MCP_ALLOWED_HOSTS` and browser origins via `UNTANGLE_MCP_ALLOWED_ORIGINS` (comma-separated). On Render,
+  set `UNTANGLE_MCP_ALLOWED_HOSTS` to your actual app hostname.
+- **Scoped CORS**: cross-origin requests to `/mcp` are allowed for the configured origins (aligned with the MCP
+  origin allowlist so preflight and the MCP handler agree), no credentials.
+- **Bounded input**: `verify_proof_packet` caps the caller-supplied JSON at 512 KB.
 
 ---
 

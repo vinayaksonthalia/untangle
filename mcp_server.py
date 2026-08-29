@@ -39,6 +39,9 @@ mcp = FastMCP(
 
 # Streamable-HTTP transport configuration
 mcp.settings.streamable_http_path = "/"
+# Stateless: no per-client session state accumulates in the container — correct for a public,
+# read-only endpoint and simpler for hosted clients (no session-id round-trip to maintain).
+mcp.settings.stateless_http = True
 mcp.settings.transport_security.enable_dns_rebinding_protection = True
 
 # Whitelist allowed hosts and origins for DNS rebinding protection (env-driven with safe defaults)
@@ -75,6 +78,39 @@ else:
 
 
 # -----------------------------------------------------------------------------
+# Sandbox: confine file access when exposed over the public HTTP surface.
+# -----------------------------------------------------------------------------
+# The tools take file PATHS, which is fine for LOCAL stdio (a trusted agent on the user's machine).
+# But over the PUBLIC remote endpoint an unauthenticated caller must NOT be able to open arbitrary
+# server files. When UNTANGLE_MCP_SANDBOX is on (set by the web app / --http surface), every path is
+# confined to the bundled demo-data directory. Real user data goes through the web BYOD upload, not
+# the public MCP.
+_DATA_DIR = os.path.realpath(
+    os.environ.get("UNTANGLE_MCP_DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+)
+# Cap the one tool that parses a caller-supplied JSON string (verify_proof_packet) — a public endpoint
+# must not be forced to parse an unbounded body.
+_MAX_PACKET_JSON_BYTES = 512 * 1024
+
+
+def _sandboxed() -> bool:
+    return os.environ.get("UNTANGLE_MCP_SANDBOX", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _safe_path(p: str) -> str:
+    """In sandbox mode, confine a caller-supplied path to the demo-data dir; otherwise pass through."""
+    if not _sandboxed():
+        return p
+    rp = os.path.realpath(p)
+    if os.path.commonpath([rp, _DATA_DIR]) != _DATA_DIR:
+        raise ValueError(
+            "path is outside the allowed data directory — the remote MCP is sandboxed to the bundled "
+            "demo dataset; upload your own files through the web app instead."
+        )
+    return rp
+
+
+# -----------------------------------------------------------------------------
 # Caching helpers for deterministic read-only file processing
 # -----------------------------------------------------------------------------
 @lru_cache(maxsize=16)
@@ -89,6 +125,7 @@ def _cached_reconcile(
 
 def _get_report(bank_path: str, recon_path: str, ledger_path: str) -> dict[str, Any]:
     """Load and reconcile files, using mtime caching for speed."""
+    bank_path, recon_path, ledger_path = _safe_path(bank_path), _safe_path(recon_path), _safe_path(ledger_path)
     try:
         t_bank = os.path.getmtime(bank_path)
         t_recon = os.path.getmtime(recon_path)
@@ -115,6 +152,7 @@ def _cached_journal_entries(
 
 
 def _get_journal_entries(bank_path: str, recon_path: str) -> list[JournalEntry]:
+    bank_path, recon_path = _safe_path(bank_path), _safe_path(recon_path)
     try:
         t_bank = os.path.getmtime(bank_path)
         t_recon = os.path.getmtime(recon_path)
@@ -439,6 +477,12 @@ def verify_proof_packet(packet_json: str | dict) -> dict[str, Any]:
     """
     try:
         if isinstance(packet_json, str):
+            if len(packet_json.encode("utf-8")) > _MAX_PACKET_JSON_BYTES:
+                return {
+                    "ok": False,
+                    "error": f"packet JSON exceeds the {_MAX_PACKET_JSON_BYTES // 1024} KB limit",
+                    "error_type": "PayloadTooLarge",
+                }
             try:
                 packet = json.loads(packet_json)
             except Exception as exc:
@@ -585,8 +629,8 @@ def investigate_variance(
                 }
 
         # If not pre-computed in report, investigate on the fly
-        lines = load_bank(bank_path)
-        recon_rows = load_recon(recon_path)
+        lines = load_bank(_safe_path(bank_path))
+        recon_rows = load_recon(_safe_path(recon_path))
         index = ReconIndex(recon_rows)
         attributions = attribute_all(lines, index, 0.55, audit_challenger=True)
         lines_by_key = {ln.key: ln for ln in lines}
