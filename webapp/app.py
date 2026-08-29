@@ -62,10 +62,21 @@ if _MCP_AVAILABLE:
     # Align CORS with the MCP transport-security origin allowlist so a browser origin that clears the
     # preflight also clears the MCP handler (no "CORS says yes, MCP says no" mismatch). Read-only +
     # no credentials. Include DELETE (session teardown) and the MCP protocol headers.
-    _mcp_allowed_origins = list(getattr(mcp.settings.transport_security, "allowed_origins", None) or ["*"])
+    # The allowlist mixes EXACT origins (https://claude.ai) with port-wildcard entries (http://localhost:*)
+    # that Starlette CORS matches only EXACTLY — so pass exact origins as allow_origins and translate any
+    # ":*" port-wildcard into an allow_origin_regex (localhost/127.0.0.1 on any port).
+    import re as _re
+
+    _raw = list(getattr(mcp.settings.transport_security, "allowed_origins", None) or ["*"])
+    _exact = [o for o in _raw if "*" not in o]
+    _regex_parts = [
+        _re.escape(o[:-2]) + r"(:\d+)?" for o in _raw if o.endswith(":*")
+    ]  # "http://localhost:*" -> "http://localhost(:\d+)?"
+    _origin_regex = "^(" + "|".join(_regex_parts) + ")$" if _regex_parts else None
     mcp_subapp = CORSMiddleware(
         app=_mcp_asgi,
-        allow_origins=_mcp_allowed_origins,
+        allow_origins=_exact,
+        allow_origin_regex=_origin_regex,
         allow_credentials=False,
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["content-type", "accept", "mcp-session-id", "mcp-protocol-version", "last-event-id"],

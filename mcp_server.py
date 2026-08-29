@@ -44,37 +44,33 @@ mcp.settings.streamable_http_path = "/"
 mcp.settings.stateless_http = True
 mcp.settings.transport_security.enable_dns_rebinding_protection = True
 
-# Whitelist allowed hosts and origins for DNS rebinding protection (env-driven with safe defaults)
+# Whitelist allowed hosts/origins for DNS-rebinding protection (env-driven with safe defaults).
+# `UNTANGLE_MCP_ALLOWED_HOSTS` (comma-separated) is the explicit override for any deploy host / custom
+# domain. On Render, RENDER_EXTERNAL_HOSTNAME is injected automatically — pick it up so the real deploy
+# hostname is accepted without manual config.
+_render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
 _env_hosts = os.environ.get("UNTANGLE_MCP_ALLOWED_HOSTS", "")
 if _env_hosts:
     mcp.settings.transport_security.allowed_hosts = [h.strip() for h in _env_hosts.split(",") if h.strip()]
 else:
     mcp.settings.transport_security.allowed_hosts = [
-        "localhost",
-        "localhost:*",
-        "127.0.0.1",
-        "127.0.0.1:*",
-        "0.0.0.0",
-        "0.0.0.0:*",
-        "testserver",
-        "testserver:*",
-        "untangle.onrender.com",
-        "untangle.onrender.com:*",
+        "localhost", "localhost:*", "127.0.0.1", "127.0.0.1:*",
+        "0.0.0.0", "0.0.0.0:*", "testserver", "testserver:*",
+        "untangle.onrender.com", "untangle.onrender.com:*",
     ]
+    if _render_host:
+        mcp.settings.transport_security.allowed_hosts += [_render_host, f"{_render_host}:*"]
 
 _env_origins = os.environ.get("UNTANGLE_MCP_ALLOWED_ORIGINS", "")
 if _env_origins:
     mcp.settings.transport_security.allowed_origins = [o.strip() for o in _env_origins.split(",") if o.strip()]
 else:
     mcp.settings.transport_security.allowed_origins = [
-        "http://localhost",
-        "http://localhost:*",
-        "http://127.0.0.1",
-        "http://127.0.0.1:*",
-        "https://claude.ai",
-        "https://chatgpt.com",
-        "https://untangle.onrender.com",
+        "http://localhost", "http://localhost:*", "http://127.0.0.1", "http://127.0.0.1:*",
+        "https://claude.ai", "https://chatgpt.com", "https://untangle.onrender.com",
     ]
+    if _render_host:
+        mcp.settings.transport_security.allowed_origins.append(f"https://{_render_host}")
 
 
 # -----------------------------------------------------------------------------
@@ -491,6 +487,13 @@ def verify_proof_packet(packet_json: str | dict) -> dict[str, Any]:
                     "error": f"Invalid JSON string: {exc}",
                 }
         elif isinstance(packet_json, dict):
+            # Bound dict inputs too — a caller can otherwise pass an arbitrarily large object.
+            if len(json.dumps(packet_json, default=str).encode("utf-8")) > _MAX_PACKET_JSON_BYTES:
+                return {
+                    "ok": False,
+                    "error": f"packet exceeds the {_MAX_PACKET_JSON_BYTES // 1024} KB limit",
+                    "error_type": "PayloadTooLarge",
+                }
             packet = packet_json
         else:
             return {
@@ -696,6 +699,10 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.http:
+        # A standalone HTTP server is a PUBLIC surface — sandbox file access by default (unless the
+        # operator explicitly opted out), so it can never expose arbitrary server files like the web
+        # mount. stdio (below) stays unsandboxed: it is a trusted local process on the user's machine.
+        os.environ.setdefault("UNTANGLE_MCP_SANDBOX", "1")
         mcp.run(transport="streamable-http", host=args.host, port=args.port)
     else:
         mcp.run(transport="stdio")
