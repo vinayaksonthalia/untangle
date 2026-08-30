@@ -26,12 +26,37 @@ def test_issue_certificate_is_content_hashed_and_verifies_unsigned(monkeypatch):
     rep = _report()
     env = issue_certificate(rep)
     assert env["signed"] is False
+    assert len(env["report_sha256"]) == 64
     assert len(env["content_sha256"]) == 64
     env["report"] = rep
     v = verify_certificate(env)
     assert v["ok"] is True
     assert v["hash_matches"] is True
     assert v["packets_passed"] == v["packets_verified"] > 0
+    assert v["report_binding_valid"] is True
+
+
+def test_attached_unbound_or_different_report_is_not_authenticated(monkeypatch):
+    """An attached report must be the exact report used when the envelope was issued."""
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    original = _report()
+    env = issue_certificate(original)
+    attached = copy.deepcopy(original)
+    attached["totals"]["n_bank_lines"] += 1
+    env["report"] = attached
+    result = verify_certificate(env)
+    assert result["report_binding_valid"] is False
+    assert result["ok"] is False
+
+
+def test_legacy_envelope_with_unbound_attached_report_is_rejected(monkeypatch):
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    env = issue_certificate(_report())
+    env.pop("report_sha256")
+    env["report"] = _report()
+    result = verify_certificate(env)
+    assert result["report_binding_valid"] is False
+    assert result["ok"] is False
 
 
 def test_tampered_certificate_breaks_the_hash(monkeypatch):

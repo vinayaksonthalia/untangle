@@ -40,7 +40,7 @@ def _inr(paise: int) -> str:
     return f"₹{paise / 100:,.2f}"
 
 
-def _canonical(obj: dict) -> bytes:
+def _canonical(obj: Any) -> bytes:
     """Deterministic JSON encoding used for hashing and signing (sorted keys, no whitespace)."""
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
 
@@ -88,6 +88,9 @@ def issue_certificate(report: dict) -> dict:
     body = _canonical(cert)
     envelope: dict[str, Any] = {
         "certificate": cert,
+        # The certificate intentionally omits raw inputs. Bind an optionally supplied report
+        # separately so a verifier cannot mistake an arbitrary attached report for issuer evidence.
+        "report_sha256": hashlib.sha256(_canonical(report)).hexdigest(),
         "content_sha256": hashlib.sha256(body).hexdigest(),
         "signed": False,
         # Honest framing (from the Lethe pattern): by default this is a tamper-evident content hash,
@@ -143,10 +146,17 @@ def verify_certificate(payload: dict) -> dict:
             except Exception:  # InvalidSignature, malformed key/sig, etc. → not authenticated
                 signature_valid = False
 
-    # Independent re-verification of the packets referenced by the certificate's own report, if given.
+    # Independent re-verification of an attached report is useful only when the report is bound to
+    # the report that was used at issuance. The report is not part of the signed certificate body.
     embedded_report = payload.get("report") if isinstance(payload.get("report"), dict) else None
     packets_verified = packets_passed = None
+    report_binding_valid: bool | None = None
     if embedded_report is not None:
+        expected_report_hash = payload.get("report_sha256")
+        report_binding_valid = (
+            isinstance(expected_report_hash, str)
+            and hashlib.sha256(_canonical(embedded_report)).hexdigest() == expected_report_hash
+        )
         results = verify_report(embedded_report)
         pkt = [r for r in results if r.packet_line_key != "report:audit_root"]
         packets_verified = len(pkt)
@@ -155,6 +165,7 @@ def verify_certificate(payload: dict) -> dict:
     ok = (
         hash_matches
         and (sig is None or signature_valid is True)     # a claimed signature must be valid
+        and (report_binding_valid is not False)
         and (packets_passed is None or packets_passed == packets_verified)
     )
     return {
@@ -170,6 +181,7 @@ def verify_certificate(payload: dict) -> dict:
         "attested_verification": cert.get("verification"),
         "packets_verified": packets_verified,
         "packets_passed": packets_passed,
+        "report_binding_valid": report_binding_valid,
         "summary": cert.get("summary"),
         "audit_root": cert.get("audit_root"),
     }
