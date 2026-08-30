@@ -7,6 +7,8 @@ import json
 import subprocess
 import sys
 
+import pytest
+
 from engine.certificate import (
     _CRYPTO_AVAILABLE,
     build_close_certificate,
@@ -48,6 +50,28 @@ def test_attached_unbound_or_different_report_is_not_authenticated(monkeypatch):
     result = verify_certificate(env)
     assert result["report_binding_valid"] is False
     assert result["ok"] is False
+
+
+@pytest.mark.parametrize("bad_report", [[], ["x"], "a report", 123, None])
+def test_present_but_malformed_report_fails_binding(monkeypatch, bad_report):
+    """A `report` key present with a non-object value is a bad attachment: it must fail binding and
+    verification, not be silently treated as an absent report (Qodo #38)."""
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    env = issue_certificate(_report())
+    env["report"] = bad_report
+    result = verify_certificate(env)
+    assert result["report_binding_valid"] is False
+    assert result["ok"] is False
+
+
+def test_absent_report_keeps_standalone_certificate_valid(monkeypatch):
+    """A fully absent `report` key retains standalone-certificate behaviour (binding not applicable)."""
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    env = issue_certificate(_report())
+    env.pop("report", None)
+    result = verify_certificate(env)
+    assert result["report_binding_valid"] is None
+    assert result["ok"] is True
 
 
 def test_signed_certificate_rejects_replaced_report_even_if_outer_fields_are_replaced(monkeypatch):

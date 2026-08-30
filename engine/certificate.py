@@ -152,10 +152,17 @@ def verify_certificate(payload: dict) -> dict:
     # Independent re-verification of an attached report is useful only when the report is bound to
     # the report that was used at issuance. The raw report is omitted, but its digest is part of the
     # signed/content-hashed certificate body.
-    embedded_report = payload.get("report") if isinstance(payload.get("report"), dict) else None
+    # Distinguish an ABSENT report (standalone certificate — fine) from a PRESENT but malformed one.
+    # A `report` key holding anything other than an object (list, string, number, null) is a bad
+    # attachment and MUST fail binding, never be silently treated as "no report" (Qodo #38).
+    raw_report = payload.get("report")
+    report_present = "report" in payload
+    embedded_report = raw_report if isinstance(raw_report, dict) else None
     packets_verified = packets_passed = None
     report_binding_valid: bool | None = None
-    if embedded_report is not None:
+    if report_present and embedded_report is None:
+        report_binding_valid = False
+    elif embedded_report is not None:
         expected_report_hash = cert.get("report_sha256")
         report_binding_valid = (
             isinstance(expected_report_hash, str)
