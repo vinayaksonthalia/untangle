@@ -537,9 +537,7 @@ def api_journal_tally() -> Response:
 
 @app.post("/api/verify")
 async def api_verify(request: Request) -> JSONResponse:
-    """Independently verify a close-certificate envelope: re-derive its SHA-256 content hash and, when
-    signed, check the ECDSA signature. No trust in this server required — a tampered field breaks the
-    hash; a forged certificate fails the signature."""
+    """Verify a certificate envelope and any attached report binding without raising."""
     length = request.headers.get("content-length")
     if length and (not length.isdigit() or int(length) > _MAX_VERIFY_BYTES):
         raise HTTPException(413, "Certificate payload is larger than 512 KB.")

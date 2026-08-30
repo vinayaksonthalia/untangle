@@ -809,8 +809,9 @@ def verify_page() -> str:
     <button class="cta ghost" onclick="loadSample()">Load the sample certificate</button>
   </div>
   <div class="vres" id="vres"></div>
-  <p class="vnote">The certificate carries no personal data — only counts, rupee totals, an audit hash, and the
-  verification result. Nothing you paste here is stored.</p>
+  <p class="vnote">An unsigned certificate's matching hash is recomputable by anyone and is not authenticity.
+  Signed results use this deployment's pinned issuer key. Packet checks apply to the attached bound report;
+  they do not re-audit the original bank, settlement, or ledger files. Nothing you paste here is stored.</p>
 </div>
 <script>
 function vpill(v){ if(v===true) return '<span class="vpill ok">\\u2713 valid</span>';
@@ -820,16 +821,18 @@ function esc(s){ var d=document.createElement('span'); d.textContent=(s==null?''
 function show(d){
   var box=document.getElementById('vres'); box.style.display='block';
   if(d && d.error){ box.innerHTML='<div class="vverdict"><span class="vcheck" style="background:#b23b3b">\\u2717</span>'+esc(d.error)+'</div>'; return; }
-  var authentic = (d.hash_matches!==false) && (d.signature_valid!==false) &&
+  var authentic = (d.authenticated===true) && (d.hash_matches===true) &&
+                  (d.report_binding_valid!==false) &&
                   (d.packets_passed==null || d.packets_passed===d.packets_verified);
   var col = authentic ? 'var(--ok)' : '#b23b3b';
   var pk = d.packets_verified!=null ? ('<div class="k">Proof packets re-verified</div><div class="v">'+d.packets_passed+' / '+d.packets_verified+' pass</div>') : '';
   box.innerHTML =
     '<div class="vverdict"><span class="vcheck" style="background:'+col+'">'+(authentic?'\\u2713':'\\u2717')+'</span>'+
-      (authentic?'Authentic &amp; untampered':'Verification failed')+'</div>'+
+      (authentic?'Authentic &amp; untampered':(d.signed===false && d.hash_matches===true ? 'Hash consistent (unsigned)' : 'Verification failed'))+'</div>'+\
     '<div class="vkv">'+
       '<div class="k">Content hash re-derived</div><div class="v vmono">'+esc(d.content_hash||'')+'</div>'+
       '<div class="k">Hash matches the certificate</div><div class="v">'+vpill(d.hash_matches)+'</div>'+
+      (d.report_binding_valid!==null && d.report_binding_valid!==undefined ? '<div class="k">Attached report matches issuer binding</div><div class="v">'+vpill(d.report_binding_valid)+'</div>' : '')+
       '<div class="k">ECDSA signature</div><div class="v">'+(d.signed?vpill(d.signature_valid):'<span class="vpill na">unsigned (hash-only)</span>')+'</div>'+
       pk +
       (d.audit_root?'<div class="k">Report audit root</div><div class="v vmono">'+esc(d.audit_root)+'</div>':'')+

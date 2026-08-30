@@ -10,6 +10,7 @@ Performs:
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -51,6 +52,10 @@ def _parse_inr_to_paise(val: Any) -> int | None:
     if isinstance(val, int):
         return val
     if isinstance(val, float):
+        # A non-finite amount (inf / nan) is unparseable — and round(inf) raises OverflowError,
+        # round(nan) raises ValueError. Reject rather than crash.
+        if not math.isfinite(val):
+            return None
         return round(val * 100)
     s = str(val).strip()
     if not s:
