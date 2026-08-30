@@ -1,8 +1,8 @@
+import asyncio
 import os
 import tempfile
-import time
-import asyncio
 import threading
+import time
 
 import pytest
 from fastapi import HTTPException
