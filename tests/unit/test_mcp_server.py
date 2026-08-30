@@ -219,6 +219,25 @@ def test_service_snapshot_missing_paths_preserve_kind_specific_input_errors(tmp_
         assert option in str(raised.value)
 
 
+def test_service_and_mcp_reject_oversized_snapshots(tmp_path, monkeypatch):
+    from engine.ingest import InputError
+    from engine.service import MAX_INPUT_BYTES, reconcile
+
+    monkeypatch.delenv("UNTANGLE_MCP_SANDBOX", raising=False)
+    oversized = tmp_path / "oversized-bank.csv"
+    oversized.write_bytes(b"x" * (MAX_INPUT_BYTES + 1))
+
+    with pytest.raises(InputError, match="Bank statement is too large"):
+        reconcile(str(oversized), _RECON_PATH, _LEDGER_PATH)
+
+    from mcp_server import reconcile_files
+
+    result = reconcile_files(str(oversized), _RECON_PATH, _LEDGER_PATH)
+    assert result["ok"] is False
+    assert result["error_type"] == "InputError"
+    assert "maximum supported size" in result["error"]
+
+
 def test_journal_snapshot_errors_use_stable_labels(tmp_path, monkeypatch):
     monkeypatch.delenv("UNTANGLE_MCP_SANDBOX", raising=False)
     malformed = tmp_path / "recon.json"
