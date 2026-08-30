@@ -104,26 +104,54 @@ def generate_sealed_holdout(seed: int, out_dir: str) -> dict[str, str]:
 
 _SEALED_ARTIFACTS = ("bank_statement.csv", "recon_report.json", "order_ledger.csv", "ground_truth.json")
 
+# Immutable trust anchor, COMMITTED in source (outside the writable sealed dir). The manifest lives
+# beside the artifacts and is writable, so a manifest is not self-authenticating: an attacker could
+# change an artifact AND its manifest hash together and stay self-consistent. We bind the frozen
+# holdout to this committed digest of the manifest's canonical files-map (from the seed-1337
+# generator), so any change to the artifacts — even with a matching manifest — is rejected (Qodo #4
+# review). If the sealed holdout is DELIBERATELY re-frozen (generator change), regenerate and update
+# this constant in the same commit.
+_EXPECTED_SEALED_SEED = DEFAULT_SEALED_SEED
+_EXPECTED_MANIFEST_DIGEST = "a8cdb74f6fd727d0d7a24cc9d612b4d6d1ff8c42685da84a3620614f566012dd"
+
 
 class SealedIntegrityError(Exception):
     """The sealed holdout failed manifest verification — refuse to score a tampered benchmark."""
 
 
+def _manifest_files_digest(files: dict) -> str:
+    canon = json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(canon).hexdigest()
+
+
 def _verify_sealed_manifest(sealed_dir: str) -> None:
-    """Fail closed BEFORE scoring: require the manifest and every expected artifact, and confirm each
-    file's SHA-256 matches its frozen manifest hash. A modified bank/recon/ledger/ground-truth file
-    must never be accepted as the frozen holdout — that would make the sealed results untrustworthy
-    and non-reproducible (Qodo full-tree #4)."""
+    """Fail closed BEFORE scoring. Two layers: (1) AUTHENTICITY — the manifest's seed and the digest
+    of its files-map must match the committed trust anchor above, so a self-consistently-tampered
+    manifest is rejected; (2) INTEGRITY — every required artifact exists and re-hashes to its manifest
+    value. A modified holdout must never be scored as the frozen benchmark (Qodo full-tree #4)."""
     manifest_path = os.path.join(sealed_dir, "manifest.json")
     if not os.path.exists(manifest_path):
         raise SealedIntegrityError(f"sealed manifest not found: {manifest_path}")
     try:
         with open(manifest_path, encoding="utf-8") as fh:
-            expected = json.load(fh)["files"]
+            manifest = json.load(fh)
+        expected = manifest["files"]
+        seed = manifest["seed"]
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise SealedIntegrityError(f"sealed manifest is unreadable or malformed: {exc}") from exc
     if not isinstance(expected, dict):
         raise SealedIntegrityError("sealed manifest 'files' is not an object")
+    # (1) Authenticity: bind to the committed anchor (seed + files-map digest).
+    if seed != _EXPECTED_SEALED_SEED:
+        raise SealedIntegrityError(
+            f"sealed manifest seed {seed!r} != frozen seed {_EXPECTED_SEALED_SEED} — not the frozen holdout"
+        )
+    actual_digest = _manifest_files_digest(expected)
+    if actual_digest != _EXPECTED_MANIFEST_DIGEST:
+        raise SealedIntegrityError(
+            "sealed manifest does not match the committed trust anchor (tampered or re-frozen holdout): "
+            f"digest={actual_digest}, expected={_EXPECTED_MANIFEST_DIGEST}"
+        )
     for fname in _SEALED_ARTIFACTS:
         if fname not in expected:
             raise SealedIntegrityError(f"sealed manifest has no hash for required artifact {fname!r}")
