@@ -67,9 +67,13 @@ def _parse_inr_to_paise(val: Any) -> int | None:
     s = s.replace("₹", "").replace(",", "").strip()
     try:
         amount_float = float(s)
+        # float() accepts "inf"/"nan" spellings; those are not valid amounts and round(inf) raises
+        # OverflowError. Reject non-finite so the never-raises verifier contract holds on this path too.
+        if not math.isfinite(amount_float):
+            return None
         paise = round(amount_float * 100)
         return -paise if is_neg else paise
-    except ValueError:
+    except (ValueError, OverflowError):
         return None
 
 
@@ -258,21 +262,22 @@ def verify_proof_packet(
             checks.append(CheckResult("recon_rows_consistency", False, "recon_rows must be a list"))
         elif settlement is not None and isinstance(settlement, dict):
             covered_entities = settlement.get("covered_entities", [])
+            # Join ONLY on the exact (type, entity_id) tuple — the same key reconciliation and proof
+            # generation use. An entity_id-only fallback would let a tampered packet borrow a same-ID
+            # row of a DIFFERENT type and pass the proof check (Qodo full-tree #2).
             recon_by_type_id: dict[tuple[str, str], dict] = {}
-            recon_by_id: dict[str, dict] = {}
             for r in recon_rows:
                 if isinstance(r, dict):
                     t = str(r.get("type", ""))
                     eid = str(r.get("entity_id", ""))
                     recon_by_type_id[(t, eid)] = r
-                    recon_by_id[eid] = r
 
             missing_entities: list[str] = []
             for ent in covered_entities:
                 if isinstance(ent, dict):
                     t = str(ent.get("type", ""))
                     eid = str(ent.get("entity_id", ""))
-                    if (t, eid) not in recon_by_type_id and eid not in recon_by_id:
+                    if (t, eid) not in recon_by_type_id:
                         missing_entities.append(f"{t}:{eid}")
                 else:
                     missing_entities.append(str(ent))
@@ -299,8 +304,11 @@ def verify_proof_packet(
                             if m:
                                 claimed_utr = m.group(1)
                                 for ent in covered_entities:
-                                    eid = str(ent.get("entity_id", ""))
-                                    row = recon_by_id.get(eid)
+                                    if not isinstance(ent, dict):
+                                        continue
+                                    row = recon_by_type_id.get(
+                                        (str(ent.get("type", "")), str(ent.get("entity_id", "")))
+                                    )
                                     if row:
                                         row_utr = str(row.get("settlement_utr", "")).lower()
                                         if row_utr and claimed_utr not in row_utr and row_utr not in claimed_utr:
@@ -314,8 +322,11 @@ def verify_proof_packet(
                             if m:
                                 claimed_utr = m.group(1)
                                 for ent in covered_entities:
-                                    eid = str(ent.get("entity_id", ""))
-                                    row = recon_by_id.get(eid)
+                                    if not isinstance(ent, dict):
+                                        continue
+                                    row = recon_by_type_id.get(
+                                        (str(ent.get("type", "")), str(ent.get("entity_id", "")))
+                                    )
                                     if row:
                                         row_utr = str(row.get("settlement_utr", "")).lower()
                                         if row_utr and not (
