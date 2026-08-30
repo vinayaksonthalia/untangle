@@ -49,6 +49,22 @@ def test_config_no_ai_needs_no_key(tmp_path):
     assert cfg.use_ai is False and cfg.provider_or_none() == "none"
 
 
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf"), -0.1, 1.5])
+def test_config_rejects_nonfinite_or_out_of_range_threshold(tmp_path, bad):
+    # A NaN/inf/out-of-range threshold would silently defeat the abstention safety gate
+    # (confidence < NaN is always False), so build_config must reject it (Qodo full-tree #1).
+    with pytest.raises(ConfigError):
+        build_config(no_ai=True, provider=None, model=None, threshold=bad,
+                     seed=42, dotenv_path=str(tmp_path / "missing.env"))
+
+
+@pytest.mark.parametrize("ok", [0.0, 0.55, 1.0])
+def test_config_accepts_valid_threshold(tmp_path, ok):
+    cfg = build_config(no_ai=True, provider=None, model=None, threshold=ok,
+                       seed=42, dotenv_path=str(tmp_path / "missing.env"))
+    assert cfg.threshold == ok
+
+
 class _MockClient(LLMClient):
     """Enabled client that returns a canned proposal without any network call."""
 

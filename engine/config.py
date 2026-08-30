@@ -7,6 +7,7 @@ fast with exit code 3 and a clear message — never a bare stack trace.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 
@@ -92,12 +93,22 @@ def build_config(
             raise ConfigError(
                 "AI requested but no model set. Pass --model <id> or set LLM_MODEL in .env."
             )
+    # The abstention gate is a financial safety mechanism: a confidence must clear `threshold` to be
+    # auto-attributed. A non-finite threshold (NaN/inf) or one outside [0, 1] silently defeats it —
+    # e.g. `confidence < NaN` is always False, so low-confidence guesses get emitted instead of
+    # abstained. Reject it rather than let an invalid runtime option disable the gate.
+    resolved_threshold = DEFAULT_THRESHOLD if threshold is None else threshold
+    if not math.isfinite(resolved_threshold) or not (0.0 <= resolved_threshold <= 1.0):
+        raise ConfigError(
+            f"threshold must be a finite number in [0, 1]; got {resolved_threshold!r}. "
+            "The abstention gate cannot be disabled with an out-of-range or NaN threshold."
+        )
     return Config(
         use_ai=use_ai,
         provider=resolved_provider if use_ai else None,
         model=resolved_model if use_ai else None,
         api_key=api_key,
-        threshold=DEFAULT_THRESHOLD if threshold is None else threshold,
+        threshold=resolved_threshold,
         seed=seed,
         global_solver=global_solver,
     )
