@@ -288,3 +288,23 @@ def test_sealed_artifact_hashing_reads_in_bounded_chunks(tmp_path, monkeypatch):
 
     assert sealed._hash_file(str(artifact)) == hashlib.sha256(content).hexdigest()
     assert read_sizes == [65536, 65536, 65536, 65536]
+
+
+def test_sealed_evaluation_uses_verified_snapshots_after_path_replacement(tmp_path, monkeypatch):
+    import eval.sealed as sealed
+
+    frozen = tmp_path / "frozen"
+    sealed.generate_sealed_holdout(sealed.DEFAULT_SEALED_SEED, str(frozen))
+    original_verify = sealed._verify_sealed_manifest
+
+    def verify_then_replace(sealed_dir):
+        snapshots = original_verify(sealed_dir)
+        for filename in sealed._SEALED_ARTIFACTS:
+            (frozen / filename).write_bytes(b"REPLACED AFTER VERIFICATION")
+        return snapshots
+
+    monkeypatch.setattr(sealed, "_verify_sealed_manifest", verify_then_replace)
+    result = sealed.evaluate_sealed(str(frozen), out_report=str(tmp_path / "report.json"))
+
+    assert result["totals"]["n_bank_lines"] > 0
+    assert result["metrics"]["conservation"]["pass"] is True
