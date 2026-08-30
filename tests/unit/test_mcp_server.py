@@ -6,6 +6,7 @@ Tests each tool handler function directly over data/ without requiring a live st
 from __future__ import annotations
 
 import json
+import shutil
 
 import pytest
 
@@ -215,3 +216,41 @@ def test_content_token_detects_change_under_identical_mtime(tmp_path):
     assert os.path.getmtime(str(p)) == mtime  # mtime is unchanged...
     tok2 = _content_token(str(p))
     assert tok1 != tok2  # ...but the content token differs, so the cache misses correctly
+
+
+def test_cache_processing_uses_the_same_bytes_as_its_token(tmp_path, monkeypatch):
+    """Replacing a source after snapshotting cannot poison either content-addressed cache."""
+    import mcp_server
+
+    monkeypatch.delenv("UNTANGLE_MCP_SANDBOX", raising=False)
+
+    bank = tmp_path / "bank.csv"
+    recon = tmp_path / "recon.json"
+    ledger = tmp_path / "ledger.csv"
+    for source, target in (
+        (_BANK_PATH, bank),
+        (_RECON_PATH, recon),
+        (_LEDGER_PATH, ledger),
+    ):
+        shutil.copyfile(source, target)
+    original_bank = bank.read_bytes()
+    real_snapshot = mcp_server._snapshot_inputs
+
+    def replace_after_snapshot(*paths):
+        snapshot = real_snapshot(*paths)
+        bank.write_bytes(b"not,a,valid,bank\n")
+        return snapshot
+
+    mcp_server._cached_reconcile.cache_clear()
+    monkeypatch.setattr(mcp_server, "_snapshot_inputs", replace_after_snapshot)
+    report = mcp_server._get_report(str(bank), str(recon), str(ledger))
+    assert report["totals"]["n_bank_lines"] == 294
+    bank.write_bytes(original_bank)
+    assert mcp_server._get_report(str(bank), str(recon), str(ledger)) == report
+    bank.write_bytes(original_bank)
+
+    mcp_server._cached_journal_entries.cache_clear()
+    entries = mcp_server._get_journal_entries(str(bank), str(recon))
+    assert len(entries) == 91
+    bank.write_bytes(original_bank)
+    assert mcp_server._get_journal_entries(str(bank), str(recon)) == entries
