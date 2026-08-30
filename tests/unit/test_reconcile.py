@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from engine.models import BankCreditLine, ReconRow
-from engine.reconcile import SettlementIndex
+from engine.reconcile import SettlementIndex, _make_result
 
 
 def _row(sid, utr, net, d="2026-06-10"):
@@ -35,3 +35,17 @@ def test_utr_sid_matches_a_properly_delimited_utr():
     idx = SettlementIndex([_row("setl_a", "1780498800xp8vma", 100000)])
     line = _line("NEFT 1780498800xp8vma SETTLEMENT", amount=100000)
     assert idx.utr_sid(line) == "setl_a"
+
+
+def test_make_result_requires_a_paise_balanced_residual():
+    row = _row("setl_a", "1780498800xp8vma", 100000)
+    line = _line("NEFT 1780498800xp8vma SETTLEMENT", amount=100001)
+    result = _make_result(line, ["setl_a"], SettlementIndex([row]))
+    assert result is not None
+    assert result.covered_entity_ids == [("payment", "pay_x")]
+
+
+def test_make_result_rejects_residual_beyond_drift_tolerance():
+    row = _row("setl_a", "1780498800xp8vma", 100000)
+    line = _line("NEFT 1780498800xp8vma SETTLEMENT", amount=100101)
+    assert _make_result(line, ["setl_a"], SettlementIndex([row])) is None

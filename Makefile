@@ -9,19 +9,22 @@ TRUTH  ?= data/ground_truth.json
 OUT    ?= out/
 SEED   ?= 42
 
-.PHONY: help venv run eval ablation test lint why clean
+.PHONY: help venv run eval ablation test coverage mutation lint why clean
 
 help:
-	@echo "make venv     - create .venv and install dev deps (pytest, hypothesis, ruff)"
+	@echo "make venv     - create .venv and install the dev extra (.[dev]: pytest, pytest-cov, ruff, ...)"
 	@echo "make run      - deterministic no-AI attribution -> out/report.json"
 	@echo "make eval     - score out/report.json against blind ground truth"
 	@echo "make ablation - eval with AI on/off delta + latency + cost/1k"
 	@echo "make test     - run the full pytest suite"
+	@echo "make coverage - run tests with the enforced 65% branch-coverage floor"
+	@echo "make mutation - run reconciliation mutation diagnostic"
 	@echo "make lint     - ruff check"
 
 venv:
 	python3 -m venv .venv
-	.venv/bin/python -m pip install -q --upgrade pip pytest hypothesis ruff
+	.venv/bin/python -m pip install -q --upgrade pip
+	.venv/bin/python -m pip install -q -e ".[dev]"
 
 run:
 	$(PY) -m engine.cli run --bank $(BANK) --recon $(RECON) --ledger $(LEDGER) \
@@ -38,6 +41,16 @@ why:
 
 test:
 	$(PY) -m pytest
+
+coverage:
+	$(PY) -m pytest --cov --cov-report=term-missing
+	$(PY) -m coverage json
+	$(PY) scripts/branch_coverage_gate.py
+
+mutation:
+	@$(PY) -c 'import mutmut' 2>/dev/null || (echo "Mutation tooling is optional. Install it with: $(PY) -m pip install -e \".[quality]\""; exit 1)
+	$(PY) -m mutmut run
+	$(PY) -m mutmut results
 
 lint:
 	$(PY) -m ruff check engine eval tests
