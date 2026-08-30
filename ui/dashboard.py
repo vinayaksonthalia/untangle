@@ -60,6 +60,14 @@ def _amt(paise: int) -> str:
     return f'{sign}<span class="rs">₹</span> {_grp(int(round(abs(paise) / 100)))}'
 
 
+def _amt_exact(paise: int) -> str:
+    """Paise-precise amount (no rounding), for recoverable/debit-exposure cells where ₹29.50 must
+    not become ₹30. Indian grouping on the integer part, two-decimal paise."""
+    sign = "−" if paise < 0 else ""
+    absolute = abs(paise)
+    return f'{sign}<span class="rs">₹</span> {_grp(absolute // 100)}.{absolute % 100:02d}'
+
+
 def _embed_json(obj) -> str:
     """JSON-encode for safe embedding inside a <script> element. json.dumps does not escape
     ``<``, so a value containing ``</script>`` would break out of the script at the HTML-parser
@@ -402,11 +410,11 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
         resolves_str = f"{len(resolves)} item{'s' if len(resolves) != 1 else ''}"
         resolves_keys = ", ".join(resolves[:3]) + (f" ... +{len(resolves)-3} more" if len(resolves) > 3 else "")
         if debit_paise and not rec_paise:
-            amount_html = f'<div style="font-weight:600;color:var(--warn)">{_amt(debit_paise)}</div><div style="font-size:11px;color:var(--ts)">review only · not recoverable</div>'
+            amount_html = f'<div style="font-weight:600;color:var(--warn)">{_amt_exact(debit_paise)}</div><div style="font-size:11px;color:var(--ts)">review only · not recoverable</div>'
         elif debit_paise:
-            amount_html = f'<div style="font-weight:600;color:var(--acc)">{_amt(rec_paise)}</div><div style="font-size:11px;color:var(--ts)">recoverable · if confirmed</div><div style="font-size:11px;color:var(--warn)">debit exposure {_amt(debit_paise)} · excluded</div>'
+            amount_html = f'<div style="font-weight:600;color:var(--acc)">{_amt_exact(rec_paise)}</div><div style="font-size:11px;color:var(--ts)">recoverable · if confirmed</div><div style="font-size:11px;color:var(--warn)">debit exposure {_amt_exact(debit_paise)} · excluded</div>'
         else:
-            amount_html = f'<div style="font-weight:600;color:var(--acc)">{_amt(rec_paise)}</div><div style="font-size:11px;color:var(--ts)">recoverable · if confirmed</div>'
+            amount_html = f'<div style="font-weight:600;color:var(--acc)">{_amt_exact(rec_paise)}</div><div style="font-size:11px;color:var(--ts)">recoverable · if confirmed</div>'
         recovery_rows.append(f"""
       <tr class="recov-row">
         <td class="mono" style="font-weight:600;color:var(--acc)">#{i}</td>

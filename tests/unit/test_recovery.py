@@ -437,6 +437,12 @@ def test_recovery_cli_exposure_format_keeps_paise():
     assert _fmt_inr_exact(2950) == "₹29.50"
 
 
+def test_recovery_cli_exposure_format_uses_indian_grouping_above_a_lakh():
+    # ₹10,00,000.00 in Indian lakh/crore grouping — NOT the Western ₹1,000,000.00 (Qodo #33 review-2).
+    assert _fmt_inr_exact(1000000_00) == "₹10,00,000.00"
+    assert _fmt_inr_exact(-1234567_89) == "-₹12,34,567.89"
+
+
 def test_build_recovery_plan_capping_with_note():
     """When actions exceed max_actions, output is capped and a note is recorded."""
     lines = []
