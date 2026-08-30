@@ -58,7 +58,12 @@ def test_public_reconcile_propagates_nonfirst_duplicate():
     assert fee_gst(results, [wrong, right]).total_recoverable_paise == 126
     packets = build_proof_packets([line], [attr], results, [wrong, right], fee_gst(results, [wrong, right]))
     assert packets[0]["settlement"]["covered_entities"][0]["row_id"] == "recon_1"
+    assert packets[0]["fee_gst_recoverable_inr"] == "₹1.26"
     assert build_journal_entries(results, [wrong, right])[0].balanced
+    entry = build_journal_entries(results, [wrong, right])[0]
+    assert entry.utr == right.settlement_utr
+    assert any(x.debit_paise == 574 for x in entry.lines)
+    assert not any(x.debit_paise == 82 for x in entry.lines)
     inv = investigate(line, attr, results[0], [wrong, right], ReconIndex([wrong, right]))
     assert inv.variance_paise == 0  # expected net came from the selected second row
 
@@ -68,3 +73,14 @@ def test_load_recon_ignores_duplicate_vendor_ids(tmp_path):
     p.write_text(json.dumps([{"entity_id":"x","type":"payment","amount":1,"credit":1,"row_id":"dup"},{"entity_id":"x","type":"payment","amount":2,"credit":2,"row_id":"dup"}]))
     rows = load_recon(str(p))
     assert [r.row_id for r in rows] == ["recon_0", "recon_1"]
+
+
+def test_proof_and_investigation_fail_closed_on_identity_mismatch():
+    row = _row(100, 18)
+    rec = ReconciliationResult("k", [("payment", "same")], 10000, 10000, 0, True, ["missing"])
+    line = BankCreditLine("k", date(2026, 1, 1), 10000, "RZP", None, True)
+    attr = RailAttribution("k", Rail.RAZORPAY_SETTLEMENT.value, .99, "A", [EvidenceItem("utr_exact", "exact", 1)])
+    with pytest.raises(ValueError):
+        build_proof_packets([line], [attr], [rec], [row], fee_gst([], []))
+    with pytest.raises(ValueError):
+        investigate(line, attr, rec, [row], ReconIndex([row]))
