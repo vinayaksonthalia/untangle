@@ -111,7 +111,6 @@ _RATE_WINDOW_SECONDS = 60.0
 _RATE_LIMIT = 20
 _RATE_LOCK = threading.Lock()
 _RATE_BUCKETS: dict[str, list[float]] = {}
-_MAX_REQUEST_BYTES = _MAX_BYTES * 3 + 1024 * 1024
 _MAX_VERIFY_BYTES = 512 * 1024
 _RECONCILE_SLOTS = 2
 _RECONCILE_TIMEOUT_SECONDS = 90.0
@@ -136,17 +135,14 @@ async def safety_middleware(request: Request, call_next):
         _LOG.info("request_id=%s method=%s status=%s latency_ms=%.1f", request_id, request.method,
                   response.status_code, (time.perf_counter() - started) * 1000)
         return response
-    # Multipart uploads are bounded again while streaming each individual file in _save.  The
-    # aggregate bound prevents a client from sending an unbounded multipart envelope.
-    if request.url.path in {"/reconcile", "/api/reconcile"}:
-        length = request.headers.get("content-length")
-        if length and (not length.isdigit() or int(length) > _MAX_REQUEST_BYTES):
-            response = JSONResponse({"detail": "Request body is too large."}, status_code=413)
-            return finish(response)
     if request.url.path in {"/reconcile", "/api/reconcile", "/api/verify"}:
         client = request.client.host if request.client else "unknown"
         now = time.monotonic()
         with _RATE_LOCK:
+            if len(_RATE_BUCKETS) >= 4096 and client not in _RATE_BUCKETS:
+                # Hard cap: evict the least-recently-seen bucket, even when all entries are active.
+                oldest = min(_RATE_BUCKETS, key=lambda key: _RATE_BUCKETS[key][-1])
+                del _RATE_BUCKETS[oldest]
             if len(_RATE_BUCKETS) > 4096:
                 _RATE_BUCKETS = {key: values for key, values in _RATE_BUCKETS.items()
                                  if values and now - values[-1] < _RATE_WINDOW_SECONDS}
@@ -256,12 +252,16 @@ async def _run_safely_async(tmp: str, bank: str, recon: str, ledger: str) -> dic
     """
     # Read inputs before dispatching.  The worker owns its TemporaryDirectory, so an HTTP timeout
     # cannot delete files underneath a still-running thread when the request handler exits.
-    inputs = tuple(open(path, "rb").read() for path in (bank, recon, ledger))
+    inputs_list = []
+    for path in (bank, recon, ledger):
+        with open(path, "rb") as fh:
+            inputs_list.append(fh.read())
+    inputs = tuple(inputs_list)
 
     def worker() -> dict:
         with tempfile.TemporaryDirectory(prefix="untangle_worker_") as worker_tmp:
             paths = []
-            for name, data in zip(("bank_statement.csv", "recon_report.json", "order_ledger.csv"), inputs):
+            for name, data in zip(("bank_statement.csv", "recon_report.json", "order_ledger.csv"), inputs, strict=True):
                 path = os.path.join(worker_tmp, name)
                 with open(path, "wb") as fh:
                     fh.write(data)

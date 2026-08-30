@@ -18,7 +18,10 @@ seconds on the free tier — that is Render cold-start, not the app.
 ## Public demo safeguards
 
 `/healthz` provides a non-sensitive readiness/version response. The app adds request IDs, latency-only
-structured logs, security headers, aggregate upload limits, and bounded JSON verification payloads.
+structured logs, security headers, per-file upload limits, and bounded JSON verification payloads.
+Per-file limits are enforced while reading multipart parts; aggregate multipart size is rejected early
+only when a valid `Content-Length` is supplied. Chunked requests rely on per-file limits and should be
+capped at the reverse proxy in production.
 Reconciliation is limited to two worker slots and returns `503` when saturated; a wait beyond 90 seconds
 returns `504`. A timed-out Python thread may finish in the background, so its slot remains occupied until
 it returns and no cancellation is claimed.
