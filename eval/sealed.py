@@ -31,6 +31,7 @@ from eval.metrics import format_ci, score
 
 DEFAULT_SEALED_SEED = 1337
 DEFAULT_SEALED_DIR = "data/sealed"
+MAX_MANIFEST_BYTES = 256 * 1024
 
 
 # Display totals copied from the dev report and later formatted numerically in the comparison.
@@ -94,7 +95,10 @@ def _open_regular_file(path: str, *, label: str):
 def _read_regular_file(path: str, *, label: str) -> bytes:
     """Read a small regular file such as the sealed manifest into memory."""
     with _open_regular_file(path, label=label) as fh:
-        return fh.read()
+        data = fh.read(MAX_MANIFEST_BYTES + 1)
+        if len(data) > MAX_MANIFEST_BYTES:
+            raise SealedIntegrityError(f"{label} exceeds maximum size of {MAX_MANIFEST_BYTES:,} bytes")
+        return data
 
 
 def _hash_file(path: str) -> str:
