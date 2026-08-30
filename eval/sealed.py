@@ -302,6 +302,16 @@ def compare_solver_eval(sealed_dir: str = DEFAULT_SEALED_DIR) -> dict:
 
 def run_sealed_holdout_comparison(seed: int = DEFAULT_SEALED_SEED, sealed_dir: str = DEFAULT_SEALED_DIR) -> int:
     print("\n=== Generator-Blind Sealed Holdout Runner (E3) ===\n")
+    # The holdout is FROZEN at DEFAULT_SEALED_SEED and authenticated against a committed trust anchor,
+    # so only that seed is supported. Reject any other seed UP FRONT — never generate a dataset and
+    # only then have verification reject it (Qodo #44 review).
+    if seed != DEFAULT_SEALED_SEED:
+        print(
+            f"Only the frozen sealed seed {DEFAULT_SEALED_SEED} is supported (its manifest is bound to "
+            f"a committed trust anchor); got --seed {seed}.",
+            file=sys.stderr,
+        )
+        return 2
     print(f"Generating frozen sealed dataset (seed={seed}) in separate process...")
     manifest = generate_sealed_holdout(seed, sealed_dir)
     print("Frozen sealed manifest hashes:")
