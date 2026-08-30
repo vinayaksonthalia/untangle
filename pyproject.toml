@@ -44,7 +44,12 @@ exclude_also = [
 skip_empty = true
 
 [tool.mutmut]
-source_paths = ["engine/reconcile.py"]
+# source_paths is the tree COPIED into mutmut's isolated mutants/ workspace, not the mutation
+# selection. reconcile.py imports sibling engine modules (covered, evidence, models), so the whole
+# engine package must be present or the isolated run fails to import. only_mutate then narrows the
+# actual mutation to reconcile.py, keeping the reconciliation-only scope.
+source_paths = ["engine"]
+only_mutate = ["engine/reconcile.py"]
 pytest_add_cli_args_test_selection = ["tests/unit/test_reconcile.py"]
 
 [tool.ruff]
