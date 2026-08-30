@@ -85,12 +85,12 @@ def issue_certificate(report: dict) -> dict:
     The content hash is always present (tamper-evident); the ECDSA signature is added only when the
     crypto extra is installed and $UNTANGLE_SIGNING_KEY is set. Fully deterministic."""
     cert = build_close_certificate(report)
+    # Bind the optional raw report inside the signed/content-hashed certificate body. Keeping this
+    # digest outside the body would let an attacker replace both the report and its outer digest.
+    cert["report_sha256"] = hashlib.sha256(_canonical(report)).hexdigest()
     body = _canonical(cert)
     envelope: dict[str, Any] = {
         "certificate": cert,
-        # The certificate intentionally omits raw inputs. Bind an optionally supplied report
-        # separately so a verifier cannot mistake an arbitrary attached report for issuer evidence.
-        "report_sha256": hashlib.sha256(_canonical(report)).hexdigest(),
         "content_sha256": hashlib.sha256(body).hexdigest(),
         "signed": False,
         # Honest framing (from the Lethe pattern): by default this is a tamper-evident content hash,
@@ -152,7 +152,7 @@ def verify_certificate(payload: dict) -> dict:
     packets_verified = packets_passed = None
     report_binding_valid: bool | None = None
     if embedded_report is not None:
-        expected_report_hash = payload.get("report_sha256")
+        expected_report_hash = cert.get("report_sha256")
         report_binding_valid = (
             isinstance(expected_report_hash, str)
             and hashlib.sha256(_canonical(embedded_report)).hexdigest() == expected_report_hash

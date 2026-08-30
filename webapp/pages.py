@@ -820,14 +820,14 @@ function esc(s){ var d=document.createElement('span'); d.textContent=(s==null?''
 function show(d){
   var box=document.getElementById('vres'); box.style.display='block';
   if(d && d.error){ box.innerHTML='<div class="vverdict"><span class="vcheck" style="background:#b23b3b">\\u2717</span>'+esc(d.error)+'</div>'; return; }
-  var authentic = (d.hash_matches===true) && (d.signature_valid!==false) &&
+  var authentic = (d.signed===true) && (d.hash_matches===true) && (d.signature_valid===true) &&
                   (d.report_binding_valid!==false) &&
                   (d.packets_passed==null || d.packets_passed===d.packets_verified);
   var col = authentic ? 'var(--ok)' : '#b23b3b';
   var pk = d.packets_verified!=null ? ('<div class="k">Proof packets re-verified</div><div class="v">'+d.packets_passed+' / '+d.packets_verified+' pass</div>') : '';
   box.innerHTML =
     '<div class="vverdict"><span class="vcheck" style="background:'+col+'">'+(authentic?'\\u2713':'\\u2717')+'</span>'+
-      (authentic?'Authentic &amp; untampered':'Verification failed')+'</div>'+
+      (authentic?'Authentic &amp; untampered':(d.signed===false && d.hash_matches===true ? 'Hash consistent (unsigned)' : 'Verification failed'))+'</div>'+\
     '<div class="vkv">'+
       '<div class="k">Content hash re-derived</div><div class="v vmono">'+esc(d.content_hash||'')+'</div>'+
       '<div class="k">Hash matches the certificate</div><div class="v">'+vpill(d.hash_matches)+'</div>'+

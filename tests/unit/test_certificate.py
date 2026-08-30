@@ -26,7 +26,7 @@ def test_issue_certificate_is_content_hashed_and_verifies_unsigned(monkeypatch):
     rep = _report()
     env = issue_certificate(rep)
     assert env["signed"] is False
-    assert len(env["report_sha256"]) == 64
+    assert len(env["certificate"]["report_sha256"]) == 64
     assert len(env["content_sha256"]) == 64
     env["report"] = rep
     v = verify_certificate(env)
@@ -49,10 +49,28 @@ def test_attached_unbound_or_different_report_is_not_authenticated(monkeypatch):
     assert result["ok"] is False
 
 
+def test_signed_certificate_rejects_replaced_report_even_if_outer_fields_are_replaced(monkeypatch):
+    """The report digest must be inside the issuer-signed certificate body."""
+    if not _CRYPTO_AVAILABLE:
+        import pytest
+        pytest.skip("cryptography extra not installed")
+    monkeypatch.setenv("UNTANGLE_SIGNING_KEY", generate_signing_key())
+    original = _report()
+    env = issue_certificate(original)
+    replacement = copy.deepcopy(original)
+    replacement["totals"]["n_bank_lines"] += 1
+    env["report"] = replacement
+    env["report_sha256"] = "attacker-controlled"  # ignored; no longer a signed field
+    result = verify_certificate(env)
+    assert result["signature_valid"] is True
+    assert result["report_binding_valid"] is False
+    assert result["ok"] is False
+
+
 def test_legacy_envelope_with_unbound_attached_report_is_rejected(monkeypatch):
     monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
     env = issue_certificate(_report())
-    env.pop("report_sha256")
+    env["certificate"].pop("report_sha256")
     env["report"] = _report()
     result = verify_certificate(env)
     assert result["report_binding_valid"] is False
