@@ -91,3 +91,57 @@ def test_credit_debit_direction_is_unambiguous(tmp_path: Path, amounts):
     p.write_text(f"Date,Narration,Credit,Debit\n01/07/2026,broken,{amounts[0]},{amounts[1]}\n", encoding="utf-8")
     with pytest.raises(InputError, match="exactly one"):
         load_bank(str(p))
+
+
+@pytest.mark.parametrize("column", ["Credit", "Debit"])
+def test_negative_direction_amount_fails_closed(tmp_path: Path, column: str):
+    p = tmp_path / "negative.csv"
+    credit = "-100.00" if column == "Credit" else ""
+    debit = "-100.00" if column == "Debit" else ""
+    p.write_text(
+        f"Date,Narration,Credit,Debit\n01/07/2026,broken,{credit},{debit}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(InputError, match="non-negative"):
+        load_bank(str(p))
+
+
+@pytest.mark.parametrize("column,marker", [("Credit", "DR"), ("Debit", "CR")])
+def test_contradictory_accounting_marker_fails_closed(tmp_path: Path, column: str, marker: str):
+    # A DR marker in the credit column (or CR in debit) contradicts the column's direction and must
+    # be rejected, not silently stripped and assigned the column's sign.
+    p = tmp_path / "marker.csv"
+    credit = f"100 {marker}" if column == "Credit" else ""
+    debit = f"100 {marker}" if column == "Debit" else ""
+    p.write_text(
+        f"Date,Narration,Credit,Debit\n01/07/2026,mismatch,{credit},{debit}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(InputError, match="contradicts"):
+        load_bank(str(p))
+
+
+def test_matching_accounting_marker_is_accepted(tmp_path: Path):
+    # CR in credit / DR in debit agree with the column and parse normally.
+    p = tmp_path / "ok_marker.csv"
+    p.write_text(
+        "Date,Narration,Credit,Debit\n"
+        "01/07/2026,in,500 CR,\n"
+        "02/07/2026,out,,250 DR\n",
+        encoding="utf-8",
+    )
+    lines = load_bank(str(p))
+    assert lines[0].amount_paise == 50000 and lines[0].is_credit
+    assert lines[1].amount_paise == -25000 and not lines[1].is_credit
+
+
+def test_comma_prefixed_negative_is_rejected(tmp_path: Path):
+    # A quoted ",-100.00" does not start with '-' until commas are removed; validation must happen
+    # AFTER normalization or the negative slips through and gets the column's sign.
+    p = tmp_path / "comma_neg.csv"
+    p.write_text(
+        'Date,Narration,Credit,Debit\n01/07/2026,sneaky,",-100.00",\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(InputError, match="non-negative"):
+        load_bank(str(p))

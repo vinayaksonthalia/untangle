@@ -44,8 +44,6 @@ def _rupees_to_paise(raw: str, *, ctx: str) -> int:
     """Parse a rupee string to integer paise. Rounds (never truncates) sub-paise fractions using
     banker's-safe half-up, so 12345.789 → 1234579 paise, not 1234578. Decimal keeps it exact."""
     raw = (raw or "").strip().replace(",", "")
-    # Some exports suffix amount columns with an accounting marker.
-    raw = raw.removesuffix(" CR").removesuffix(" DR").strip()
     if not raw:
         return 0
     try:
@@ -56,6 +54,36 @@ def _rupees_to_paise(raw: str, *, ctx: str) -> int:
             f"Bank statement: could not parse amount {raw!r} in {ctx}. "
             f"Expected a rupee value like 12345.67."
         ) from exc
+
+
+_MARKER_COLUMN = {"CR": "credit", "DR": "debit"}
+
+
+def _parse_direction_amount(raw: str, *, column: str, ctx: str) -> int:
+    """Parse a bank credit/debit cell to NON-NEGATIVE paise.
+
+    Direction is decided by the column the value sits in, never by a sign or an accounting marker.
+    A ``CR``/``DR`` marker, if present, must AGREE with that column (``CR`` only in credit, ``DR``
+    only in debit) or the row is rejected — contradictory direction data must never be silently
+    re-signed. A signed amount is rejected after comma normalization, so ``",-100.00"`` cannot slip
+    a negative past the check; a value that rounds to zero but is written negative is rejected too.
+    """
+    text = (raw or "").strip()
+    for marker in ("CR", "DR"):
+        if text.upper().endswith(" " + marker):
+            if _MARKER_COLUMN[marker] != column:
+                raise InputError(
+                    f"Bank statement {ctx}: a {marker} marker in the {column} column contradicts "
+                    "its direction; put the amount in the column that matches the marker."
+                )
+            text = text[: len(text) - len(marker) - 1].rstrip()
+            break
+    if text.replace(",", "").lstrip().startswith("-"):
+        raise InputError(
+            f"Bank statement {ctx}: credit/debit amounts must be non-negative ({raw!r}); "
+            "use the appropriate column to indicate direction."
+        )
+    return _rupees_to_paise(text, ctx=ctx)
 
 
 def _parse_date(raw: str, *, ctx: str) -> date:
@@ -191,9 +219,9 @@ def load_bank(path: str) -> list[BankCreditLine]:
                     raise InputError(f"Bank statement row {line_no}: exactly one of credit or debit must be populated.")
                 is_credit = bool(credit_raw)
                 if is_credit:
-                    amount = _rupees_to_paise(credit_raw, ctx=f"row {line_no}")
+                    amount = _parse_direction_amount(credit_raw, column="credit", ctx=f"row {line_no}")
                 else:
-                    amount = -_rupees_to_paise(debit_raw, ctx=f"row {line_no}")
+                    amount = -_parse_direction_amount(debit_raw, column="debit", ctx=f"row {line_no}")
                 bank_ref = (row.get(ref_col) or "").strip() if ref_col else None
                 vd_raw = (row.get("value_date") or "").strip()
                 parsed_date = _parse_date(vd_raw, ctx=f"Bank statement row {line_no}")
