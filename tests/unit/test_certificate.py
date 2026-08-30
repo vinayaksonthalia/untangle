@@ -7,6 +7,8 @@ import json
 import subprocess
 import sys
 
+import pytest
+
 from engine.certificate import (
     _CRYPTO_AVAILABLE,
     build_close_certificate,
@@ -26,12 +28,97 @@ def test_issue_certificate_is_content_hashed_and_verifies_unsigned(monkeypatch):
     rep = _report()
     env = issue_certificate(rep)
     assert env["signed"] is False
+    assert len(env["certificate"]["report_sha256"]) == 64
     assert len(env["content_sha256"]) == 64
     env["report"] = rep
     v = verify_certificate(env)
     assert v["ok"] is True
     assert v["hash_matches"] is True
+    assert v["authenticated"] is False
     assert v["packets_passed"] == v["packets_verified"] > 0
+    assert v["report_binding_valid"] is True
+
+
+def test_attached_unbound_or_different_report_is_not_authenticated(monkeypatch):
+    """An attached report must be the exact report used when the envelope was issued."""
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    original = _report()
+    env = issue_certificate(original)
+    attached = copy.deepcopy(original)
+    attached["totals"]["n_bank_lines"] += 1
+    env["report"] = attached
+    result = verify_certificate(env)
+    assert result["report_binding_valid"] is False
+    assert result["ok"] is False
+
+
+@pytest.mark.parametrize("bad_report", [[], ["x"], "a report", 123, None])
+def test_present_but_malformed_report_fails_binding(monkeypatch, bad_report):
+    """A `report` key present with a non-object value is a bad attachment: it must fail binding and
+    verification, not be silently treated as an absent report (Qodo #38)."""
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    env = issue_certificate(_report())
+    env["report"] = bad_report
+    result = verify_certificate(env)
+    assert result["report_binding_valid"] is False
+    assert result["ok"] is False
+
+
+def test_uncanonicalizable_object_report_fails_without_raising(monkeypatch):
+    """A dict report that cannot be JSON-canonicalized (cyclic reference, or a non-serializable
+    value) must fail binding, not raise — verify_certificate is documented to never raise (Qodo #38)."""
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+
+    cyclic: dict = {"totals": {}}
+    cyclic["totals"]["self"] = cyclic  # circular reference -> json.dumps raises ValueError
+    non_serializable = {"totals": {1, 2, 3}}  # a set -> json.dumps raises TypeError
+    # A non-finite amount survives json.dumps but makes round(inf) raise OverflowError downstream.
+    non_finite = {"reconciled_credits": [{"fee_gst_recoverable_inr": float("inf")}]}
+
+    for bad in (cyclic, non_serializable, non_finite):
+        env = issue_certificate(_report())
+        env["report"] = bad
+        result = verify_certificate(env)  # must not raise
+        assert result["report_binding_valid"] is False
+        assert result["ok"] is False
+
+
+def test_absent_report_keeps_standalone_certificate_valid(monkeypatch):
+    """A fully absent `report` key retains standalone-certificate behaviour (binding not applicable)."""
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    env = issue_certificate(_report())
+    env.pop("report", None)
+    result = verify_certificate(env)
+    assert result["report_binding_valid"] is None
+    assert result["ok"] is True
+
+
+def test_signed_certificate_rejects_replaced_report_even_if_outer_fields_are_replaced(monkeypatch):
+    """The report digest must be inside the issuer-signed certificate body."""
+    if not _CRYPTO_AVAILABLE:
+        import pytest
+        pytest.skip("cryptography extra not installed")
+    monkeypatch.setenv("UNTANGLE_SIGNING_KEY", generate_signing_key())
+    original = _report()
+    env = issue_certificate(original)
+    replacement = copy.deepcopy(original)
+    replacement["totals"]["n_bank_lines"] += 1
+    env["report"] = replacement
+    env["report_sha256"] = "attacker-controlled"  # ignored; no longer a signed field
+    result = verify_certificate(env)
+    assert result["signature_valid"] is True
+    assert result["report_binding_valid"] is False
+    assert result["ok"] is False
+
+
+def test_legacy_envelope_with_unbound_attached_report_is_rejected(monkeypatch):
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    env = issue_certificate(_report())
+    env["certificate"].pop("report_sha256")
+    env["report"] = _report()
+    result = verify_certificate(env)
+    assert result["report_binding_valid"] is False
+    assert result["ok"] is False
 
 
 def test_tampered_certificate_breaks_the_hash(monkeypatch):
@@ -59,6 +146,7 @@ def test_signed_certificate_verifies_and_forgery_is_detected(monkeypatch):
     assert env["signed"] is True and "signature" in env and "public_key_pem" in env
     v = verify_certificate(env)
     assert v["signature_valid"] is True and v["ok"] is True
+    assert v["authenticated"] is True
     # Forge: tamper a signed certificate → signature must fail.
     env["certificate"]["proven_razorpay_count"] = 1
     vf = verify_certificate(env)

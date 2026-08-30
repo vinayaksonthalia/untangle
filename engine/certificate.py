@@ -22,7 +22,7 @@ from engine.verifier import verify_report
 # Optional asymmetric signing (adapted from the Obliviate erasure-certificate pattern). The core
 # stays stdlib-only: signing activates ONLY when the `cryptography` extra is installed AND a signing
 # key is configured; otherwise the certificate is still built and content-hashed (tamper-evident),
-# just unsigned — a judge can still recompute the hash and re-verify every packet.
+# just unsigned — anyone can recompute the hash and inspect the bound report's packet checks.
 try:  # optional extra: pip install "untangle[crypto]"
     from cryptography.hazmat.primitives import hashes as _hashes
     from cryptography.hazmat.primitives import serialization as _ser
@@ -40,7 +40,7 @@ def _inr(paise: int) -> str:
     return f"₹{paise / 100:,.2f}"
 
 
-def _canonical(obj: dict) -> bytes:
+def _canonical(obj: Any) -> bytes:
     """Deterministic JSON encoding used for hashing and signing (sorted keys, no whitespace)."""
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
 
@@ -85,6 +85,9 @@ def issue_certificate(report: dict) -> dict:
     The content hash is always present (tamper-evident); the ECDSA signature is added only when the
     crypto extra is installed and $UNTANGLE_SIGNING_KEY is set. Fully deterministic."""
     cert = build_close_certificate(report)
+    # Bind the optional raw report inside the signed/content-hashed certificate body. Keeping this
+    # digest outside the body would let an attacker replace both the report and its outer digest.
+    cert["report_sha256"] = hashlib.sha256(_canonical(report)).hexdigest()
     body = _canonical(cert)
     envelope: dict[str, Any] = {
         "certificate": cert,
@@ -95,7 +98,8 @@ def issue_certificate(report: dict) -> dict:
         # re-derivable from the source files (re-run the verifier), never "trust our attestation".
         "note": (
             "Tamper-evident content hash (SHA-256) over the certificate. Not a cryptographic "
-            "signature. Every verdict is independently re-derivable from the source report."
+            "signature. Packet checks can be re-run against the attached bound report; this does not "
+            "re-audit the original bank, settlement, or ledger source files."
         ),
     }
     key = _signing_key()
@@ -106,15 +110,17 @@ def issue_certificate(report: dict) -> dict:
         envelope["signed"] = True
         envelope["note"] = (
             "ECDSA (P-256) signed and tamper-evident. Re-derive the SHA-256 hash and check the "
-            "signature against the public key — a tampered field breaks the hash, a forgery fails "
-            "the signature. Every verdict is also independently re-derivable from the source report."
+            "signature against this deployment's pinned issuer key — a tampered field breaks the "
+            "hash, a forgery fails the signature. Packet checks can be re-run against the attached "
+            "bound report; this does not re-audit the original bank, settlement, or ledger source files."
         )
     return envelope
 
 
 def verify_certificate(payload: dict) -> dict:
     """Independently verify a close-certificate envelope: re-derive the SHA-256 content hash, re-run
-    every proof-packet check, and (when signed) check the ECDSA signature against the public key.
+    every proof-packet check, and (when signed) check the ECDSA signature against this deployment's
+    pinned issuer key.
     A tampered field breaks the hash; a forged certificate fails the signature. Never raises."""
     if not isinstance(payload, dict):
         return {"ok": False, "error": "payload is not a dict"}
@@ -143,18 +149,44 @@ def verify_certificate(payload: dict) -> dict:
             except Exception:  # InvalidSignature, malformed key/sig, etc. → not authenticated
                 signature_valid = False
 
-    # Independent re-verification of the packets referenced by the certificate's own report, if given.
-    embedded_report = payload.get("report") if isinstance(payload.get("report"), dict) else None
+    # Independent re-verification of an attached report is useful only when the report is bound to
+    # the report that was used at issuance. The raw report is omitted, but its digest is part of the
+    # signed/content-hashed certificate body.
+    # Distinguish an ABSENT report (standalone certificate — fine) from a PRESENT but malformed one.
+    # A `report` key holding anything other than an object (list, string, number, null) is a bad
+    # attachment and MUST fail binding, never be silently treated as "no report" (Qodo #38).
+    raw_report = payload.get("report")
+    report_present = "report" in payload
+    embedded_report = raw_report if isinstance(raw_report, dict) else None
     packets_verified = packets_passed = None
-    if embedded_report is not None:
-        results = verify_report(embedded_report)
-        pkt = [r for r in results if r.packet_line_key != "report:audit_root"]
-        packets_verified = len(pkt)
-        packets_passed = sum(1 for r in pkt if r.ok)
+    report_binding_valid: bool | None = None
+    if report_present and embedded_report is None:
+        report_binding_valid = False
+    elif embedded_report is not None:
+        # A dict is not necessarily processable: cyclic references, non-serializable values, or
+        # non-finite numbers make _canonical / verify_report raise (ValueError, TypeError,
+        # RecursionError, OverflowError, ...). verify_certificate is documented to NEVER raise for
+        # any caller-supplied payload, so ANY failure here is treated as a malformed attachment
+        # (binding invalid) — this defensive boundary handles untrusted input, not our own bugs on
+        # the valid path.
+        try:
+            expected_report_hash = cert.get("report_sha256")
+            report_binding_valid = (
+                isinstance(expected_report_hash, str)
+                and hashlib.sha256(_canonical(embedded_report)).hexdigest() == expected_report_hash
+            )
+            results = verify_report(embedded_report)
+            pkt = [r for r in results if r.packet_line_key != "report:audit_root"]
+            packets_verified = len(pkt)
+            packets_passed = sum(1 for r in pkt if r.ok)
+        except Exception:  # noqa: BLE001 — never-raises contract on untrusted attachment input
+            report_binding_valid = False
+            packets_verified = packets_passed = None
 
     ok = (
         hash_matches
         and (sig is None or signature_valid is True)     # a claimed signature must be valid
+        and (report_binding_valid is not False)
         and (packets_passed is None or packets_passed == packets_verified)
     )
     return {
@@ -164,12 +196,14 @@ def verify_certificate(payload: dict) -> dict:
         "hash_matches": hash_matches,
         "signature_valid": signature_valid,
         "signed": bool(sig),
+        "authenticated": bool(sig) and signature_valid is True,
         # Issuer-attested packet verification recorded at issue time (Qodo #3: the standalone cert does
         # not embed the full report, so independent re-verification needs `report` supplied above; this
         # surfaces what the issuer attested, clearly distinct from an independent re-run).
         "attested_verification": cert.get("verification"),
         "packets_verified": packets_verified,
         "packets_passed": packets_passed,
+        "report_binding_valid": report_binding_valid,
         "summary": cert.get("summary"),
         "audit_root": cert.get("audit_root"),
     }
