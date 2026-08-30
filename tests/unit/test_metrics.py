@@ -161,3 +161,66 @@ def test_per_hard_case_and_calibration(tmp_path):
     top = [b for b in m["calibration"] if b["bin"] == "[0.9,1.0)"]
     assert top and top[0]["empirical_accuracy"] == 1.0
     assert m["conservation"]["pass"] is True
+
+
+def test_sealed_manifest_verification_binds_to_committed_anchor(tmp_path):
+    # The frozen holdout must pass; every tamper — an artifact edit, a SELF-CONSISTENT artifact+manifest
+    # edit, a wrong seed, or a missing manifest — must fail closed against the committed anchor so a
+    # modified benchmark is never scored as the frozen holdout (Qodo full-tree #4 + #44 review).
+    import hashlib
+    import shutil
+
+    from eval.sealed import (
+        DEFAULT_SEALED_SEED,
+        SealedIntegrityError,
+        _verify_sealed_manifest,
+        generate_sealed_holdout,
+    )
+
+    # Hermetic: build the frozen seed-1337 holdout here (not the gitignored data/sealed), so the test
+    # passes from a clean checkout via `make test` without CI's separate generation step (Qodo #44).
+    src = str(tmp_path / "frozen")
+    generate_sealed_holdout(DEFAULT_SEALED_SEED, src)
+    _verify_sealed_manifest(src)  # intact frozen holdout matches the committed anchor -> no raise
+
+    # (a) Artifact edited, manifest untouched -> per-file hash mismatch.
+    d1 = tmp_path / "edited"
+    shutil.copytree(src, d1)
+    (d1 / "bank_statement.csv").write_text("TAMPERED", encoding="utf-8")
+    with pytest.raises(SealedIntegrityError):
+        _verify_sealed_manifest(str(d1))
+
+    # (b) Artifact AND its manifest hash edited to stay self-consistent -> the committed files-digest
+    #     anchor catches it (this is the case a beside-the-artifacts manifest could not defend).
+    d2 = tmp_path / "self_consistent"
+    shutil.copytree(src, d2)
+    (d2 / "bank_statement.csv").write_text("TAMPERED", encoding="utf-8")
+    man = json.loads((d2 / "manifest.json").read_text(encoding="utf-8"))
+    man["files"]["bank_statement.csv"] = hashlib.sha256(b"TAMPERED").hexdigest()
+    (d2 / "manifest.json").write_text(json.dumps(man), encoding="utf-8")
+    with pytest.raises(SealedIntegrityError):
+        _verify_sealed_manifest(str(d2))
+
+    # (c) Wrong seed and (d) missing manifest.
+    d3 = tmp_path / "wrong_seed"
+    shutil.copytree(src, d3)
+    man = json.loads((d3 / "manifest.json").read_text(encoding="utf-8"))
+    man["seed"] = 999
+    (d3 / "manifest.json").write_text(json.dumps(man), encoding="utf-8")
+    with pytest.raises(SealedIntegrityError):
+        _verify_sealed_manifest(str(d3))
+    empty = tmp_path / "no_manifest"
+    empty.mkdir()
+    with pytest.raises(SealedIntegrityError):
+        _verify_sealed_manifest(str(empty))
+
+
+def test_run_sealed_rejects_non_frozen_seed_before_generating(tmp_path):
+    # A non-frozen seed must be rejected UP FRONT (return 2) without generating a holdout, rather than
+    # generating one that verification then rejects (Qodo #44 review).
+    from eval.sealed import DEFAULT_SEALED_SEED, run_sealed_holdout_comparison
+
+    target = tmp_path / "should_not_exist"
+    rc = run_sealed_holdout_comparison(seed=DEFAULT_SEALED_SEED + 1, sealed_dir=str(target))
+    assert rc == 2
+    assert not target.exists()  # rejected before any generation
