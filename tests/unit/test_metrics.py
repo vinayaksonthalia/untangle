@@ -161,3 +161,32 @@ def test_per_hard_case_and_calibration(tmp_path):
     top = [b for b in m["calibration"] if b["bin"] == "[0.9,1.0)"]
     assert top and top[0]["empirical_accuracy"] == 1.0
     assert m["conservation"]["pass"] is True
+
+
+def test_sealed_manifest_verification_rejects_tampered_or_missing(tmp_path):
+    # A modified holdout file, a missing artifact, or a missing manifest must all fail closed, so a
+    # tampered benchmark can never be scored as the frozen sealed holdout (Qodo full-tree #4).
+    from eval.sealed import (
+        _SEALED_ARTIFACTS,
+        SealedIntegrityError,
+        _hash_file,
+        _verify_sealed_manifest,
+    )
+
+    hashes = {}
+    for fname in _SEALED_ARTIFACTS:
+        p = tmp_path / fname
+        p.write_text(f"content-of-{fname}", encoding="utf-8")
+        hashes[fname] = _hash_file(str(p))
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"seed": 1337, "files": hashes}), encoding="utf-8")
+    _verify_sealed_manifest(str(tmp_path))  # intact holdout -> no raise
+
+    (tmp_path / "bank_statement.csv").write_text("TAMPERED", encoding="utf-8")
+    with pytest.raises(SealedIntegrityError):
+        _verify_sealed_manifest(str(tmp_path))
+
+    empty = tmp_path / "no_manifest"
+    empty.mkdir()
+    with pytest.raises(SealedIntegrityError):
+        _verify_sealed_manifest(str(empty))

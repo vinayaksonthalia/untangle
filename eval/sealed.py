@@ -102,6 +102,42 @@ def generate_sealed_holdout(seed: int, out_dir: str) -> dict[str, str]:
     return manifest
 
 
+_SEALED_ARTIFACTS = ("bank_statement.csv", "recon_report.json", "order_ledger.csv", "ground_truth.json")
+
+
+class SealedIntegrityError(Exception):
+    """The sealed holdout failed manifest verification — refuse to score a tampered benchmark."""
+
+
+def _verify_sealed_manifest(sealed_dir: str) -> None:
+    """Fail closed BEFORE scoring: require the manifest and every expected artifact, and confirm each
+    file's SHA-256 matches its frozen manifest hash. A modified bank/recon/ledger/ground-truth file
+    must never be accepted as the frozen holdout — that would make the sealed results untrustworthy
+    and non-reproducible (Qodo full-tree #4)."""
+    manifest_path = os.path.join(sealed_dir, "manifest.json")
+    if not os.path.exists(manifest_path):
+        raise SealedIntegrityError(f"sealed manifest not found: {manifest_path}")
+    try:
+        with open(manifest_path, encoding="utf-8") as fh:
+            expected = json.load(fh)["files"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise SealedIntegrityError(f"sealed manifest is unreadable or malformed: {exc}") from exc
+    if not isinstance(expected, dict):
+        raise SealedIntegrityError("sealed manifest 'files' is not an object")
+    for fname in _SEALED_ARTIFACTS:
+        if fname not in expected:
+            raise SealedIntegrityError(f"sealed manifest has no hash for required artifact {fname!r}")
+        fpath = os.path.join(sealed_dir, fname)
+        if not os.path.exists(fpath):
+            raise SealedIntegrityError(f"sealed artifact missing: {fname}")
+        actual = _hash_file(fpath)
+        if actual != expected[fname]:
+            raise SealedIntegrityError(
+                f"sealed artifact {fname} hash mismatch (tampered holdout): "
+                f"manifest={expected[fname]}, actual={actual}"
+            )
+
+
 def evaluate_sealed(
     sealed_dir: str,
     threshold: float = DEFAULT_THRESHOLD,
@@ -109,6 +145,7 @@ def evaluate_sealed(
     global_solver: bool = False,
 ) -> dict:
     """Score the sealed holdout in a single run."""
+    _verify_sealed_manifest(sealed_dir)  # reject a tampered/incomplete holdout before loading anything
     bank_path = os.path.join(sealed_dir, "bank_statement.csv")
     recon_path = os.path.join(sealed_dir, "recon_report.json")
     truth_path = os.path.join(sealed_dir, "ground_truth.json")
