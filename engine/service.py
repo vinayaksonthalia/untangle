@@ -15,6 +15,9 @@ from engine.ingest import InputError, load_bank_bytes, load_ledger_bytes, load_r
 from engine.llm.client import LLMClient
 from engine.llm.narrate import resolve_unknowns
 
+MAX_INPUT_BYTES = 15 * 1024 * 1024
+_SNAPSHOT_CHUNK_BYTES = 64 * 1024
+
 
 def reconcile_bytes(
     bank_bytes: bytes,
@@ -48,7 +51,17 @@ def reconcile_bytes(
 def read_input_snapshot(path: str, *, label: str, option: str) -> bytes:
     try:
         with open(path, "rb") as fh:
-            return fh.read()
+            chunks: list[bytes] = []
+            total = 0
+            while chunk := fh.read(min(_SNAPSHOT_CHUNK_BYTES, MAX_INPUT_BYTES + 1 - total)):
+                total += len(chunk)
+                if total > MAX_INPUT_BYTES:
+                    raise InputError(
+                        f"{label} is too large ({total:,} bytes read); maximum supported size is "
+                        f"{MAX_INPUT_BYTES:,} bytes."
+                    )
+                chunks.append(chunk)
+            return b"".join(chunks)
     except FileNotFoundError as exc:
         raise InputError(f"{label} not found: {path}. Check the {option} path.") from exc
 
