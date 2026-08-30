@@ -8,7 +8,7 @@ requires-python = ">=3.12"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "hypothesis>=6", "httpx"]
+dev = ["pytest>=8", "hypothesis>=6", "httpx", "pytest-cov>=5", "mutmut>=3.3"]
 web = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9"]
 # Optional: ECDSA-signed close certificates. The core is stdlib-only; without this extra (or a
 # signing key) the certificate is still built and content-hashed — tamper-evident, just unsigned.
@@ -30,6 +30,22 @@ testpaths = ["tests"]
 addopts = "-q"
 python_files = ["test_*.py"]
 pythonpath = ["."]
+
+[tool.coverage.run]
+branch = true
+source = ["engine", "eval", "generator", "ui", "webapp"]
+
+[tool.coverage.report]
+exclude_also = [
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
+skip_empty = true
+
+[tool.mutmut]
+source_paths = ["engine/reconcile.py", "engine/journal.py", "engine/recovery.py"]
+pytest_add_cli_args_test_selection = ["tests/unit"]
+runner = "python -m generator.generate --seed 42 --scale 1.0 --out data >/dev/null && python -m engine.cli run --bank data/bank_statement.csv --recon data/recon_report.json --ledger data/order_ledger.csv --out out/ --no-ai --seed 42 >/dev/null && python -m pytest -q"
 
 [tool.ruff]
 line-length = 100

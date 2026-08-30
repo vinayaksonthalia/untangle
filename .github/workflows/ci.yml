@@ -34,8 +34,8 @@ jobs:
         run: python -m eval.sealed
       - name: Run one pipeline (produces out/report.json for UI/eval tests)
         run: python -m engine.cli run --bank data/bank_statement.csv --recon data/recon_report.json --ledger data/order_ledger.csv --out out/
-      - name: Tests
-        run: python -m pytest
+      - name: Tests & coverage gate
+        run: python -m pytest --cov --cov-report=term-missing --cov-fail-under=65
       - name: Bandit (Python security SAST)
         run: bandit -r engine eval ui webapp generator -q --skip B101,B311,B404,B603,B110
 

@@ -9,7 +9,7 @@ TRUTH  ?= data/ground_truth.json
 OUT    ?= out/
 SEED   ?= 42
 
-.PHONY: help venv run eval ablation test lint why clean
+.PHONY: help venv run eval ablation test coverage mutation lint why clean
 
 help:
 	@echo "make venv     - create .venv and install dev deps (pytest, hypothesis, ruff)"
@@ -17,6 +17,8 @@ help:
 	@echo "make eval     - score out/report.json against blind ground truth"
 	@echo "make ablation - eval with AI on/off delta + latency + cost/1k"
 	@echo "make test     - run the full pytest suite"
+	@echo "make coverage - run tests with the enforced 65% branch-coverage floor"
+	@echo "make mutation - run targeted mutation testing for reconciliation/accounting"
 	@echo "make lint     - ruff check"
 
 venv:
@@ -38,6 +40,13 @@ why:
 
 test:
 	$(PY) -m pytest
+
+coverage:
+	$(PY) -m pytest --cov --cov-report=term-missing --cov-fail-under=65
+
+mutation:
+	$(PY) -m mutmut run
+	$(PY) -m mutmut results
 
 lint:
 	$(PY) -m ruff check engine eval tests
