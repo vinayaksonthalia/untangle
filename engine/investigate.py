@@ -206,6 +206,7 @@ def investigate(
     from collections import defaultdict
 
     associated_rows: list[ReconRow] = []
+    rows_by_id = {r.row_id or f"recon_{i}": r for i, r in enumerate(recon_rows)}
     rows_by_key: dict[tuple[str, str], list[ReconRow]] = defaultdict(list)
     for r in recon_rows:
         rows_by_key[(r.type, r.entity_id)].append(r)
@@ -213,7 +214,12 @@ def investigate(
     if reconciliation is not None and reconciliation.covered_entity_ids:
         expected_net = reconciliation.covered_net_paise
         _seen: dict[tuple[str, str], int] = defaultdict(int)
-        for k in reconciliation.covered_entity_ids:
+        for pos, k in enumerate(reconciliation.covered_entity_ids):
+            if reconciliation.covered_row_ids and pos < len(reconciliation.covered_row_ids):
+                row = rows_by_id.get(reconciliation.covered_row_ids[pos])
+                if row is not None:
+                    associated_rows.append(row)
+                continue
             bucket = rows_by_key.get(k, [])
             if _seen[k] < len(bucket):
                 associated_rows.append(bucket[_seen[k]])

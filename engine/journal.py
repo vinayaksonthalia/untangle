@@ -131,10 +131,16 @@ def build_journal_entries(
         rows_by_key[(r.type, r.entity_id)].append(r)
 
     entries: list[JournalEntry] = []
+    rows_by_id = {r.row_id or f"recon_{i}": r for i, r in enumerate(recon_rows)}
     for rec in sorted(reconciliations, key=lambda x: x.line_key):
         seen: dict[tuple[str, str], int] = defaultdict(int)
         covered = []
-        for k in rec.covered_entity_ids:
+        for pos, k in enumerate(rec.covered_entity_ids):
+            if rec.covered_row_ids and pos < len(rec.covered_row_ids):
+                row = rows_by_id.get(rec.covered_row_ids[pos])
+                if row is not None:
+                    covered.append(row)
+                continue
             bucket = rows_by_key.get(k, [])
             if seen[k] < len(bucket):
                 covered.append(bucket[seen[k]])

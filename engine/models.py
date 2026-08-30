@@ -77,6 +77,9 @@ class ReconRow:
     order_id: str | None
     method: str | None
     description: str | None
+    # Stable physical-row identity.  The public join key is not unique in malformed
+    # or vendor-exported reports, so downstream accounting must never re-select by it.
+    row_id: str | None = None
 
     @property
     def net_paise(self) -> int:
@@ -158,6 +161,7 @@ class ReconciliationResult:
     credit_amount_paise: int
     residual_paise: int
     balanced: bool
+    covered_row_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -167,6 +171,7 @@ class ReconciliationResult:
             "credit_amount_paise": self.credit_amount_paise,
             "residual_paise": self.residual_paise,
             "balanced": self.balanced,
+            **({"covered_row_ids": list(self.covered_row_ids)} if self.covered_row_ids else {}),
         }
 
 

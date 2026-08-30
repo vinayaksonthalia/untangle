@@ -35,7 +35,9 @@ class SettlementIndex:
         self.utr_to_sid: dict[str, str] = {}
         self.net_by_sid: dict[str, int] = {}
         self.date_by_sid: dict[str, object] = {}
-        for r in rows:
+        self.row_ids: dict[int, str] = {}
+        for i, r in enumerate(rows):
+            self.row_ids[id(r)] = r.row_id or f"recon_{i}"
             sid = r.settlement_id
             if not sid:
                 continue
@@ -163,6 +165,7 @@ def _make_result(
         credit_amount_paise=line.amount_paise,
         residual_paise=residual,
         balanced=True,
+        covered_row_ids=[sindex.row_ids[id(r)] for r in covered],
     )
 
 

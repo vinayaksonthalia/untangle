@@ -16,12 +16,14 @@ def fee_gst(
     reconciliations: list[ReconciliationResult],
     recon_rows: list[ReconRow],
 ) -> FeeGstRecovery:
+    by_row_id = {r.row_id or f"recon_{i}": r for i, r in enumerate(recon_rows)}
     by_id = {(r.type, r.entity_id): r for r in recon_rows}
     total = 0
     by_entity: list[tuple[str, int]] = []
     for rec in reconciliations:
-        for key in rec.covered_entity_ids:
-            row = by_id.get(tuple(key))
+        keys = rec.covered_row_ids or [None] * len(rec.covered_entity_ids)
+        for key, row_id in zip(rec.covered_entity_ids, keys):
+            row = by_row_id.get(row_id) if row_id else by_id.get(tuple(key))
             if row is not None and row.tax_paise:
                 total += row.tax_paise
                 by_entity.append((row.entity_id, row.tax_paise))

@@ -62,6 +62,7 @@ def build_proof_packets(
     # fee_gst use — so two entities of different types sharing an id can't collide (Qodo #3).
     tax_by_entity = {(r.type, r.entity_id): r.tax_paise for r in recon_rows}
     sid_by_entity = {(r.type, r.entity_id): r.settlement_id for r in recon_rows if r.settlement_id}
+    row_by_id = {r.row_id or f"recon_{i}": r for i, r in enumerate(recon_rows)}
 
     packets: list[dict] = []
     for a in attributions:
@@ -105,9 +106,17 @@ def build_proof_packets(
         settlement = None
         claimed_sids: set[str] = set()
         if rec is not None:
-            covered = [{"type": t, "entity_id": eid} for t, eid in rec.covered_entity_ids]
-            fee_gst_paise = sum(
-                tax_by_entity.get((t, eid), 0) for t, eid in rec.covered_entity_ids
+            covered = []
+            for i, (t, eid) in enumerate(rec.covered_entity_ids):
+                item = {"type": t, "entity_id": eid}
+                if rec.covered_row_ids and i < len(rec.covered_row_ids):
+                    item["row_id"] = rec.covered_row_ids[i]
+                covered.append(item)
+            covered_rows = [row_by_id.get(rid) for rid in rec.covered_row_ids] if rec.covered_row_ids else []
+            fee_gst_paise = (
+                sum(r.tax_paise for r in covered_rows if r is not None)
+                if covered_rows
+                else sum(tax_by_entity.get((t, eid), 0) for t, eid in rec.covered_entity_ids)
             )
             fee_gst_display = _inr(fee_gst_paise)
             for t, eid in rec.covered_entity_ids:
