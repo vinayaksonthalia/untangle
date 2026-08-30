@@ -179,6 +179,36 @@ def test_recon_rows_consistency_check():
     assert "pay_2" in recon_check_missing.detail
 
 
+def test_cross_type_entity_substitution_is_rejected():
+    # Covered entities claim type "payment", but recon_rows only carry same-ID rows of type "refund".
+    # An entity_id-only join would accept them (cross-type substitution); the exact (type, entity_id)
+    # join must reject, so a tampered packet cannot borrow another transaction type's row (Qodo #2).
+    pkt = _valid_packet()
+    wrong_type = [
+        {"type": "refund", "entity_id": "pay_1", "settlement_utr": "1780000000001234"},
+        {"type": "refund", "entity_id": "pay_2", "settlement_utr": "1780000000001234"},
+    ]
+    res = verify_proof_packet(pkt, recon_rows=wrong_type)
+    recon_check = next(c for c in res.checks if c.name == "recon_rows_consistency")
+    assert recon_check.passed is False
+    assert res.ok is False
+
+
+def test_nonfinite_amount_never_raises():
+    # float() parses "inf"/"nan", and round(inf) raises OverflowError; verify_proof_packet /
+    # verify_report must treat these as invalid amounts, not crash (never-raises contract, Qodo #3).
+    for bad in ("inf", "-inf", "nan", "Infinity"):
+        pkt = _valid_packet()
+        pkt["amount_inr"] = bad
+        res = verify_proof_packet(pkt)  # must not raise
+        assert isinstance(res, VerificationResult)
+        assert res.ok is False
+    pkt = _valid_packet()
+    pkt["amount_inr"] = "inf"
+    results = verify_report({"audit_root": "a" * 64, "proof_packets": [pkt]})  # must not raise
+    assert isinstance(results, list)
+
+
 def test_verify_report():
     """verify_report verifies all proof packets and audit_root."""
     pkt1 = _valid_packet()
