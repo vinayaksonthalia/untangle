@@ -19,13 +19,13 @@ make coverage
 ```
 
 Mutation testing is deliberately scoped to reconciliation, journal, and
-recovery logic because those modules contain the accounting invariants. It is
-an opt-in local gate (`make mutation`) rather than a required PR check: mutmut
-can take substantially longer than the normal suite and its generated fixture
-inputs are not checked into the repository. The mutation configuration invokes
-the unit tests and documents the intended scope; run it from a generated-fixture
-workspace and review surviving mutants rather than treating a mutation score as
-proof of correctness.
+recovery logic because those modules contain the accounting invariants. The
+mutmut test selection is limited to fixture-independent reconciliation and
+recovery unit tests, so it works from a clean checkout. It is an opt-in local
+gate (`make mutation`) rather than a required PR check: mutmut can take
+substantially longer than the normal suite. Install it separately with
+`python -m pip install -e '.[quality]'`, then review surviving mutants rather
+than treating a mutation score as proof of correctness.
 
 The project does not add a broad static type checker in this change. The code
 base is currently not annotated consistently enough for an honest strict mypy

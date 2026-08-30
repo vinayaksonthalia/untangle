@@ -45,6 +45,7 @@ coverage:
 	$(PY) -m pytest --cov --cov-report=term-missing --cov-fail-under=65
 
 mutation:
+	@$(PY) -c 'import mutmut' 2>/dev/null || (echo "Mutation tooling is optional. Install it with: $(PY) -m pip install -e \".[quality]\""; exit 1)
 	$(PY) -m mutmut run
 	$(PY) -m mutmut results
 
