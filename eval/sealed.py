@@ -19,6 +19,7 @@ import os
 import stat
 import subprocess
 import sys
+from contextlib import contextmanager
 
 from engine.attribute import attribute_all
 from engine.config import DEFAULT_THRESHOLD
@@ -66,8 +67,9 @@ def _load_dev_metrics(path: str = "out/report.json") -> dict | None:
         return None
 
 
-def _read_regular_file(path: str, *, label: str) -> bytes:
-    """Read a regular file without ever blocking on a FIFO or leaking a raw OS error."""
+@contextmanager
+def _open_regular_file(path: str, *, label: str):
+    """Yield a validated regular file without blocking on a FIFO or leaking a raw OS error."""
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
     fd: int | None = None
     try:
@@ -76,7 +78,7 @@ def _read_regular_file(path: str, *, label: str) -> bytes:
             raise SealedIntegrityError(f"{label} is not a regular file: {path}")
         with os.fdopen(fd, "rb") as fh:
             fd = None  # fdopen owns and closes it
-            return fh.read()
+            yield fh
     except SealedIntegrityError:
         raise
     except OSError as exc:
@@ -89,8 +91,18 @@ def _read_regular_file(path: str, *, label: str) -> bytes:
                 pass
 
 
+def _read_regular_file(path: str, *, label: str) -> bytes:
+    """Read a small regular file such as the sealed manifest into memory."""
+    with _open_regular_file(path, label=label) as fh:
+        return fh.read()
+
+
 def _hash_file(path: str) -> str:
-    return hashlib.sha256(_read_regular_file(path, label="sealed artifact")).hexdigest()
+    digest = hashlib.sha256()
+    with _open_regular_file(path, label="sealed artifact") as fh:
+        while chunk := fh.read(65536):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def generate_sealed_holdout(seed: int, out_dir: str) -> dict[str, str]:

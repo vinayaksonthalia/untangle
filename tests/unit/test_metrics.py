@@ -256,3 +256,35 @@ def test_sealed_manifest_rejects_non_regular_artifacts_without_raw_os_errors(tmp
         os.mkfifo(fifo)
         with pytest.raises(SealedIntegrityError, match="not a regular file"):
             _verify_sealed_manifest(str(fifo_case))
+
+
+def test_sealed_artifact_hashing_reads_in_bounded_chunks(tmp_path, monkeypatch):
+    import hashlib
+
+    import eval.sealed as sealed
+
+    artifact = tmp_path / "large-artifact"
+    content = b"x" * (2 * 65536 + 1)
+    artifact.write_bytes(content)
+    real_fdopen = sealed.os.fdopen
+    read_sizes = []
+
+    class BoundedReader:
+        def __init__(self, raw):
+            self.raw = raw
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.raw.close()
+
+        def read(self, size=-1):
+            read_sizes.append(size)
+            assert size == 65536
+            return self.raw.read(size)
+
+    monkeypatch.setattr(sealed.os, "fdopen", lambda fd, mode: BoundedReader(real_fdopen(fd, mode)))
+
+    assert sealed._hash_file(str(artifact)) == hashlib.sha256(content).hexdigest()
+    assert read_sizes == [65536, 65536, 65536, 65536]
