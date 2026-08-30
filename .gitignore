@@ -37,6 +37,8 @@ data/sealed/
 sample_data/
 
 *.egg-info/
+.coverage
+mutants/
 
 # stray research/scratch files (not part of untangle)
 razorpay_public_repos.tsv

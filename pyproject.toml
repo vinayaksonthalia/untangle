@@ -45,8 +45,7 @@ skip_empty = true
 
 [tool.mutmut]
 source_paths = ["engine/reconcile.py"]
-only_mutate = ["engine/reconcile.py"]
-pytest_add_cli_args_test_selection = ["tests/unit/test_reconcile.py", "tests/unit/test_recovery.py"]
+pytest_add_cli_args_test_selection = ["tests/unit/test_reconcile.py"]
 
 [tool.ruff]
 line-length = 100
