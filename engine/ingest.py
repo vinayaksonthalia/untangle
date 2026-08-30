@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import io
 import json
+from collections.abc import Iterable, Iterator
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
@@ -124,48 +124,53 @@ _BANK_ALIASES = {
 }
 
 
-def _normalise_bank_rows(raw: str) -> tuple[list[str], list[dict[str, str]]]:
-    """Find a bank header after optional metadata and map known aliases.
+def _normalise_bank_rows(
+    line_source: Iterable[str],
+) -> tuple[list[str], Iterator[tuple[int, dict[str, str]]]]:
+    """Find a bank header after optional metadata and stream the mapped data rows.
 
-    Each returned data row is paired with its original one-based physical CSV line number, so
-    downstream parsing diagnostics point at the real line even when metadata rows precede the header
-    or a quoted field spans several physical lines (``csv.reader.line_num`` tracks the true line).
+    Reads ``line_source`` (a file handle or any iterable of physical lines) through a single
+    ``csv.reader`` pass. Only metadata up to the header is examined during discovery; data rows are
+    then yielded lazily, so the whole export is never held as records AND dictionaries at once. Each
+    yielded row carries its one-based physical starting line (``csv.reader.line_num`` — correct even
+    when a quoted field spans several physical lines), so parsing diagnostics cite the real line.
     """
-    reader = csv.reader(io.StringIO(raw))
-    # (start_line, record): a record may span several physical lines if a field is quoted across
-    # newlines, so we capture each record's starting physical line rather than its record index.
-    records: list[tuple[int, list[str]]] = []
-    prev_line = 0
+    reader = csv.reader(line_source)
+    end_line = 0  # physical line where the previous record ended
+    mapped: list[str] | None = None
     for row in reader:
-        records.append((prev_line + 1, row))
-        prev_line = reader.line_num  # physical line where this record ended
-    header_idx = next((idx for idx, (_, row) in enumerate(records)
-                       if {(_BANK_ALIASES.get(c.strip().lower(), c.strip().lower())) for c in row}
-                       >= {"value_date", "narration"}), None)
-    if header_idx is None:
+        end_line = reader.line_num
+        if {(_BANK_ALIASES.get(c.strip().lower(), c.strip().lower())) for c in row} >= {"value_date", "narration"}:
+            mapped = [_BANK_ALIASES.get(c.strip().lower(), c.strip()) for c in row]
+            break
+    if mapped is None:
         raise InputError("Bank statement: could not find a header row with date and narration columns.")
-    header = records[header_idx][1]
-    mapped = [_BANK_ALIASES.get(c.strip().lower(), c.strip()) for c in header]
     if "value_date" not in mapped or "narration" not in mapped:
         raise InputError("Bank statement: header must contain date and narration columns.")
     if len(mapped) != len(set(mapped)):
         duplicates = sorted({name for name in mapped if mapped.count(name) > 1})
         raise InputError(f"Bank statement: duplicate columns after normalization: {duplicates}.")
-    data = []
-    for start_line, row in records[header_idx + 1:]:
-        if not any(x.strip() for x in row):
-            continue
-        if len(row) != len(mapped):
-            raise InputError(f"Bank statement row {start_line}: expected {len(mapped)} columns, found {len(row)}.")
-        data.append((start_line, dict(zip(mapped, row, strict=True))))
-    return mapped, data
+
+    def _data_rows() -> Iterator[tuple[int, dict[str, str]]]:
+        nonlocal end_line
+        for row in reader:
+            start_line = end_line + 1
+            end_line = reader.line_num
+            if not any(x.strip() for x in row):
+                continue
+            if len(row) != len(mapped):
+                raise InputError(f"Bank statement row {start_line}: expected {len(mapped)} columns, found {len(row)}.")
+            yield start_line, dict(zip(mapped, row, strict=True))
+
+    return mapped, _data_rows()
 
 
 def load_bank(path: str) -> list[BankCreditLine]:
     try:
         with open(path, newline="", encoding="utf-8-sig") as fh:
-            text = fh.read()
-            mapped_fields, normalized_rows = _normalise_bank_rows(text)
+            # Stream rows straight from the handle — no full-file string, records list, or dict list
+            # is materialized; only the output BankCreditLine list grows.
+            mapped_fields, normalized_rows = _normalise_bank_rows(fh)
             fields = set(mapped_fields)
             # Normalized input follows the same path and output semantics as before.
             missing = _BANK_REQUIRED - fields
