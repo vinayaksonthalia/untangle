@@ -39,6 +39,22 @@ def test_parse_error_after_metadata_reports_physical_line(tmp_path: Path):
         load_bank(str(p))
 
 
+def test_parse_error_after_multiline_quoted_field_reports_physical_line(tmp_path: Path):
+    # The first metadata record is a quoted field spanning physical lines 1-2, so the header is on
+    # line 3, the good row on 4, and the bad row on 5. A record-index count would say 4; only the
+    # true physical line (csv.reader.line_num) says 5.
+    p = tmp_path / "multiline.csv"
+    p.write_text(
+        '"Account statement\ncontinued",,,\n'
+        "Date,Narration,Credit,Debit\n"
+        "01/07/2026,good,100,\n"
+        "02/07/2026,broken,nope,\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(InputError, match="row 5"):
+        load_bank(str(p))
+
+
 def test_unknown_encoding_is_rejected(tmp_path: Path):
     p = tmp_path / "bad-encoding.csv"
     p.write_bytes(b"Date,Narration,Credit,Debit\n\xff")

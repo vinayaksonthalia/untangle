@@ -128,15 +128,23 @@ def _normalise_bank_rows(raw: str) -> tuple[list[str], list[dict[str, str]]]:
     """Find a bank header after optional metadata and map known aliases.
 
     Each returned data row is paired with its original one-based physical CSV line number, so
-    downstream parsing diagnostics point at the real line even when metadata rows precede the header.
+    downstream parsing diagnostics point at the real line even when metadata rows precede the header
+    or a quoted field spans several physical lines (``csv.reader.line_num`` tracks the true line).
     """
-    rows = list(csv.reader(io.StringIO(raw)))
-    header_at = next((i for i, row in enumerate(rows)
-                      if {(_BANK_ALIASES.get(c.strip().lower(), c.strip().lower())) for c in row}
-                      >= {"value_date", "narration"}), None)
-    if header_at is None:
+    reader = csv.reader(io.StringIO(raw))
+    # (start_line, record): a record may span several physical lines if a field is quoted across
+    # newlines, so we capture each record's starting physical line rather than its record index.
+    records: list[tuple[int, list[str]]] = []
+    prev_line = 0
+    for row in reader:
+        records.append((prev_line + 1, row))
+        prev_line = reader.line_num  # physical line where this record ended
+    header_idx = next((idx for idx, (_, row) in enumerate(records)
+                       if {(_BANK_ALIASES.get(c.strip().lower(), c.strip().lower())) for c in row}
+                       >= {"value_date", "narration"}), None)
+    if header_idx is None:
         raise InputError("Bank statement: could not find a header row with date and narration columns.")
-    header = rows[header_at]
+    header = records[header_idx][1]
     mapped = [_BANK_ALIASES.get(c.strip().lower(), c.strip()) for c in header]
     if "value_date" not in mapped or "narration" not in mapped:
         raise InputError("Bank statement: header must contain date and narration columns.")
@@ -144,12 +152,12 @@ def _normalise_bank_rows(raw: str) -> tuple[list[str], list[dict[str, str]]]:
         duplicates = sorted({name for name in mapped if mapped.count(name) > 1})
         raise InputError(f"Bank statement: duplicate columns after normalization: {duplicates}.")
     data = []
-    for row_number, row in enumerate(rows[header_at + 1:], start=header_at + 2):
+    for start_line, row in records[header_idx + 1:]:
         if not any(x.strip() for x in row):
             continue
         if len(row) != len(mapped):
-            raise InputError(f"Bank statement row {row_number}: expected {len(mapped)} columns, found {len(row)}.")
-        data.append((row_number, dict(zip(mapped, row, strict=True))))
+            raise InputError(f"Bank statement row {start_line}: expected {len(mapped)} columns, found {len(row)}.")
+        data.append((start_line, dict(zip(mapped, row, strict=True))))
     return mapped, data
 
 
