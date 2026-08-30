@@ -12,7 +12,7 @@ proves every verdict, and hands you a balanced journal entry ready to post to Ta
 [![Run it locally](https://img.shields.io/badge/RUN_IT_LOCALLY-14140f?style=for-the-badge)](#quickstart)
 
 ![CI](https://github.com/vinayaksonthalia/untangle/actions/workflows/ci.yml/badge.svg)
-![tests](https://img.shields.io/badge/tests-243_passing-1b7a4d)
+![tests](https://img.shields.io/badge/tests-passing-1b7a4d)
 ![precision](https://img.shields.io/badge/Razorpay_precision-1.000-1b7a4d)
 ![abstains](https://img.shields.io/badge/abstains-never_guesses-b4720a)
 ![python](https://img.shields.io/badge/python-3.12-3776ab)
@@ -158,7 +158,8 @@ The full product is a single self-contained FastAPI app that deploys anywhere Do
 builds the [`Dockerfile`](Dockerfile), and gives you a public URL serving the complete app (free tier is
 enough for the demo). No config, no database, no keys stored. Full walkthrough: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
-> **Live demo:** _add your deployed URL here after the one-click deploy._
+> **Hosted demo:** deployment is planned; no public URL is claimed yet. Until then, run the local
+> quickstart below. Do not upload sensitive financial data to an unverified third-party deployment.
 
 ### Option B — Run it locally
 
