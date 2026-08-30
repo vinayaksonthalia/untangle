@@ -26,6 +26,13 @@ def _print_report(m: dict) -> None:
     for rail, s in m["per_rail"].items():
         print(f"  {rail:<22}{s['precision']:>7.3f}{s['recall']:>8.3f}"
               f"{s['support']:>9}{s['tp']:>5}{s['fp']:>5}{s['fn']:>5}")
+    rzp = m["per_rail"].get("razorpay_settlement")
+    if rzp:
+        p = rzp["precision_ci95"]
+        r = rzp["recall_ci95"]
+        print(f"  Razorpay 95% Wilson CI: precision {p['successes']}/{p['trials']} "
+              f"[{p['low']}, {p['high']}], recall {r['successes']}/{r['trials']} "
+              f"[{r['low']}, {r['high']}]")
 
     if "precision_at_coverage" in m:
         print("\nPrecision-at-coverage & Abstention Curve (threshold sweep):")

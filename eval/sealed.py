@@ -31,6 +31,18 @@ DEFAULT_SEALED_SEED = 1337
 DEFAULT_SEALED_DIR = "data/sealed"
 
 
+def _load_dev_metrics(path: str = "out/report.json") -> dict | None:
+    """Return scored labelled dev metrics; unavailable input must not use stale values."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            report = json.load(fh)
+        metrics = score(report, "data/ground_truth.json", "data/bank_statement.csv")
+        metrics["_report_totals"] = report.get("totals", {})
+        return metrics
+    except (OSError, ValueError, KeyError, AssertionError, TypeError):
+        return None
+
+
 def _hash_file(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -217,35 +229,53 @@ def run_sealed_holdout_comparison(seed: int = DEFAULT_SEALED_SEED, sealed_dir: s
 
     # Load dev baseline if available
     dev_res_path = "out/report.json"
-    dev_prec = 1.000
-    dev_recall = 0.841
-    dev_decoy = 0
-    dev_ece = 0.0764
-    if os.path.exists(dev_res_path):
-        try:
-            dev_data = json.load(open(dev_res_path))
-            dm = score(dev_data, "data/ground_truth.json", "data/bank_statement.csv")
-            dev_prec = dm["per_rail"]["razorpay_settlement"]["precision"]
-            dev_recall = dm["per_rail"]["razorpay_settlement"]["recall"]
-            dev_decoy = dm["decoy_false_positive"]["predicted_razorpay"]
-            dev_ece = dm.get("ece", 0.0876)
-        except Exception:
-            pass
+    dm = _load_dev_metrics(dev_res_path)
+    if dm is not None:
+        dev_prec = dm["per_rail"]["razorpay_settlement"]["precision"]
+        dev_recall = dm["per_rail"]["razorpay_settlement"]["recall"]
+        dev_prec_ci = dm["per_rail"]["razorpay_settlement"]["precision_ci95"]
+        dev_recall_ci = dm["per_rail"]["razorpay_settlement"]["recall_ci95"]
+        dev_decoy = dm["decoy_false_positive"]["predicted_razorpay"]
+        dev_ece = dm.get("ece", 0.0876)
+        dev_totals = dm.get("_report_totals", {})
+    else:
+        dev_prec = dev_recall = dev_decoy = dev_ece = None
+        dev_prec_ci = dev_recall_ci = None
+        dev_totals = {}
 
     print("\n--- OFFICIAL HEADLINE COMPARISON: SEALED HOLDOUT vs DEV SET ---")
     print(f"  Metric                           Dev Set (seed 42)    Sealed Holdout (seed {seed})")
     print("  -----------------------------------------------------------------------------")
-    print(f"  Bank Lines (n)                   294                  {sealed_res['totals']['n_bank_lines']}")
+    dev_lines = dev_totals.get("n_bank_lines")
+    print(f"  Bank Lines (n)                   {dev_lines if dev_lines is not None else 'unavailable':<20} {sealed_res['totals']['n_bank_lines']}")
     prec_tag = "sound" if s_rzp['precision'] >= 0.9995 else f"PRECISION {s_rzp['precision']:.3f} < 1.000"
     fp_tag = "0 FP" if s_decoy['predicted_razorpay'] == 0 else f"{s_decoy['predicted_razorpay']} FP"
     ece_val = sm.get('ece', 0.0)
     ece_tag = "<= 0.10" if ece_val <= 0.10 else "> 0.10 (miscalibrated)"
-    print(f"  Razorpay Precision               {dev_prec:.3f}                {s_rzp['precision']:.3f} ({prec_tag})")
-    print(f"  Decoy False Positives            {dev_decoy}/181                {s_decoy['predicted_razorpay']}/{s_decoy['non_rzp_lines']} ({fp_tag})")
-    print(f"  Razorpay Recall                  {dev_recall:.3f}                {s_rzp['recall']:.3f}")
-    print(f"  ECE Calibration                  {dev_ece:.4f}               {ece_val:.4f} ({ece_tag})")
-    print(f"  Reconciled (Paise-Exact)         91 credits           {sealed_res['totals']['reconciled_count']} credits")
-    print(f"  Recoverable Fee-GST              ₹43,201              ₹{sealed_res['totals']['fee_gst_recoverable_paise']/100:,.2f}")
+    dev_prec_text = f"{dev_prec:.3f}" if dev_prec is not None else "unavailable"
+    print(f"  Razorpay Precision               {dev_prec_text:<20} {s_rzp['precision']:.3f} ({prec_tag})")
+    p_ci = s_rzp["precision_ci95"]
+    r_ci = s_rzp["recall_ci95"]
+    dev_prec_ci_text = (f"{dev_prec_ci['successes']}/{dev_prec_ci['trials']} [{dev_prec_ci['low']}, {dev_prec_ci['high']}]"
+                        if dev_prec_ci else "unavailable")
+    print(f"  Precision 95% Wilson CI          {dev_prec_ci_text:<20} "
+          f"{p_ci['successes']}/{p_ci['trials']} [{p_ci['low']}, {p_ci['high']}]")
+    dev_decoy_text = f"{dev_decoy}/181" if dev_decoy is not None else "unavailable"
+    print(f"  Decoy False Positives            {dev_decoy_text:<20} {s_decoy['predicted_razorpay']}/{s_decoy['non_rzp_lines']} ({fp_tag})")
+    dev_recall_text = f"{dev_recall:.3f}" if dev_recall is not None else "unavailable"
+    print(f"  Razorpay Recall                  {dev_recall_text:<20} {s_rzp['recall']:.3f}")
+    dev_recall_ci_text = (f"{dev_recall_ci['successes']}/{dev_recall_ci['trials']} [{dev_recall_ci['low']}, {dev_recall_ci['high']}]"
+                          if dev_recall_ci else "unavailable")
+    print(f"  Recall 95% Wilson CI             {dev_recall_ci_text:<20} "
+          f"{r_ci['successes']}/{r_ci['trials']} [{r_ci['low']}, {r_ci['high']}]")
+    dev_ece_text = f"{dev_ece:.4f}" if dev_ece is not None else "unavailable"
+    print(f"  ECE Calibration                  {dev_ece_text:<20} {ece_val:.4f} ({ece_tag})")
+    dev_reconciled = dev_totals.get("reconciled_count")
+    dev_reconciled_text = f"{dev_reconciled} credits" if dev_reconciled is not None else "unavailable"
+    dev_recoverable = dev_totals.get("fee_gst_recoverable_paise")
+    dev_recoverable_text = f"₹{dev_recoverable / 100:,.2f}" if dev_recoverable is not None else "unavailable"
+    print(f"  Reconciled (Paise-Exact)         {dev_reconciled_text:<20} {sealed_res['totals']['reconciled_count']} credits")
+    print(f"  Recoverable Fee-GST              {dev_recoverable_text:<20} ₹{sealed_res['totals']['fee_gst_recoverable_paise']/100:,.2f}")
 
     print("\n=== Evaluation Scope & Limits (E4 / ER-005) ===")
     print(f"  • This is an adversarial stress suite (n={sealed_res['totals']['n_bank_lines']}), not an empirical claim about universal real-world performance.")

@@ -145,6 +145,14 @@ Honest scope: these are measured on a labelled adversarial benchmark, **not** a 
 real-world statement. On your own unlabelled upload, untangle shows attributed-vs-abstained counts and a
 real coverage curve, and never asserts a precision it cannot measure.
 
+The evaluator also reports a deterministic 95% Wilson score interval for each labelled precision
+and recall, with the numerator and denominator (for example, `x/n`, where `n` is that metric's
+labelled denominator). Wilson intervals are used
+instead of a Wald approximation because the benchmark includes small samples and 0%/100% boundary
+results. A zero denominator is reported as unavailable, not as a measured zero. These intervals
+describe uncertainty in this labelled synthetic benchmark only; they are not production guarantees
+under distribution shift and are never shown as performance for an unlabelled upload.
+
 ## Quickstart
 
 untangle is a real product, not a demo — upload your **own** three files and get a real reconciliation.

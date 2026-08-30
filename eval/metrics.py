@@ -9,12 +9,49 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 
 from engine.ingest import load_bank
 
 _RAILS = ["razorpay_settlement", "other_gateway", "direct_upi", "cod_remittance", "unrelated"]
+
+# Fixed 95% normal quantile.  Wilson intervals are preferable to Wald intervals for
+# the small and boundary-heavy samples in this benchmark (including 0/n and n/n).
+_Z95 = 1.959963984540054
+
+
+def wilson_ci95(successes: int, trials: int) -> tuple[float, float] | None:
+    """Return a Wilson score interval for a binomial proportion.
+
+    ``None`` means there is no estimand because the denominator is zero.  The
+    interval is deterministic and bounded in [0, 1], including at 0/n and n/n.
+    The public evaluator currently exposes only the conventional 95% interval.
+    """
+    if trials < 0 or successes < 0 or successes > trials:
+        raise ValueError("successes must be between zero and trials")
+    if trials == 0:
+        return None
+    n = float(trials)
+    p = successes / n
+    z2 = _Z95 * _Z95
+    denom = 1.0 + z2 / n
+    centre = (p + z2 / (2.0 * n)) / denom
+    half = _Z95 * math.sqrt((p * (1.0 - p) + z2 / (4.0 * n)) / n) / denom
+    low = 0.0 if successes == 0 else max(0.0, centre - half)
+    high = 1.0 if successes == trials else min(1.0, centre + half)
+    return (low, high)
+
+
+def _ci_dict(successes: int, trials: int) -> dict:
+    interval = wilson_ci95(successes, trials)
+    return {
+        "successes": successes,
+        "trials": trials,
+        "low": round(interval[0], 4) if interval else None,
+        "high": round(interval[1], 4) if interval else None,
+    }
 
 
 def build_key_to_lineid(bank_csv: str) -> dict[str, str]:
@@ -46,10 +83,14 @@ class PR:
         return self.tp / (self.tp + self.fn) if (self.tp + self.fn) else 0.0
 
     def as_dict(self) -> dict:
+        precision_n = self.tp + self.fp
+        recall_n = self.tp + self.fn
         return {
             "tp": self.tp, "fp": self.fp, "fn": self.fn,
             "precision": round(self.precision, 4), "recall": round(self.recall, 4),
             "support": self.tp + self.fn,
+            "precision_ci95": _ci_dict(self.tp, precision_n),
+            "recall_ci95": _ci_dict(self.tp, recall_n),
         }
 
 

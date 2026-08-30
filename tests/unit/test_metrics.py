@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from engine.ingest import load_bank
-from eval.metrics import score
+from eval.metrics import score, wilson_ci95
+from eval.sealed import _load_dev_metrics
 
 _BANK_CSV = (
     "line_id,value_date,txn_date,narration,ref_no,debit,credit,balance\n"
@@ -62,6 +65,35 @@ def test_per_rail_precision_recall(tmp_path):
     assert rzp["precision"] == 0.5 and rzp["recall"] == 0.5
     og = m["per_rail"]["other_gateway"]
     assert og["tp"] == 1 and og["precision"] == 1.0 and og["recall"] == 1.0
+    assert rzp["precision_ci95"]["successes"] == 1
+    assert rzp["precision_ci95"]["trials"] == 2
+    assert 0.0 <= rzp["precision_ci95"]["low"] <= rzp["precision_ci95"]["high"] <= 1.0
+
+
+def test_wilson_ci_boundaries_and_empty_denominator():
+    assert wilson_ci95(0, 0) is None
+    assert wilson_ci95(0, 10)[0] == 0.0
+    assert wilson_ci95(10, 10)[1] == 1.0
+    for successes in range(11):
+        low, high = wilson_ci95(successes, 10)
+        assert 0.0 <= low <= high <= 1.0
+
+
+def test_wilson_ci_is_deterministic_and_validates_counts():
+    assert wilson_ci95(5, 10) == wilson_ci95(5, 10)
+    with pytest.raises(ValueError):
+        wilson_ci95(11, 10)
+    with pytest.raises(ValueError):
+        wilson_ci95(-1, 10)
+    with pytest.raises(ValueError):
+        wilson_ci95(0, -1)
+
+
+def test_missing_or_malformed_dev_report_is_unavailable(tmp_path):
+    assert _load_dev_metrics(str(tmp_path / "missing.json")) is None
+    malformed = tmp_path / "malformed.json"
+    malformed.write_text("not json", encoding="utf-8")
+    assert _load_dev_metrics(str(malformed)) is None
 
 
 def test_decoy_false_positive_counted(tmp_path):
