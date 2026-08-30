@@ -92,12 +92,33 @@ def build_config(
             raise ConfigError(
                 "AI requested but no model set. Pass --model <id> or set LLM_MODEL in .env."
             )
+    # The abstention gate is a financial safety mechanism: a confidence must clear `threshold` to be
+    # auto-attributed. A non-finite threshold (NaN/inf) or one outside [0, 1] silently defeats it —
+    # e.g. `confidence < NaN` is always False, so low-confidence guesses get emitted instead of
+    # abstained. Reject it rather than let an invalid runtime option disable the gate.
+    resolved_threshold = DEFAULT_THRESHOLD if threshold is None else threshold
+    # reconcile() is a reusable Python entry point too, so a caller may pass any type/value. Convert
+    # an unsupported type (str, complex, ...) into the same ConfigError as other invalid thresholds.
+    if isinstance(resolved_threshold, bool) or not isinstance(resolved_threshold, (int, float)):
+        raise ConfigError(
+            f"threshold must be a number in [0, 1]; got {resolved_threshold!r} of type "
+            f"{type(resolved_threshold).__name__}."
+        )
+    # The [0, 1] range check alone rejects everything invalid WITHOUT ever raising: NaN (all its
+    # comparisons are False), ±inf, out-of-range floats, and huge ints (bigint comparison never
+    # overflows — unlike math.isfinite(10**1000), which raises OverflowError). A NaN/inf threshold
+    # would otherwise silently defeat the abstention safety gate (confidence < NaN is always False).
+    if not (0.0 <= resolved_threshold <= 1.0):
+        raise ConfigError(
+            f"threshold must be a finite number in [0, 1]; got {resolved_threshold!r}. "
+            "The abstention gate cannot be disabled with an out-of-range, NaN, or inf threshold."
+        )
     return Config(
         use_ai=use_ai,
         provider=resolved_provider if use_ai else None,
         model=resolved_model if use_ai else None,
         api_key=api_key,
-        threshold=DEFAULT_THRESHOLD if threshold is None else threshold,
+        threshold=resolved_threshold,
         seed=seed,
         global_solver=global_solver,
     )
