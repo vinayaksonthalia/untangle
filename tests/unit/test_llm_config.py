@@ -50,7 +50,7 @@ def test_config_no_ai_needs_no_key(tmp_path):
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf"), -0.1, 1.5,
-                                 "0.5", complex(1, 2), [0.5]])
+                                 "0.5", complex(1, 2), [0.5], 10**1000, -(10**1000)])
 def test_config_rejects_nonfinite_or_out_of_range_threshold(tmp_path, bad):
     # A NaN/inf/out-of-range threshold would silently defeat the abstention safety gate
     # (confidence < NaN is always False); an unsupported TYPE (str, complex, ...) must also become a

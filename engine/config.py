@@ -7,7 +7,6 @@ fast with exit code 3 and a clear message — never a bare stack trace.
 
 from __future__ import annotations
 
-import math
 import os
 from dataclasses import dataclass
 
@@ -98,18 +97,21 @@ def build_config(
     # e.g. `confidence < NaN` is always False, so low-confidence guesses get emitted instead of
     # abstained. Reject it rather than let an invalid runtime option disable the gate.
     resolved_threshold = DEFAULT_THRESHOLD if threshold is None else threshold
-    # reconcile() is a reusable Python entry point too, so a caller may pass any type. Convert an
-    # unsupported type (str, complex, ...) into the same ConfigError as other invalid thresholds —
-    # never let math.isfinite raise a bare TypeError past the configuration-error contract.
+    # reconcile() is a reusable Python entry point too, so a caller may pass any type/value. Convert
+    # an unsupported type (str, complex, ...) into the same ConfigError as other invalid thresholds.
     if isinstance(resolved_threshold, bool) or not isinstance(resolved_threshold, (int, float)):
         raise ConfigError(
             f"threshold must be a number in [0, 1]; got {resolved_threshold!r} of type "
             f"{type(resolved_threshold).__name__}."
         )
-    if not math.isfinite(resolved_threshold) or not (0.0 <= resolved_threshold <= 1.0):
+    # The [0, 1] range check alone rejects everything invalid WITHOUT ever raising: NaN (all its
+    # comparisons are False), ±inf, out-of-range floats, and huge ints (bigint comparison never
+    # overflows — unlike math.isfinite(10**1000), which raises OverflowError). A NaN/inf threshold
+    # would otherwise silently defeat the abstention safety gate (confidence < NaN is always False).
+    if not (0.0 <= resolved_threshold <= 1.0):
         raise ConfigError(
             f"threshold must be a finite number in [0, 1]; got {resolved_threshold!r}. "
-            "The abstention gate cannot be disabled with an out-of-range or NaN threshold."
+            "The abstention gate cannot be disabled with an out-of-range, NaN, or inf threshold."
         )
     return Config(
         use_ai=use_ai,
