@@ -8,7 +8,8 @@ requires-python = ">=3.12"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "hypothesis>=6", "httpx"]
+dev = ["pytest>=8", "hypothesis>=6", "httpx", "pytest-cov>=5", "ruff", "coverage[toml]>=7"]
+quality = ["mutmut>=3.6"]
 web = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9"]
 # Optional: ECDSA-signed close certificates. The core is stdlib-only; without this extra (or a
 # signing key) the certificate is still built and content-hashed — tamper-evident, just unsigned.
@@ -30,6 +31,26 @@ testpaths = ["tests"]
 addopts = "-q"
 python_files = ["test_*.py"]
 pythonpath = ["."]
+
+[tool.coverage.run]
+branch = true
+source = ["engine", "eval", "generator", "ui", "webapp"]
+
+[tool.coverage.report]
+exclude_also = [
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
+skip_empty = true
+
+[tool.mutmut]
+# source_paths is the tree COPIED into mutmut's isolated mutants/ workspace, not the mutation
+# selection. reconcile.py imports sibling engine modules (covered, evidence, models), so the whole
+# engine package must be present or the isolated run fails to import. only_mutate then narrows the
+# actual mutation to reconcile.py, keeping the reconciliation-only scope.
+source_paths = ["engine"]
+only_mutate = ["engine/reconcile.py"]
+pytest_add_cli_args_test_selection = ["tests/unit/test_reconcile.py"]
 
 [tool.ruff]
 line-length = 100
