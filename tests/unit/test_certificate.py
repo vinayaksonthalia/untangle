@@ -72,8 +72,10 @@ def test_uncanonicalizable_object_report_fails_without_raising(monkeypatch):
     cyclic: dict = {"totals": {}}
     cyclic["totals"]["self"] = cyclic  # circular reference -> json.dumps raises ValueError
     non_serializable = {"totals": {1, 2, 3}}  # a set -> json.dumps raises TypeError
+    # A non-finite amount survives json.dumps but makes round(inf) raise OverflowError downstream.
+    non_finite = {"reconciled_credits": [{"fee_gst_recoverable_inr": float("inf")}]}
 
-    for bad in (cyclic, non_serializable):
+    for bad in (cyclic, non_serializable, non_finite):
         env = issue_certificate(_report())
         env["report"] = bad
         result = verify_certificate(env)  # must not raise

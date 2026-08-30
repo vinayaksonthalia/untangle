@@ -163,9 +163,12 @@ def verify_certificate(payload: dict) -> dict:
     if report_present and embedded_report is None:
         report_binding_valid = False
     elif embedded_report is not None:
-        # A dict is not necessarily JSON-canonicalizable: cyclic references or non-serializable
-        # values make _canonical / verify_report raise. verify_certificate is documented to NEVER
-        # raise, so treat any such failure as a malformed attachment (binding invalid), not a crash.
+        # A dict is not necessarily processable: cyclic references, non-serializable values, or
+        # non-finite numbers make _canonical / verify_report raise (ValueError, TypeError,
+        # RecursionError, OverflowError, ...). verify_certificate is documented to NEVER raise for
+        # any caller-supplied payload, so ANY failure here is treated as a malformed attachment
+        # (binding invalid) — this defensive boundary handles untrusted input, not our own bugs on
+        # the valid path.
         try:
             expected_report_hash = cert.get("report_sha256")
             report_binding_valid = (
@@ -176,7 +179,7 @@ def verify_certificate(payload: dict) -> dict:
             pkt = [r for r in results if r.packet_line_key != "report:audit_root"]
             packets_verified = len(pkt)
             packets_passed = sum(1 for r in pkt if r.ok)
-        except (ValueError, TypeError, RecursionError):
+        except Exception:  # noqa: BLE001 — never-raises contract on untrusted attachment input
             report_binding_valid = False
             packets_verified = packets_passed = None
 
