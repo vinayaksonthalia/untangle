@@ -86,49 +86,60 @@ class RecoveryAction:
     action_type: str          # from the action taxonomy
     params: dict              # e.g. {"date_from": "...", "date_to": "..."}
     resolves: tuple[str, ...] # line_keys this action could resolve (sorted, deterministic)
-    recoverable_paise: int    # SUM of amounts of `resolves` (bounded, honest "up to")
+    recoverable_paise: int    # SUM of unresolved positive credits only
     cost: float               # fixed operational weight
     gain_per_cost: float      # recoverable_paise / cost (the ranking key)
+    debit_exposure_paise: int = 0  # unresolved debits, shown separately (never recoverable)
 
     @property
     def description(self) -> str:
         """Human-readable action description framing recoverable amount honestly."""
         inr_str = f"₹{self.recoverable_paise / 100:,.2f}"
-        n_credits = len(self.resolves)
-        credit_plural = f"{n_credits} credit" if n_credits == 1 else f"{n_credits} credits"
+        debit_str = f"₹{self.debit_exposure_paise / 100:,.2f}"
+        n_items = len(self.resolves)
+        item_plural = f"{n_items} item" if n_items == 1 else f"{n_items} items"
+        target = f"across {item_plural}"
+        if self.debit_exposure_paise:
+            target += f" (including ₹{self.debit_exposure_paise / 100:,.2f} debit exposure; not recoverable cash)"
 
+        if self.recoverable_paise == 0 and self.debit_exposure_paise:
+            return (
+                f"{self.action_type.replace('_', ' ').capitalize()} — "
+                f"review {debit_str} debit exposure across {item_plural}; "
+                "not recoverable cash"
+            )
         if self.action_type == ACTION_EXPORT_SETTLEMENT_REPORT:
             d_from = self.params.get("date_from", "")
             d_to = self.params.get("date_to", "")
             window = f" ({d_from} to {d_to})" if d_from and d_to else ""
             return (
                 f"Export Razorpay settlement report{window} — "
-                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+                f"up to {inr_str} recoverable {target} if confirmed"
             )
         if self.action_type == ACTION_CONFIRM_UTR_WITH_BANK:
             dt = self.params.get("date", "")
             dt_str = f" for {dt}" if dt else ""
             return (
                 f"Confirm UTR with bank{dt_str} — "
-                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+                f"up to {inr_str} recoverable {target} if confirmed"
             )
         if self.action_type == ACTION_PROVIDE_SETTLEMENT_IDS:
             dt = self.params.get("date", "")
             dt_str = f" for {dt}" if dt else ""
             return (
                 f"Provide settlement IDs{dt_str} — "
-                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+                f"up to {inr_str} recoverable {target} if confirmed"
             )
         if self.action_type == ACTION_CLASSIFY_COUNTERPARTY:
             dt = self.params.get("date", "")
             dt_str = f" for {dt}" if dt else ""
             return (
                 f"Classify counterparty{dt_str} — "
-                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+                f"up to {inr_str} recoverable {target} if confirmed"
             )
         return (
             f"Action {self.action_type} — "
-            f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+            f"up to {inr_str} recoverable {target} if confirmed"
         )
 
     def to_dict(self) -> dict:
@@ -137,6 +148,7 @@ class RecoveryAction:
             "params": dict(self.params),
             "resolves": list(self.resolves),
             "recoverable_paise": self.recoverable_paise,
+            "debit_exposure_paise": self.debit_exposure_paise,
             "cost": self.cost,
             "gain_per_cost": round(self.gain_per_cost, 4),
             "description": self.description,
@@ -151,6 +163,8 @@ class RecoveryPlan:
     unresolved_count: int
     unresolved_paise: int
     recoverable_if_actioned_paise: int    # sum over distinct resolvable credits (no double counting)
+    unresolved_credit_paise: int = 0
+    unresolved_debit_paise: int = 0
     note: str | None = None
 
     def to_dict(self) -> dict:
@@ -159,6 +173,8 @@ class RecoveryPlan:
             "unresolved_count": self.unresolved_count,
             "unresolved_paise": self.unresolved_paise,
             "recoverable_if_actioned_paise": self.recoverable_if_actioned_paise,
+            "unresolved_credit_paise": self.unresolved_credit_paise,
+            "unresolved_debit_paise": self.unresolved_debit_paise,
         }
         if self.note:
             d["note"] = self.note
@@ -391,7 +407,11 @@ def build_recovery_plan(
             seen_keys.add(line.key)
 
     unresolved_count = len(unresolved_lines)
+    # Keep the historical net total for compatibility, but never use it as a
+    # recoverable amount: debits are exposure requiring review, not cash to recover.
     unresolved_paise = sum(ln.amount_paise for ln in unresolved_lines)
+    unresolved_credit_paise = sum(max(0, ln.amount_paise) for ln in unresolved_lines)
+    unresolved_debit_paise = sum(max(0, -ln.amount_paise) for ln in unresolved_lines)
 
     if not unresolved_lines:
         return RecoveryPlan(
@@ -399,6 +419,8 @@ def build_recovery_plan(
             unresolved_count=0,
             unresolved_paise=0,
             recoverable_if_actioned_paise=0,
+            unresolved_credit_paise=0,
+            unresolved_debit_paise=0,
             note=None,
         )
 
@@ -459,7 +481,8 @@ def build_recovery_plan(
     actions: list[RecoveryAction] = []
     for exp in merged_exports:
         resolves = tuple(sorted(set(exp["keys"])))
-        rec_paise = sum(exp["amounts"])
+        rec_paise = sum(max(0, amount) for amount in exp["amounts"])
+        debit_paise = sum(max(0, -amount) for amount in exp["amounts"])
         cost = exp["cost"]
         gain_per_cost = rec_paise / cost if cost > 0 else 0.0
         actions.append(
@@ -468,6 +491,7 @@ def build_recovery_plan(
                 params={"date_from": exp["date_from"], "date_to": exp["date_to"]},
                 resolves=resolves,
                 recoverable_paise=rec_paise,
+                debit_exposure_paise=debit_paise,
                 cost=cost,
                 gain_per_cost=gain_per_cost,
             )
@@ -475,7 +499,8 @@ def build_recovery_plan(
 
     for g in other_groups.values():
         resolves = tuple(sorted(set(g["keys"])))
-        rec_paise = sum(g["amounts"])
+        rec_paise = sum(max(0, amount) for amount in g["amounts"])
+        debit_paise = sum(max(0, -amount) for amount in g["amounts"])
         cost = g["cost"]
         gain_per_cost = rec_paise / cost if cost > 0 else 0.0
         actions.append(
@@ -484,6 +509,7 @@ def build_recovery_plan(
                 params=g["params"],
                 resolves=resolves,
                 recoverable_paise=rec_paise,
+                debit_exposure_paise=debit_paise,
                 cost=cost,
                 gain_per_cost=gain_per_cost,
             )
@@ -507,7 +533,7 @@ def build_recovery_plan(
     for a in actions:
         actioned_keys.update(a.resolves)
     recoverable_if_actioned_paise = sum(
-        lines_by_key[k].amount_paise for k in actioned_keys if k in lines_by_key
+        max(0, lines_by_key[k].amount_paise) for k in actioned_keys if k in lines_by_key
     )
 
     return RecoveryPlan(
@@ -515,6 +541,8 @@ def build_recovery_plan(
         unresolved_count=unresolved_count,
         unresolved_paise=unresolved_paise,
         recoverable_if_actioned_paise=recoverable_if_actioned_paise,
+        unresolved_credit_paise=unresolved_credit_paise,
+        unresolved_debit_paise=unresolved_debit_paise,
         note=note,
     )
 
@@ -599,4 +627,3 @@ def resolve_delta(
         "newly_reconciled": newly_reconciled,
         "recovered_paise": recovered_paise,
     }
-

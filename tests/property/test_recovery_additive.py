@@ -79,8 +79,12 @@ def test_recovery_step_is_strictly_additive_and_byte_identical():
     assert plan_dict["unresolved_count"] > 0
     assert len(plan_dict["actions"]) > 0
     for action in plan_dict["actions"]:
-        assert "up to" in action["description"]
-        assert "if confirmed" in action["description"]
+        if action.get("debit_exposure_paise", 0):
+            assert "debit exposure" in action["description"]
+            assert "not recoverable cash" in action["description"]
+        else:
+            assert "up to" in action["description"]
+            assert "if confirmed" in action["description"]
         assert "owed" not in action["description"].lower()
 
 
