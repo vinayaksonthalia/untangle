@@ -163,15 +163,22 @@ def verify_certificate(payload: dict) -> dict:
     if report_present and embedded_report is None:
         report_binding_valid = False
     elif embedded_report is not None:
-        expected_report_hash = cert.get("report_sha256")
-        report_binding_valid = (
-            isinstance(expected_report_hash, str)
-            and hashlib.sha256(_canonical(embedded_report)).hexdigest() == expected_report_hash
-        )
-        results = verify_report(embedded_report)
-        pkt = [r for r in results if r.packet_line_key != "report:audit_root"]
-        packets_verified = len(pkt)
-        packets_passed = sum(1 for r in pkt if r.ok)
+        # A dict is not necessarily JSON-canonicalizable: cyclic references or non-serializable
+        # values make _canonical / verify_report raise. verify_certificate is documented to NEVER
+        # raise, so treat any such failure as a malformed attachment (binding invalid), not a crash.
+        try:
+            expected_report_hash = cert.get("report_sha256")
+            report_binding_valid = (
+                isinstance(expected_report_hash, str)
+                and hashlib.sha256(_canonical(embedded_report)).hexdigest() == expected_report_hash
+            )
+            results = verify_report(embedded_report)
+            pkt = [r for r in results if r.packet_line_key != "report:audit_root"]
+            packets_verified = len(pkt)
+            packets_passed = sum(1 for r in pkt if r.ok)
+        except (ValueError, TypeError, RecursionError):
+            report_binding_valid = False
+            packets_verified = packets_passed = None
 
     ok = (
         hash_matches

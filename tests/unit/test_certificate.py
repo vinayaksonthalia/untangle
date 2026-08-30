@@ -64,6 +64,23 @@ def test_present_but_malformed_report_fails_binding(monkeypatch, bad_report):
     assert result["ok"] is False
 
 
+def test_uncanonicalizable_object_report_fails_without_raising(monkeypatch):
+    """A dict report that cannot be JSON-canonicalized (cyclic reference, or a non-serializable
+    value) must fail binding, not raise — verify_certificate is documented to never raise (Qodo #38)."""
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+
+    cyclic: dict = {"totals": {}}
+    cyclic["totals"]["self"] = cyclic  # circular reference -> json.dumps raises ValueError
+    non_serializable = {"totals": {1, 2, 3}}  # a set -> json.dumps raises TypeError
+
+    for bad in (cyclic, non_serializable):
+        env = issue_certificate(_report())
+        env["report"] = bad
+        result = verify_certificate(env)  # must not raise
+        assert result["report_binding_valid"] is False
+        assert result["ok"] is False
+
+
 def test_absent_report_keeps_standalone_certificate_valid(monkeypatch):
     """A fully absent `report` key retains standalone-certificate behaviour (binding not applicable)."""
     monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
