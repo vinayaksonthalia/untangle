@@ -17,7 +17,7 @@ way.
 
 from __future__ import annotations
 
-from engine.models import ReconRow, ReconciliationResult
+from engine.models import ReconciliationResult, ReconRow
 
 
 def resolve_covered_rows_by_id(
