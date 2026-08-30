@@ -10,6 +10,7 @@ They NEVER move money or mutate underlying financial state.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from functools import lru_cache
@@ -109,26 +110,39 @@ def _safe_path(p: str) -> str:
 # -----------------------------------------------------------------------------
 # Caching helpers for deterministic read-only file processing
 # -----------------------------------------------------------------------------
+def _content_token(*paths: str) -> tuple[str, ...]:
+    """A per-file SHA-256 content token for the caches. mtime alone is unsafe: replacing a file while
+    preserving its mtime would serve a stale reconciliation from the process-global cache (the trusted
+    stdio MCP accepts caller-supplied stable paths). Keying on content means identical inputs still hit
+    and any change misses (Qodo full-tree #6)."""
+    tokens: list[str] = []
+    for path in paths:
+        h = hashlib.sha256()
+        try:
+            with open(path, "rb") as fh:
+                while chunk := fh.read(65536):
+                    h.update(chunk)
+            tokens.append(h.hexdigest())
+        except OSError:
+            tokens.append("")  # unreadable → distinct token; the loader surfaces the real error
+    return tuple(tokens)
+
+
 @lru_cache(maxsize=16)
 def _cached_reconcile(
     bank_path: str,
     recon_path: str,
     ledger_path: str,
-    _mtime_token: tuple[float, float, float],
+    _content_token: tuple[str, str, str],
 ) -> dict[str, Any]:
     return reconcile(bank_path, recon_path, ledger_path, no_ai=True, seed=42)
 
 
 def _get_report(bank_path: str, recon_path: str, ledger_path: str) -> dict[str, Any]:
-    """Load and reconcile files, using mtime caching for speed."""
+    """Load and reconcile files, cached by file CONTENT so replacing a file (even with the same mtime)
+    never returns a stale report."""
     bank_path, recon_path, ledger_path = _safe_path(bank_path), _safe_path(recon_path), _safe_path(ledger_path)
-    try:
-        t_bank = os.path.getmtime(bank_path)
-        t_recon = os.path.getmtime(recon_path)
-        t_ledger = os.path.getmtime(ledger_path)
-        token = (t_bank, t_recon, t_ledger)
-    except Exception:
-        token = (0.0, 0.0, 0.0)
+    token = _content_token(bank_path, recon_path, ledger_path)
     return _cached_reconcile(bank_path, recon_path, ledger_path, token)
 
 
@@ -136,7 +150,7 @@ def _get_report(bank_path: str, recon_path: str, ledger_path: str) -> dict[str, 
 def _cached_journal_entries(
     bank_path: str,
     recon_path: str,
-    _mtime_token: tuple[float, float],
+    _content_token: tuple[str, str],
 ) -> list[JournalEntry]:
     lines = load_bank(bank_path)
     recon_rows = load_recon(recon_path)
@@ -149,12 +163,7 @@ def _cached_journal_entries(
 
 def _get_journal_entries(bank_path: str, recon_path: str) -> list[JournalEntry]:
     bank_path, recon_path = _safe_path(bank_path), _safe_path(recon_path)
-    try:
-        t_bank = os.path.getmtime(bank_path)
-        t_recon = os.path.getmtime(recon_path)
-        token = (t_bank, t_recon)
-    except Exception:
-        token = (0.0, 0.0)
+    token = _content_token(bank_path, recon_path)
     return _cached_journal_entries(bank_path, recon_path, token)
 
 

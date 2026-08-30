@@ -196,3 +196,22 @@ def test_error_handling_invalid_paths():
     res_inv = investigate_variance("invalid/bank.csv", "invalid/recon.json", "invalid/ledger.csv", "missing_key")
     assert res_inv["ok"] is False
     assert "error" in res_inv
+
+
+def test_content_token_detects_change_under_identical_mtime(tmp_path):
+    # The reconcile cache keys on file CONTENT, not mtime: replacing a file while preserving its mtime
+    # must still change the token (mtime-only keying would serve a stale report). Qodo full-tree #6.
+    import os
+
+    from mcp_server import _content_token
+
+    p = tmp_path / "bank.csv"
+    p.write_text("original", encoding="utf-8")
+    mtime = os.path.getmtime(p)
+    tok1 = _content_token(str(p))
+
+    p.write_text("tampered-different-content", encoding="utf-8")
+    os.utime(p, (mtime, mtime))  # restore the ORIGINAL mtime
+    assert os.path.getmtime(str(p)) == mtime  # mtime is unchanged...
+    tok2 = _content_token(str(p))
+    assert tok1 != tok2  # ...but the content token differs, so the cache misses correctly
