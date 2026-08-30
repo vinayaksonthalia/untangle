@@ -8,13 +8,14 @@ bank CSV (both are derived from the same rows, in order).
 from __future__ import annotations
 
 import csv
+import io
 import json
 import math
 import random
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from engine.ingest import load_bank
+from engine.ingest import load_bank, load_bank_bytes
 
 _RAILS = ["razorpay_settlement", "other_gateway", "direct_upi", "cod_remittance", "unrelated"]
 
@@ -159,6 +160,22 @@ def build_key_to_lineid(bank_csv: str) -> dict[str, str]:
     return mapping
 
 
+def build_key_to_lineid_bytes(bank_bytes: bytes) -> dict[str, str]:
+    """Map line keys from one immutable bank snapshot to generator line IDs."""
+    lines = load_bank_bytes(bank_bytes, source="sealed bank statement")
+    try:
+        text = bank_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("sealed bank statement is not valid UTF-8") from exc
+    rows = list(csv.DictReader(io.StringIO(text, newline="")))
+    if len(rows) != len(lines):
+        raise ValueError("bank CSV row count != loaded line count")
+    return {
+        line.key: (row.get("line_id") or "").strip()
+        for line, row in zip(lines, rows, strict=True)
+    }
+
+
 @dataclass
 class PR:
     tp: int = 0
@@ -202,9 +219,15 @@ class PR:
 
 
 def score(report: dict, truth_path: str, bank_csv: str) -> dict:
-    truth = json.load(open(truth_path, encoding="utf-8"))
+    with open(truth_path, "rb") as truth_fh, open(bank_csv, "rb") as bank_fh:
+        return score_bytes(report, truth_fh.read(), bank_fh.read())
+
+
+def score_bytes(report: dict, truth_bytes: bytes, bank_bytes: bytes) -> dict:
+    """Score using caller-owned immutable snapshots rather than mutable paths."""
+    truth = json.loads(truth_bytes)
     labels = {lab["line_id"]: lab for lab in truth["labels"]}
-    key2lid = build_key_to_lineid(bank_csv)
+    key2lid = build_key_to_lineid_bytes(bank_bytes)
 
     # predicted rail per line_id
     pred: dict[str, tuple[str, float]] = {}
