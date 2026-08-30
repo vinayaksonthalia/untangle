@@ -25,13 +25,14 @@ from engine.attribute import attribute_all
 from engine.config import DEFAULT_THRESHOLD
 from engine.evidence import ReconIndex
 from engine.feegst import fee_gst
-from engine.ingest import load_bank, load_recon
+from engine.ingest import load_bank, load_bank_bytes, load_recon, load_recon_bytes
 from engine.reconcile import reconcile
-from eval.metrics import format_ci, score
+from eval.metrics import format_ci, score, score_bytes
 
 DEFAULT_SEALED_SEED = 1337
 DEFAULT_SEALED_DIR = "data/sealed"
 MAX_MANIFEST_BYTES = 256 * 1024
+MAX_SEALED_ARTIFACT_BYTES = 15 * 1024 * 1024
 
 
 # Display totals copied from the dev report and later formatted numerically in the comparison.
@@ -109,6 +110,24 @@ def _hash_file(path: str) -> str:
     return digest.hexdigest()
 
 
+def _snapshot_artifact(path: str, *, filename: str) -> tuple[bytes, str]:
+    """Read and hash the exact bounded bytes later consumed by sealed evaluation."""
+    digest = hashlib.sha256()
+    chunks: list[bytes] = []
+    total = 0
+    with _open_regular_file(path, label=f"sealed artifact {filename}") as fh:
+        while chunk := fh.read(65536):
+            total += len(chunk)
+            if total > MAX_SEALED_ARTIFACT_BYTES:
+                raise SealedIntegrityError(
+                    f"sealed artifact {filename} exceeds maximum size of "
+                    f"{MAX_SEALED_ARTIFACT_BYTES:,} bytes"
+                )
+            digest.update(chunk)
+            chunks.append(chunk)
+    return b"".join(chunks), digest.hexdigest()
+
+
 def generate_sealed_holdout(seed: int, out_dir: str) -> dict[str, str]:
     """Run generator in separate process to guarantee generator-matcher blindness (E3)."""
     os.makedirs(out_dir, exist_ok=True)
@@ -160,7 +179,7 @@ def _manifest_files_digest(files: dict) -> str:
     return hashlib.sha256(canon).hexdigest()
 
 
-def _verify_sealed_manifest(sealed_dir: str) -> None:
+def _verify_sealed_manifest(sealed_dir: str) -> dict[str, bytes]:
     """Fail closed BEFORE scoring. Two layers: (1) AUTHENTICITY — the manifest's seed and the digest
     of its files-map must match the committed trust anchor above, so a self-consistently-tampered
     manifest is rejected; (2) INTEGRITY — every required artifact exists and re-hashes to its manifest
@@ -187,16 +206,19 @@ def _verify_sealed_manifest(sealed_dir: str) -> None:
             "sealed manifest does not match the committed trust anchor (tampered or re-frozen holdout): "
             f"digest={actual_digest}, expected={_EXPECTED_MANIFEST_DIGEST}"
         )
+    snapshots: dict[str, bytes] = {}
     for fname in _SEALED_ARTIFACTS:
         if fname not in expected:
             raise SealedIntegrityError(f"sealed manifest has no hash for required artifact {fname!r}")
         fpath = os.path.join(sealed_dir, fname)
-        actual = _hash_file(fpath)
+        snapshot, actual = _snapshot_artifact(fpath, filename=fname)
         if actual != expected[fname]:
             raise SealedIntegrityError(
                 f"sealed artifact {fname} hash mismatch (tampered holdout): "
                 f"manifest={expected[fname]}, actual={actual}"
             )
+        snapshots[fname] = snapshot
+    return snapshots
 
 
 def evaluate_sealed(
@@ -206,13 +228,13 @@ def evaluate_sealed(
     global_solver: bool = False,
 ) -> dict:
     """Score the sealed holdout in a single run."""
-    _verify_sealed_manifest(sealed_dir)  # reject a tampered/incomplete holdout before loading anything
-    bank_path = os.path.join(sealed_dir, "bank_statement.csv")
-    recon_path = os.path.join(sealed_dir, "recon_report.json")
-    truth_path = os.path.join(sealed_dir, "ground_truth.json")
+    snapshots = _verify_sealed_manifest(sealed_dir)
+    bank_bytes = snapshots["bank_statement.csv"]
+    recon_bytes = snapshots["recon_report.json"]
+    truth_bytes = snapshots["ground_truth.json"]
 
-    lines = load_bank(bank_path)
-    recon_rows = load_recon(recon_path)
+    lines = load_bank_bytes(bank_bytes, source="sealed bank statement")
+    recon_rows = load_recon_bytes(recon_bytes, source="sealed reconciliation report")
     index = ReconIndex(recon_rows)
 
     # 1. Attribute
@@ -239,7 +261,7 @@ def evaluate_sealed(
     }
 
     # 3. Score vs ground truth
-    m = score(report_dict, truth_path, bank_path)
+    m = score_bytes(report_dict, truth_bytes, bank_bytes)
     report_dict["metrics"] = m
 
     os.makedirs(os.path.dirname(out_report) or ".", exist_ok=True)
