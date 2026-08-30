@@ -108,13 +108,15 @@ the demo. **CA-firm multi-client distribution** = go-to-market, post-buildathon.
 
 **Official Track 4 prompt (grade against THIS):** "Run the books and the cash position: build an agent
 that closes one finance-ops loop across a 50+ record batch, reporting its match rate and the exceptions
-it could not resolve. Show the audit trail and one failure handled gracefully."
+it could not resolve." The public Track-4 bar also emphasizes throughput, measured accuracy, and an
+honest exception list; one cherry-picked match proves nothing.
 
 **Our strategy weighting (not an official rubric):** Autonomous ops + agentic architecture + match-rate accuracy, zero
 hallucinated debits **30%** · Audit trail + explainable reasoning **25%** · Graceful failure + exception
 recovery **20%** · Production eng (MCP/APIs, Docker, real Tally/Zoho import) **15%** · Pitch/video incl.
-the "2 AM bug" **10%**. Judges = Razorpay settlement/payments eng + product leaders (built Razorpay Recon)
-+ fintech VCs. Winner = deterministic pipeline + agentic exception investigator + real accounting output;
+the "2 AM bug" **10%**. Audit trail and graceful failure are our strategy priorities for demonstrating
+trustworthy operation; they are not appended to the official Track-4 quotation above. Winner = deterministic
+pipeline + agentic exception investigator + real accounting output;
 runner-up = an "ask your data" LLM chat wrapper that breaks on messy edge cases.
 
 **untangle already hits ~80%** (audit trail, abstention/exceptions, journal export). **Our perceived gap is the agentic
