@@ -124,6 +124,8 @@ def build_journal_entries(
     CGST+SGST (same state as the gateway GSTIN) vs a single IGST line (inter-state)."""
     from collections import defaultdict
 
+    from engine.covered import resolve_covered_rows_by_id, rows_by_canonical_id
+
     # Qodo #7: index recon rows as a MULTIMAP so duplicate (type, entity_id) rows are not collapsed to
     # the last one — each covered-key occurrence consumes a distinct row.
     rows_by_key: dict[tuple[str, str], list] = defaultdict(list)
@@ -131,14 +133,21 @@ def build_journal_entries(
         rows_by_key[(r.type, r.entity_id)].append(r)
 
     entries: list[JournalEntry] = []
+    rows_by_id = rows_by_canonical_id(recon_rows)
     for rec in sorted(reconciliations, key=lambda x: x.line_key):
-        seen: dict[tuple[str, str], int] = defaultdict(int)
-        covered = []
-        for k in rec.covered_entity_ids:
-            bucket = rows_by_key.get(k, [])
-            if seen[k] < len(bucket):
-                covered.append(bucket[seen[k]])
-            seen[k] += 1
+        if rec.covered_row_ids:
+            # Strict path: exact, validated rows (fail-closed on identity/duplicate mismatch).
+            covered = resolve_covered_rows_by_id(rec, rows_by_id)
+        else:
+            # Legacy fallback: occurrence-consuming (type, entity_id) so duplicate covered keys
+            # still map to distinct rows for pre-row-id reconciliations.
+            seen: dict[tuple[str, str], int] = defaultdict(int)
+            covered = []
+            for k in rec.covered_entity_ids:
+                bucket = rows_by_key.get(tuple(k), [])
+                if seen[tuple(k)] < len(bucket):
+                    covered.append(bucket[seen[tuple(k)]])
+                seen[tuple(k)] += 1
         if not covered:
             continue
         # Fees/tax over the covered rows; convention-agnostic MDR (untangle folds GST inside `fee`;

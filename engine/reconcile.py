@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from engine.covered import canonical_row_ids
 from engine.evidence import extract_utr_tokens
 from engine.models import BankCreditLine, Rail, RailAttribution, ReconciliationResult, ReconRow
 
@@ -35,6 +36,10 @@ class SettlementIndex:
         self.utr_to_sid: dict[str, str] = {}
         self.net_by_sid: dict[str, int] = {}
         self.date_by_sid: dict[str, object] = {}
+        # Content-derived canonical identity: independent of list position, so a covered id can never
+        # silently rebind to a different physical row if recon_rows is later reordered/subset. The
+        # untrusted external ReconRow.row_id is deliberately ignored (see engine.covered).
+        self.row_ids: dict[int, str] = canonical_row_ids(rows)
         for r in rows:
             sid = r.settlement_id
             if not sid:
@@ -163,6 +168,7 @@ def _make_result(
         credit_amount_paise=line.amount_paise,
         residual_paise=residual,
         balanced=True,
+        covered_row_ids=[sindex.row_ids[id(r)] for r in covered],
     )
 
 

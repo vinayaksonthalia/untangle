@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from engine.covered import resolve_covered_rows_by_id, rows_by_canonical_id
 from engine.evidence import narration_rail_signals
 from engine.models import (
     BankCreditLine,
@@ -61,7 +62,14 @@ def build_proof_packets(
     # Key tax by the FULL (type, entity_id) join — the same composite key reconciliation and
     # fee_gst use — so two entities of different types sharing an id can't collide (Qodo #3).
     tax_by_entity = {(r.type, r.entity_id): r.tax_paise for r in recon_rows}
-    sid_by_entity = {(r.type, r.entity_id): r.settlement_id for r in recon_rows if r.settlement_id}
+    row_by_id = rows_by_canonical_id(recon_rows)
+    # Multimap for the legacy (pre-row-id) fallback: occurrence-consuming so duplicate covered keys
+    # still resolve to distinct REAL rows (a bare tax map yields ints, losing settlement ids).
+    from collections import defaultdict
+
+    rows_by_key: dict[tuple[str, str], list[ReconRow]] = defaultdict(list)
+    for _r in recon_rows:
+        rows_by_key[(_r.type, _r.entity_id)].append(_r)
 
     packets: list[dict] = []
     for a in attributions:
@@ -105,15 +113,33 @@ def build_proof_packets(
         settlement = None
         claimed_sids: set[str] = set()
         if rec is not None:
-            covered = [{"type": t, "entity_id": eid} for t, eid in rec.covered_entity_ids]
-            fee_gst_paise = sum(
-                tax_by_entity.get((t, eid), 0) for t, eid in rec.covered_entity_ids
-            )
+            covered = []
+            for i, (t, eid) in enumerate(rec.covered_entity_ids):
+                item = {"type": t, "entity_id": eid}
+                if rec.covered_row_ids and i < len(rec.covered_row_ids):
+                    item["row_id"] = rec.covered_row_ids[i]
+                covered.append(item)
+            if rec.covered_row_ids:
+                # Strict path: exact, validated rows (fail-closed on identity/duplicate mismatch).
+                covered_rows = resolve_covered_rows_by_id(rec, row_by_id)
+                fee_gst_paise = sum(r.tax_paise for r in covered_rows)
+                rows_for_sids = covered_rows
+            else:
+                # Legacy fallback (pre-row-id data): fee-GST from the lossy (type, entity_id) tax
+                # map (byte-identical with prior behaviour), but settlement ids from occurrence-
+                # consuming REAL rows — a bare tax map yields ints, so ids were previously lost.
+                fee_gst_paise = sum(tax_by_entity.get((t, eid), 0) for t, eid in rec.covered_entity_ids)
+                _seen: dict[tuple[str, str], int] = defaultdict(int)
+                rows_for_sids = []
+                for t, eid in rec.covered_entity_ids:
+                    bucket = rows_by_key.get((t, eid), [])
+                    if _seen[(t, eid)] < len(bucket):
+                        rows_for_sids.append(bucket[_seen[(t, eid)]])
+                    _seen[(t, eid)] += 1
             fee_gst_display = _inr(fee_gst_paise)
-            for t, eid in rec.covered_entity_ids:
-                s = sid_by_entity.get((t, eid))
-                if s:
-                    claimed_sids.add(s)
+            for row in rows_for_sids:
+                if row.settlement_id:
+                    claimed_sids.add(row.settlement_id)
             settlement = {
                 "covered_entities": covered,
                 "covered_net_inr": _inr(rec.covered_net_paise),
