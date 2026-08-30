@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import json
 import io
+import json
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
@@ -69,7 +69,7 @@ def _parse_date(raw: str, *, ctx: str) -> date:
         return date.fromisoformat(raw)
     except ValueError as exc:
         raise InputError(
-            f"{ctx}: could not parse date {raw!r}. Expected ISO format YYYY-MM-DD."
+            f"{ctx}: could not parse date {raw!r}. Supported formats: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, DD/MM/YY, DD-MM-YY, DD.MM.YYYY."
         ) from exc
 
 
@@ -129,14 +129,24 @@ def _normalise_bank_rows(raw: str) -> tuple[list[str], list[dict[str, str]]]:
     rows = list(csv.reader(io.StringIO(raw)))
     header_at = next((i for i, row in enumerate(rows)
                       if {(_BANK_ALIASES.get(c.strip().lower(), c.strip().lower())) for c in row}
-                      & {"value_date", "narration"}), None)
+                      >= {"value_date", "narration"}), None)
     if header_at is None:
         raise InputError("Bank statement: could not find a header row with date and narration columns.")
     header = rows[header_at]
     mapped = [_BANK_ALIASES.get(c.strip().lower(), c.strip()) for c in header]
     if "value_date" not in mapped or "narration" not in mapped:
         raise InputError("Bank statement: header must contain date and narration columns.")
-    return mapped, [dict(zip(mapped, row)) for row in rows[header_at + 1:] if any(x.strip() for x in row)]
+    if len(mapped) != len(set(mapped)):
+        duplicates = sorted({name for name in mapped if mapped.count(name) > 1})
+        raise InputError(f"Bank statement: duplicate columns after normalization: {duplicates}.")
+    data = []
+    for row_number, row in enumerate(rows[header_at + 1:], start=header_at + 2):
+        if not any(x.strip() for x in row):
+            continue
+        if len(row) != len(mapped):
+            raise InputError(f"Bank statement row {row_number}: expected {len(mapped)} columns, found {len(row)}.")
+        data.append(dict(zip(mapped, row)))
+    return mapped, data
 
 
 def load_bank(path: str) -> list[BankCreditLine]:
@@ -158,6 +168,8 @@ def load_bank(path: str) -> list[BankCreditLine]:
                 narration = (row.get("narration") or "").strip()
                 credit_raw = (row.get("credit") or "").strip()
                 debit_raw = (row.get("debit") or "").strip()
+                if bool(credit_raw) == bool(debit_raw):
+                    raise InputError(f"Bank statement row {i}: exactly one of credit or debit must be populated.")
                 is_credit = bool(credit_raw)
                 if is_credit:
                     amount = _rupees_to_paise(credit_raw, ctx=f"row {i}")
@@ -166,7 +178,7 @@ def load_bank(path: str) -> list[BankCreditLine]:
                 bank_ref = (row.get(ref_col) or "").strip() if ref_col else None
                 vd_raw = (row.get("value_date") or "").strip()
                 parsed_date = _parse_date(vd_raw, ctx=f"Bank statement row {i}")
-                key = _line_key(vd_raw, amount, narration, bank_ref)
+                key = _line_key(parsed_date.isoformat(), amount, narration, bank_ref)
                 lines.append(
                     BankCreditLine(
                         key=key,

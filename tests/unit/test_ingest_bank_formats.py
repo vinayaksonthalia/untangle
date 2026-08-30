@@ -8,13 +8,6 @@ from engine.ingest import InputError, load_bank
 def test_metadata_aliases_dates_commas_and_accounting_markers(tmp_path: Path):
     p = tmp_path / "bank.csv"
     p.write_text(
-        "Exported by bank,,,,\n"
-        "Date,Narration,Chq./Ref.No.,Value Dt,Withdrawal Amt.,Deposit Amt.,Closing Balance\n"
-        "01/07/2026,NEFT ACME,UTR1,01/07/2026,,1,23,456.78 CR,1\n",
-        encoding="utf-8",
-    )
-    # The deliberately quoted amount is the valid CSV representation of commas.
-    p.write_text(
         "Exported by bank,,,,\nDate,Narration,Chq./Ref.No.,Value Dt,Withdrawal Amt.,Deposit Amt.,Closing Balance\n"
         '01/07/2026,NEFT ACME,UTR1,01/07/2026,,"1,23,456.78 CR",1\n', encoding="utf-8"
     )
@@ -34,4 +27,23 @@ def test_unknown_encoding_is_rejected(tmp_path: Path):
     p = tmp_path / "bad-encoding.csv"
     p.write_bytes(b"Date,Narration,Credit,Debit\n\xff")
     with pytest.raises(UnicodeDecodeError):
+        load_bank(str(p))
+
+
+@pytest.mark.parametrize("header", [
+    "Date,Date,Narration,Credit,Debit",
+    "Date,Narration,Credit,Debit,Extra",
+])
+def test_duplicate_or_ragged_headers_fail_closed(tmp_path: Path, header: str):
+    p = tmp_path / "bad.csv"
+    p.write_text(header + "\n01/07/2026,broken,1,,x\n", encoding="utf-8")
+    with pytest.raises(InputError):
+        load_bank(str(p))
+
+
+@pytest.mark.parametrize("amounts", [("1", "2"), ("", "")])
+def test_credit_debit_direction_is_unambiguous(tmp_path: Path, amounts):
+    p = tmp_path / "bad.csv"
+    p.write_text(f"Date,Narration,Credit,Debit\n01/07/2026,broken,{amounts[0]},{amounts[1]}\n", encoding="utf-8")
+    with pytest.raises(InputError, match="exactly one"):
         load_bank(str(p))
