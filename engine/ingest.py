@@ -262,11 +262,17 @@ def load_bank(path: str) -> list[BankCreditLine]:
             return _load_bank_text(fh, path)
     except FileNotFoundError as exc:
         raise InputError(f"Bank statement not found: {path}. Check the --bank path.") from exc
+    except UnicodeDecodeError as exc:
+        raise InputError(f"Bank statement {path} is not valid UTF-8 text.") from exc
 
 
 def load_bank_bytes(content: bytes, source: str = "bank statement") -> list[BankCreditLine]:
     """Parse a caller-owned immutable byte snapshot without reopening a mutable path."""
-    return _load_bank_text(io.StringIO(content.decode("utf-8-sig"), newline=""), source)
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise InputError(f"Bank statement {source} is not valid UTF-8 text.") from exc
+    return _load_bank_text(io.StringIO(text, newline=""), source)
 
 
 def _load_recon_data(data, source: str) -> list[ReconRow]:
@@ -323,7 +329,7 @@ def load_recon(path: str) -> list[ReconRow]:
             data = json.load(fh)
     except FileNotFoundError as exc:
         raise InputError(f"Recon report not found: {path}. Check the --recon path.") from exc
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise InputError(f"Recon report {path} is not valid JSON: {exc}.") from exc
     return _load_recon_data(data, path)
 
@@ -332,7 +338,7 @@ def load_recon_bytes(content: bytes, source: str = "reconciliation report") -> l
     """Parse a caller-owned immutable byte snapshot without reopening a mutable path."""
     try:
         data = json.loads(content)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise InputError(f"Recon report {source} is not valid JSON: {exc}.") from exc
     return _load_recon_data(data, source)
 
@@ -365,8 +371,14 @@ def load_ledger(path: str) -> list[OrderLedgerEntry]:
             return _load_ledger_text(fh, path)
     except FileNotFoundError as exc:
         raise InputError(f"Order ledger not found: {path}. Check the --ledger path.") from exc
+    except UnicodeDecodeError as exc:
+        raise InputError(f"Order ledger {path} is not valid UTF-8 text.") from exc
 
 
 def load_ledger_bytes(content: bytes, source: str = "order ledger") -> list[OrderLedgerEntry]:
     """Parse a caller-owned immutable byte snapshot without reopening a mutable path."""
-    return _load_ledger_text(io.StringIO(content.decode("utf-8"), newline=""), source)
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise InputError(f"Order ledger {source} is not valid UTF-8 text.") from exc
+    return _load_ledger_text(io.StringIO(text, newline=""), source)
