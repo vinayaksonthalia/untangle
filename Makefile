@@ -18,7 +18,7 @@ help:
 	@echo "make ablation - eval with AI on/off delta + latency + cost/1k"
 	@echo "make test     - run the full pytest suite"
 	@echo "make coverage - run tests with the enforced 65% branch-coverage floor"
-	@echo "make mutation - run targeted mutation testing for reconciliation/accounting"
+	@echo "make mutation - run reconciliation mutation diagnostic"
 	@echo "make lint     - ruff check"
 
 venv:

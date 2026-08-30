@@ -22,7 +22,7 @@ Mutation testing is deliberately scoped to reconciliation logic because that
 module contains the core matching invariant and has fixture-independent unit
 coverage. The mutmut test selection is limited to reconciliation unit tests,
 so it works from a clean checkout. It is an opt-in local
-gate (`make mutation`) rather than a required PR check: mutmut can take
+diagnostic (`make mutation`) rather than a required PR check: mutmut can take
 substantially longer than the normal suite. Install it separately with
 `python -m pip install -e '.[quality]'`, then review surviving mutants rather
 than treating a mutation score as proof of correctness. The current targeted
