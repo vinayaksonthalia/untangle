@@ -6,6 +6,7 @@ from datetime import date, datetime
 
 import pytest
 
+from engine.cli import _fmt_inr_exact
 from engine.evidence import ReconIndex
 from engine.models import (
     BankCreditLine,
@@ -364,6 +365,82 @@ def test_build_recovery_plan_no_double_counting():
     plan = build_recovery_plan([l1, l2], [a1, a2], _empty_index(), [exc1, exc2])
     assert plan.unresolved_paise == 300000
     assert plan.recoverable_if_actioned_paise == 300000
+
+
+def test_recovery_separates_positive_credits_from_debit_exposure():
+    """Netting a debit against a credit must never create negative recoverable cash."""
+    credit = _line("credit", narr="NEFT CR UNKNOWN", amount=100000, vd="2026-06-10")
+    debit = _line("debit", narr="CHG DR REVIEW", amount=-2950, vd="2026-06-10")
+    attrs = [
+        RailAttribution("credit", Rail.UNKNOWN.value, 0.0, "none", [], abstained=True),
+        RailAttribution("debit", Rail.UNKNOWN.value, 0.0, "none", [], abstained=True),
+    ]
+    excs = [
+        ExceptionRecord("credit", "unattributed_ambiguous", "unknown", "check", evidence=[]),
+        ExceptionRecord("debit", "unattributed_ambiguous", "unknown", "check", evidence=[]),
+    ]
+    plan = build_recovery_plan([credit, debit], attrs, _empty_index(), excs)
+    assert plan.unresolved_paise == 97050  # compatibility net total
+    assert plan.unresolved_credit_paise == 100000
+    assert plan.unresolved_debit_paise == 2950
+    assert plan.recoverable_if_actioned_paise == 100000
+    assert all(a.recoverable_paise >= 0 for a in plan.actions)
+    assert all("negative" not in a.description.lower() for a in plan.actions)
+
+
+def test_recovery_debit_only_is_exposure_not_recoverable():
+    debit = _line("debit", narr="CHG DR REVIEW", amount=-2950, vd="2026-06-10")
+    attr = RailAttribution("debit", Rail.UNKNOWN.value, 0.0, "none", [], abstained=True)
+    exc = ExceptionRecord("debit", "unattributed_ambiguous", "unknown", "check", evidence=[])
+    plan = build_recovery_plan([debit], [attr], _empty_index(), [exc])
+    assert plan.recoverable_if_actioned_paise == 0
+    assert plan.unresolved_credit_paise == 0
+    assert plan.unresolved_debit_paise == 2950
+    assert all("up to" not in a.description.lower() for a in plan.actions)
+    assert any("debit exposure" in a.description.lower() for a in plan.actions)
+
+
+def test_mixed_sign_action_description_discloses_debit_and_does_not_call_lines_credits():
+    # A single export action whose window merged a positive and a negative line: the description
+    # must state the recoverable credit AND disclose the debit exposure, and must never label the
+    # resolved lines as "credits" (Qodo #33: debit actions misstate targets).
+    action = RecoveryAction(
+        action_type=ACTION_EXPORT_SETTLEMENT_REPORT,
+        params={"date_from": "2026-06-10", "date_to": "2026-06-10"},
+        resolves=("credit", "debit"),
+        recoverable_paise=100000,
+        debit_exposure_paise=2950,
+        cost=1.0,
+        gain_per_cost=100000.0,
+    )
+    desc = action.description
+    assert "up to ₹1,000.00 recoverable" in desc  # the positive credit, not netted against the debit
+    assert "debit exposure" in desc.lower() and "₹29.50" in desc  # exposure disclosed
+    assert "2 items" in desc.lower()  # neutral count
+    assert "credit" not in desc.lower()  # no resolved line is labelled a credit
+
+
+def test_recovery_mixed_action_discloses_debit_exposure_and_uses_item_wording():
+    action = RecoveryAction(
+        action_type=ACTION_CLASSIFY_COUNTERPARTY,
+        params={}, resolves=("credit", "debit"), recoverable_paise=10000,
+        cost=0.5, gain_per_cost=20000.0, debit_exposure_paise=2950,
+    )
+    text = action.description.lower()
+    assert "2 items" in text
+    assert "debit exposure" in text
+    assert "₹29.50" in action.description
+    assert "if confirmed" in text
+
+
+def test_recovery_cli_exposure_format_keeps_paise():
+    assert _fmt_inr_exact(2950) == "₹29.50"
+
+
+def test_recovery_cli_exposure_format_uses_indian_grouping_above_a_lakh():
+    # ₹10,00,000.00 in Indian lakh/crore grouping — NOT the Western ₹1,000,000.00 (Qodo #33 review-2).
+    assert _fmt_inr_exact(1000000_00) == "₹10,00,000.00"
+    assert _fmt_inr_exact(-1234567_89) == "-₹12,34,567.89"
 
 
 def test_build_recovery_plan_capping_with_note():

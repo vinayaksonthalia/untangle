@@ -60,6 +60,14 @@ def _amt(paise: int) -> str:
     return f'{sign}<span class="rs">₹</span> {_grp(int(round(abs(paise) / 100)))}'
 
 
+def _amt_exact(paise: int) -> str:
+    """Paise-precise amount (no rounding), for recoverable/debit-exposure cells where ₹29.50 must
+    not become ₹30. Indian grouping on the integer part, two-decimal paise."""
+    sign = "−" if paise < 0 else ""
+    absolute = abs(paise)
+    return f'{sign}<span class="rs">₹</span> {_grp(absolute // 100)}.{absolute % 100:02d}'
+
+
 def _embed_json(obj) -> str:
     """JSON-encode for safe embedding inside a <script> element. json.dumps does not escape
     ``<``, so a value containing ``</script>`` would break out of the script at the HTML-parser
@@ -396,10 +404,17 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
         act_type = a.get("action_type", "")
         cost = a.get("cost", 1.0)
         rec_paise = a.get("recoverable_paise", 0)
+        debit_paise = a.get("debit_exposure_paise", 0)
         resolves = a.get("resolves", [])
         desc = a.get("description") or f"Action {act_type} — up to {_amt(rec_paise)} recoverable if confirmed"
-        resolves_str = f"{len(resolves)} credit{'s' if len(resolves) != 1 else ''}"
+        resolves_str = f"{len(resolves)} item{'s' if len(resolves) != 1 else ''}"
         resolves_keys = ", ".join(resolves[:3]) + (f" ... +{len(resolves)-3} more" if len(resolves) > 3 else "")
+        if debit_paise and not rec_paise:
+            amount_html = f'<div style="font-weight:600;color:var(--warn)">{_amt_exact(debit_paise)}</div><div style="font-size:11px;color:var(--ts)">review only · not recoverable</div>'
+        elif debit_paise:
+            amount_html = f'<div style="font-weight:600;color:var(--acc)">{_amt_exact(rec_paise)}</div><div style="font-size:11px;color:var(--ts)">recoverable · if confirmed</div><div style="font-size:11px;color:var(--warn)">debit exposure {_amt_exact(debit_paise)} · excluded</div>'
+        else:
+            amount_html = f'<div style="font-weight:600;color:var(--acc)">{_amt_exact(rec_paise)}</div><div style="font-size:11px;color:var(--ts)">recoverable · if confirmed</div>'
         recovery_rows.append(f"""
       <tr class="recov-row">
         <td class="mono" style="font-weight:600;color:var(--acc)">#{i}</td>
@@ -412,8 +427,7 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
           <div style="font-size:11px;color:var(--ts);font-family:var(--mono)">{html.escape(resolves_keys)}</div>
         </td>
         <td class="mono" style="text-align:right">
-          <div style="font-weight:600;color:var(--acc)">{_amt(rec_paise)}</div>
-          <div style="font-size:11px;color:var(--ts)">up to · if confirmed</div>
+          {amount_html}
         </td>
         <td class="mono" style="text-align:right;font-size:12px;color:var(--ts)">
           {cost:.1f}
@@ -446,8 +460,8 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
           <tr>
             <th style="width:50px">Rank</th>
             <th>Action &amp; Recommendation</th>
-            <th style="width:180px">Target Credits</th>
-            <th style="width:160px;text-align:right">Recoverable</th>
+            <th style="width:180px">Target Items</th>
+            <th style="width:160px;text-align:right">Recoverable / Exposure</th>
             <th style="width:70px;text-align:right">Cost</th>
           </tr>
         </thead>

@@ -33,20 +33,31 @@ from engine.reconcile import reconcile
 _ENGINE_VERSION = "0.1.0"
 
 
+def _indian_group(digits: str) -> str:
+    """Indian lakh/crore comma grouping of a non-negative integer's digit string (1000000 -> 10,00,000)."""
+    if len(digits) <= 3:
+        return digits
+    head, tail = digits[:-3], digits[-3:]
+    parts = []
+    while len(head) > 2:
+        parts.insert(0, head[-2:])
+        head = head[:-2]
+    parts.insert(0, head)
+    return ",".join(parts) + "," + tail
+
+
 def _fmt_inr(paise: int) -> str:
-    rupees = paise / 100.0
     # Indian grouping (lakh/crore) on the integer part.
-    neg = rupees < 0
-    s = f"{abs(int(round(rupees))):d}"
-    if len(s) > 3:
-        head, tail = s[:-3], s[-3:]
-        parts = []
-        while len(head) > 2:
-            parts.insert(0, head[-2:])
-            head = head[:-2]
-        parts.insert(0, head)
-        s = ",".join(parts) + "," + tail
-    return ("-" if neg else "") + "₹" + s
+    neg = paise < 0
+    rupees = abs(int(round(paise / 100.0)))
+    return ("-" if neg else "") + "₹" + _indian_group(f"{rupees:d}")
+
+
+def _fmt_inr_exact(paise: int) -> str:
+    """Format paise without rounding, with Indian grouping, for exposure and other precise amounts."""
+    sign = "-" if paise < 0 else ""
+    absolute = abs(paise)
+    return f"{sign}₹{_indian_group(f'{absolute // 100:d}')}.{absolute % 100:02d}"
 
 
 def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
@@ -275,7 +286,10 @@ def _print_summary(report: RunReport) -> None:
     if report.recovery_plan and report.recovery_plan.actions:
         plan = report.recovery_plan
         recov_inr = _fmt_inr(plan.recoverable_if_actioned_paise)
+        debit_inr = _fmt_inr_exact(plan.unresolved_debit_paise)
         print(f"Active Recovery Plan: {len(plan.actions)} action(s) · up to {recov_inr} recoverable if confirmed")
+        if plan.unresolved_debit_paise:
+            print(f"    Debit exposure requiring review: {debit_inr} (excluded from recoverable cash)")
         for i, act in enumerate(plan.actions[:3], 1):
             print(f"    {i}. {act.description}")
         if len(plan.actions) > 3:
