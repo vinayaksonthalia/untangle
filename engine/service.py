@@ -77,8 +77,10 @@ def read_input_snapshot(path: str, *, label: str, option: str) -> bytes:
         raise InputError(f"{label} not found: {path}. Check the {option} path.") from exc
     finally:
         if fd is not None:
-            try: os.close(fd)
-            except OSError: pass
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
 
 def reconcile(
