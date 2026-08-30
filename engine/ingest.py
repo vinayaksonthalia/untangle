@@ -145,7 +145,7 @@ def _normalise_bank_rows(raw: str) -> tuple[list[str], list[dict[str, str]]]:
             continue
         if len(row) != len(mapped):
             raise InputError(f"Bank statement row {row_number}: expected {len(mapped)} columns, found {len(row)}.")
-        data.append(dict(zip(mapped, row)))
+        data.append(dict(zip(mapped, row, strict=True)))
     return mapped, data
 
 

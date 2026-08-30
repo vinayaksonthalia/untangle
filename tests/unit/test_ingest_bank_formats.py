@@ -8,8 +8,8 @@ from engine.ingest import InputError, load_bank
 def test_metadata_aliases_dates_commas_and_accounting_markers(tmp_path: Path):
     p = tmp_path / "bank.csv"
     p.write_text(
-        "Exported by bank,,,,\nDate,Narration,Chq./Ref.No.,Value Dt,Withdrawal Amt.,Deposit Amt.,Closing Balance\n"
-        '01/07/2026,NEFT ACME,UTR1,01/07/2026,,"1,23,456.78 CR",1\n', encoding="utf-8"
+        "Exported by bank,,,,\nValue Dt,Narration,Chq./Ref.No.,Withdrawal Amt.,Deposit Amt.,Closing Balance\n"
+        '01/07/2026,NEFT ACME,UTR1, ,"1,23,456.78 CR",1\n', encoding="utf-8"
     )
     lines = load_bank(str(p))
     assert lines[0].amount_paise == 12345678
@@ -36,7 +36,8 @@ def test_unknown_encoding_is_rejected(tmp_path: Path):
 ])
 def test_duplicate_or_ragged_headers_fail_closed(tmp_path: Path, header: str):
     p = tmp_path / "bad.csv"
-    p.write_text(header + "\n01/07/2026,broken,1,,x\n", encoding="utf-8")
+    row = "01/07/2026,broken,1,\n" if header.endswith("Extra") else "01/07/2026,broken,1,,x\n"
+    p.write_text(header + "\n" + row, encoding="utf-8")
     with pytest.raises(InputError):
         load_bank(str(p))
 
