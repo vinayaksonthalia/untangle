@@ -57,7 +57,8 @@ def canonical_row_ids(recon_rows: list[ReconRow]) -> dict[int, str]:
         sig = _row_signature(r)
         occ = seen[sig]
         seen[sig] += 1
-        digest = hashlib.sha1(repr(sig).encode("utf-8")).hexdigest()[:16]
+        # A content fingerprint, not a security digest — usedforsecurity=False says so explicitly.
+        digest = hashlib.sha256(repr(sig).encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
         out[id(r)] = f"row_{digest}_{occ}"
     return out
 
