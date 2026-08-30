@@ -61,8 +61,7 @@ def build_proof_packets(
     # Key tax by the FULL (type, entity_id) join — the same composite key reconciliation and
     # fee_gst use — so two entities of different types sharing an id can't collide (Qodo #3).
     tax_by_entity = {(r.type, r.entity_id): r.tax_paise for r in recon_rows}
-    sid_by_entity = {(r.type, r.entity_id): r.settlement_id for r in recon_rows if r.settlement_id}
-    row_by_id = {r.row_id or f"recon_{i}": r for i, r in enumerate(recon_rows)}
+    row_by_id = {f"recon_{i}": r for i, r in enumerate(recon_rows)}
 
     packets: list[dict] = []
     for a in attributions:
@@ -113,14 +112,17 @@ def build_proof_packets(
                     item["row_id"] = rec.covered_row_ids[i]
                 covered.append(item)
             covered_rows = [row_by_id.get(rid) for rid in rec.covered_row_ids] if rec.covered_row_ids else []
+            if rec.covered_row_ids and (len(covered_rows) != len(rec.covered_entity_ids) or any(r is None for r in covered_rows)):
+                continue  # malformed result cannot produce a proof packet
             fee_gst_paise = (
                 sum(r.tax_paise for r in covered_rows if r is not None)
                 if covered_rows
                 else sum(tax_by_entity.get((t, eid), 0) for t, eid in rec.covered_entity_ids)
             )
             fee_gst_display = _inr(fee_gst_paise)
-            for t, eid in rec.covered_entity_ids:
-                s = sid_by_entity.get((t, eid))
+            rows_for_sids = covered_rows or [tax_by_entity.get((t, eid)) for t, eid in rec.covered_entity_ids]
+            for row in rows_for_sids:
+                s = row.settlement_id if isinstance(row, ReconRow) else None
                 if s:
                     claimed_sids.add(s)
             settlement = {

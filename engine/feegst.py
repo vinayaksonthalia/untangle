@@ -16,14 +16,19 @@ def fee_gst(
     reconciliations: list[ReconciliationResult],
     recon_rows: list[ReconRow],
 ) -> FeeGstRecovery:
-    by_row_id = {r.row_id or f"recon_{i}": r for i, r in enumerate(recon_rows)}
+    by_row_id = {f"recon_{i}": r for i, r in enumerate(recon_rows)}
     by_id = {(r.type, r.entity_id): r for r in recon_rows}
     total = 0
     by_entity: list[tuple[str, int]] = []
     for rec in reconciliations:
+        if rec.covered_row_ids and len(rec.covered_row_ids) != len(rec.covered_entity_ids):
+            raise ValueError(f"{rec.line_key}: covered row identity count does not match covered entities")
         keys = rec.covered_row_ids or [None] * len(rec.covered_entity_ids)
-        for key, row_id in zip(rec.covered_entity_ids, keys):
+        for i, key in enumerate(rec.covered_entity_ids):
+            row_id = keys[i]
             row = by_row_id.get(row_id) if row_id else by_id.get(tuple(key))
+            if rec.covered_row_ids and row is None:
+                raise ValueError(f"{rec.line_key}: covered row {row_id!r} is missing")
             if row is not None and row.tax_paise:
                 total += row.tax_paise
                 by_entity.append((row.entity_id, row.tax_paise))
