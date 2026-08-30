@@ -75,4 +75,19 @@ def test_render_recovery_labels_debit_exposure_as_items_not_credits():
     assert "2 items" in output
     assert "debit exposure" in output
     assert "excluded" in output
+    assert "recoverable · if confirmed" in output
+    assert "Recoverable / Exposure" in output
     assert "Target Credits" not in output
+
+
+def test_render_debit_only_uses_exposure_as_primary_amount():
+    rep = _report()
+    rep["recovery_plan"] = {"recoverable_if_actioned_paise": 0, "actions": [{
+        "action_type": "classify_counterparty", "cost": 0.5, "resolves": ["debit"],
+        "recoverable_paise": 0, "debit_exposure_paise": 2950,
+        "description": "Classify counterparty — review ₹29.50 debit exposure across 1 item; not recoverable cash",
+    }]}
+    output = render(rep)
+    assert "review only · not recoverable" in output
+    assert "₹29.50" in output
+    assert "₹0.00" not in output

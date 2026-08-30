@@ -401,6 +401,12 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
         desc = a.get("description") or f"Action {act_type} — up to {_amt(rec_paise)} recoverable if confirmed"
         resolves_str = f"{len(resolves)} item{'s' if len(resolves) != 1 else ''}"
         resolves_keys = ", ".join(resolves[:3]) + (f" ... +{len(resolves)-3} more" if len(resolves) > 3 else "")
+        if debit_paise and not rec_paise:
+            amount_html = f'<div style="font-weight:600;color:var(--warn)">{_amt(debit_paise)}</div><div style="font-size:11px;color:var(--ts)">review only · not recoverable</div>'
+        elif debit_paise:
+            amount_html = f'<div style="font-weight:600;color:var(--acc)">{_amt(rec_paise)}</div><div style="font-size:11px;color:var(--ts)">recoverable · if confirmed</div><div style="font-size:11px;color:var(--warn)">debit exposure {_amt(debit_paise)} · excluded</div>'
+        else:
+            amount_html = f'<div style="font-weight:600;color:var(--acc)">{_amt(rec_paise)}</div><div style="font-size:11px;color:var(--ts)">recoverable · if confirmed</div>'
         recovery_rows.append(f"""
       <tr class="recov-row">
         <td class="mono" style="font-weight:600;color:var(--acc)">#{i}</td>
@@ -413,8 +419,7 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
           <div style="font-size:11px;color:var(--ts);font-family:var(--mono)">{html.escape(resolves_keys)}</div>
         </td>
         <td class="mono" style="text-align:right">
-          <div style="font-weight:600;color:var(--acc)">{_amt(rec_paise)}</div>
-          <div style="font-size:11px;color:var(--ts)">{'recoverable · if confirmed' if not debit_paise else f'debit exposure {_amt(debit_paise)} · excluded'}</div>
+          {amount_html}
         </td>
         <td class="mono" style="text-align:right;font-size:12px;color:var(--ts)">
           {cost:.1f}
@@ -448,7 +453,7 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
             <th style="width:50px">Rank</th>
             <th>Action &amp; Recommendation</th>
             <th style="width:180px">Target Items</th>
-            <th style="width:160px;text-align:right">Recoverable</th>
+            <th style="width:160px;text-align:right">Recoverable / Exposure</th>
             <th style="width:70px;text-align:right">Cost</th>
           </tr>
         </thead>
