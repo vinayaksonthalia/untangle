@@ -145,13 +145,16 @@ Honest scope: these are measured on a labelled adversarial benchmark, **not** a 
 real-world statement. On your own unlabelled upload, untangle shows attributed-vs-abstained counts and a
 real coverage curve, and never asserts a precision it cannot measure.
 
-The evaluator also reports a deterministic 95% Wilson score interval for each labelled precision
+The evaluator also reports a deterministic 95% confidence interval for each labelled precision
 and recall, with the numerator and denominator (for example, `x/n`, where `n` is that metric's
-labelled denominator). Wilson intervals are used
-instead of a Wald approximation because the benchmark includes small samples and 0%/100% boundary
-results. A zero denominator is reported as unavailable, not as a measured zero. These intervals
-describe uncertainty in this labelled synthetic benchmark only; they are not production guarantees
-under distribution shift and are never shown as performance for an unlabelled upload.
+labelled denominator). The interval is a **cluster bootstrap keyed by the underlying settlement
+event**: split settlements emit several correlated bank legs from one event, so treating each leg
+as an independent Bernoulli trial (as a plain Wilson/Wald interval would) understates uncertainty
+and cannot honestly be called 95%. Resampling whole settlement events instead propagates that
+correlation into the interval width; a fixed seed keeps it reproducible. A zero denominator is
+reported as unavailable, not as a measured zero. These intervals describe uncertainty in this
+labelled synthetic benchmark only; they are not production guarantees under distribution shift and
+are never shown as performance for an unlabelled upload.
 
 ## Quickstart
 

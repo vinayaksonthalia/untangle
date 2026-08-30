@@ -30,9 +30,9 @@ def _print_report(m: dict) -> None:
     if rzp:
         p = rzp["precision_ci95"]
         r = rzp["recall_ci95"]
-        print(f"  Razorpay 95% Wilson CI: precision {p['successes']}/{p['trials']} "
-              f"[{p['low']}, {p['high']}], recall {r['successes']}/{r['trials']} "
-              f"[{r['low']}, {r['high']}]")
+        print(f"  Razorpay 95% CI (cluster bootstrap by settlement event): "
+              f"precision {p['successes']}/{p['trials']} [{p['low']}, {p['high']}], "
+              f"recall {r['successes']}/{r['trials']} [{r['low']}, {r['high']}]")
 
     if "precision_at_coverage" in m:
         print("\nPrecision-at-coverage & Abstention Curve (threshold sweep):")

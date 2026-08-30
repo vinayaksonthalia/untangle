@@ -8,7 +8,7 @@ import json
 import pytest
 
 from engine.ingest import load_bank
-from eval.metrics import score, wilson_ci95
+from eval.metrics import cluster_bootstrap_ci95, score, wilson_ci95
 from eval.sealed import _load_dev_metrics
 
 _BANK_CSV = (
@@ -67,7 +67,28 @@ def test_per_rail_precision_recall(tmp_path):
     assert og["tp"] == 1 and og["precision"] == 1.0 and og["recall"] == 1.0
     assert rzp["precision_ci95"]["successes"] == 1
     assert rzp["precision_ci95"]["trials"] == 2
+    assert rzp["precision_ci95"]["method"] == "cluster_bootstrap"
     assert 0.0 <= rzp["precision_ci95"]["low"] <= rzp["precision_ci95"]["high"] <= 1.0
+
+
+def test_cluster_bootstrap_widens_interval_for_correlated_legs():
+    # Identical 6 correct / 4 wrong outcomes (point estimate 0.6 either way). As 10 independent lines
+    # the interval is narrow; grouped into 5 two-leg settlement events whose legs share an outcome
+    # (3 all-correct events, 2 all-wrong), there are only 5 independent, internally-correlated units,
+    # so the honest interval is wider. Counting the legs as independent — the bug Qodo #34 flagged —
+    # would understate that uncertainty.
+    singletons = {("line", str(i)): [1 if i < 6 else 0] for i in range(10)}
+    clustered = {("setl", (str(i),)): ([1, 1] if i < 3 else [0, 0]) for i in range(5)}
+    lo_s, hi_s = cluster_bootstrap_ci95(singletons)
+    lo_c, hi_c = cluster_bootstrap_ci95(clustered)
+    assert (hi_c - lo_c) > (hi_s - lo_s)
+
+
+def test_cluster_bootstrap_deterministic_and_unavailable_on_empty():
+    d = {("setl", ("a",)): [1, 0], ("line", "x"): [1]}
+    assert cluster_bootstrap_ci95(d) == cluster_bootstrap_ci95(d)  # fixed seed => reproducible
+    assert cluster_bootstrap_ci95({}) is None                      # no clusters => no estimand
+    assert cluster_bootstrap_ci95({("line", "x"): []}) is None     # zero denominator => unavailable
 
 
 def test_wilson_ci_boundaries_and_empty_denominator():
