@@ -15,6 +15,19 @@ disk or a database, and no secret is required. Any container host works.
 The health check hits `/` (the landing page). First request after an idle spin-down takes a few
 seconds on the free tier — that is Render cold-start, not the app.
 
+## Public demo safeguards
+
+`/healthz` provides a non-sensitive readiness/version response. The app adds request IDs, latency-only
+structured logs, security headers, aggregate upload limits, and bounded JSON verification payloads.
+Reconciliation is limited to two worker slots and returns `503` when saturated; a wait beyond 90 seconds
+returns `504`. A timed-out Python thread may finish in the background, so its slot remains occupied until
+it returns and no cancellation is claimed.
+
+Upload/API reconciliation and certificate verification use a small per-IP in-memory limit (20 requests
+per minute). This is suitable for the single-instance demo only; multiple workers/replicas need shared
+rate limiting and concurrency control. The MCP transport remains separately mounted with its protocol
+and CORS behavior.
+
 ## Any Docker host (Fly.io, Cloud Run, a VM)
 
 ```bash

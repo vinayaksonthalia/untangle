@@ -13,9 +13,14 @@ import os
 import shutil
 import tempfile
 import threading
+import asyncio
+import json
+import logging
+import time
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 
@@ -97,7 +102,65 @@ async def lifespan(app: FastAPI):
         yield
 
 
+_MAX_BYTES = 15 * 1024 * 1024  # 15 MB per file
 app = FastAPI(title="untangle", docs_url="/api/docs", lifespan=lifespan)
+
+# This is deliberately process-local: the public demo has no shared state store.  It protects a
+# single instance from accidental refresh storms without pretending to be production auth/quotas.
+_RATE_WINDOW_SECONDS = 60.0
+_RATE_LIMIT = 20
+_RATE_LOCK = threading.Lock()
+_RATE_BUCKETS: dict[str, list[float]] = {}
+_MAX_REQUEST_BYTES = _MAX_BYTES * 3 + 1024 * 1024
+_MAX_VERIFY_BYTES = 512 * 1024
+_RECONCILE_SLOTS = 2
+_RECONCILE_TIMEOUT_SECONDS = 90.0
+_RECONCILE_SEMAPHORE = threading.BoundedSemaphore(_RECONCILE_SLOTS)
+_LOG = logging.getLogger("untangle.web")
+
+
+@app.middleware("http")
+async def safety_middleware(request: Request, call_next):
+    started = time.perf_counter()
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+    # Multipart uploads are bounded again while streaming each individual file in _save.  The
+    # aggregate bound prevents a client from sending an unbounded multipart envelope.
+    if request.url.path in {"/reconcile", "/api/reconcile"}:
+        length = request.headers.get("content-length")
+        if length and (not length.isdigit() or int(length) > _MAX_REQUEST_BYTES):
+            response = JSONResponse({"detail": "Request body is too large."}, status_code=413)
+            response.headers["x-request-id"] = request_id
+            return response
+    if request.url.path in {"/reconcile", "/api/reconcile", "/api/verify"}:
+        client = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        with _RATE_LOCK:
+            recent = [t for t in _RATE_BUCKETS.get(client, []) if now - t < _RATE_WINDOW_SECONDS]
+            if len(recent) >= _RATE_LIMIT:
+                _RATE_BUCKETS[client] = recent
+                response = JSONResponse({"detail": "Too many requests; try again shortly."}, status_code=429)
+                response.headers["retry-after"] = "60"
+                response.headers["x-request-id"] = request_id
+                return response
+            recent.append(now)
+            _RATE_BUCKETS[client] = recent
+    response = await call_next(request)
+    response.headers["x-request-id"] = request_id
+    response.headers.setdefault("x-content-type-options", "nosniff")
+    response.headers.setdefault("x-frame-options", "DENY")
+    response.headers.setdefault("referrer-policy", "no-referrer")
+    # Keep the policy compatible with the deliberately self-contained demo pages (which use a
+    # small inline script), while still preventing framing and unexpected base-URL changes.
+    response.headers.setdefault("content-security-policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'self'")
+    _LOG.info("request_id=%s method=%s status=%s latency_ms=%.1f", request_id, request.method,
+              response.status_code, (time.perf_counter() - started) * 1000)
+    return response
+
+
+@app.get("/healthz")
+def healthz() -> JSONResponse:
+    """Small readiness endpoint; no filesystem, customer data, or internal paths are exposed."""
+    return JSONResponse({"status": "ok", "version": os.environ.get("UNTANGLE_VERSION", "dev")})
 
 if _MCP_AVAILABLE:
     # Align CORS with the MCP transport-security origin allowlist so a browser origin that clears the
@@ -126,7 +189,6 @@ if _MCP_AVAILABLE:
     app.mount("/mcp", mcp_subapp)
 
 
-_MAX_BYTES = 15 * 1024 * 1024  # 15 MB per file — a month of settlements is far smaller
 # Dedicated demo dir — kept separate from data/ (the seed-42 single-month test/README baseline) so
 # the multi-month demo can never overwrite the fixture the property tests pin to.
 _SAMPLE = "sample_data"
@@ -167,10 +229,29 @@ def _kind_error(tmp: str, exc: Exception) -> HTTPException:
 
 
 def _run_safely(tmp: str, bank: str, recon: str, ledger: str) -> dict:
+    if not _RECONCILE_SEMAPHORE.acquire(timeout=0):
+        raise HTTPException(503, "Reconciliation capacity is busy; please try again shortly.")
     try:
         return reconcile(bank, recon, ledger)
     except Exception as exc:  # noqa: BLE001 — every failure becomes a kind, leak-free message
         raise _kind_error(tmp, exc) from exc
+    finally:
+        _RECONCILE_SEMAPHORE.release()
+
+
+async def _run_safely_async(tmp: str, bank: str, recon: str, ledger: str) -> dict:
+    """Run CPU-heavy reconciliation off the event loop.
+
+    A timeout stops waiting for the worker, but cannot kill Python work already running in a
+    thread; the semaphore still holds that slot until the worker actually returns.
+    """
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_run_safely, tmp, bank, recon, ledger),
+            timeout=_RECONCILE_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(504, "Reconciliation timed out; no result was committed.") from exc
 
 
 async def _save(tmp: str, name: str, up: UploadFile | None) -> str:
@@ -254,7 +335,7 @@ async def reconcile_upload(
         b = await _save(tmp, "bank_statement.csv", bank)
         r = await _save(tmp, "recon_report.json", recon)
         ln = await _save(tmp, "order_ledger.csv", ledger)
-        report = _run_safely(tmp, b, r, ln)
+        report = await _run_safely_async(tmp, b, r, ln)
         return render_dashboard(report, _months_by_key(b))
     # temp dir (and every uploaded byte) is deleted here — nothing is kept.
 
@@ -270,7 +351,7 @@ async def api_reconcile(
         b = await _save(tmp, "bank_statement.csv", bank)
         r = await _save(tmp, "recon_report.json", recon)
         ln = await _save(tmp, "order_ledger.csv", ledger)
-        report = _run_safely(tmp, b, r, ln)
+        report = await _run_safely_async(tmp, b, r, ln)
         return JSONResponse(report)
 
 
@@ -306,10 +387,24 @@ def api_journal_tally() -> Response:
 
 
 @app.post("/api/verify")
-async def api_verify(payload: dict) -> JSONResponse:
+async def api_verify(request: Request) -> JSONResponse:
     """Independently verify a close-certificate envelope: re-derive its SHA-256 content hash and, when
     signed, check the ECDSA signature. No trust in this server required — a tampered field breaks the
     hash; a forged certificate fails the signature."""
+    length = request.headers.get("content-length")
+    if length and (not length.isdigit() or int(length) > _MAX_VERIFY_BYTES):
+        raise HTTPException(413, "Certificate payload is larger than 512 KB.")
+    try:
+        raw = await request.body()
+        if len(raw) > _MAX_VERIFY_BYTES:
+            raise HTTPException(413, "Certificate payload is larger than 512 KB.")
+        payload = json.loads(raw)
+    except HTTPException:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(422, "Certificate payload must be valid JSON.") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(422, "Certificate payload must be a JSON object.")
     return JSONResponse(verify_certificate(payload))
 
 
