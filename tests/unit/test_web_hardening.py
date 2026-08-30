@@ -14,8 +14,9 @@ from webapp.app import app
 
 @pytest.fixture(scope="module")
 def client():
-    with TestClient(app) as test_client:
-        yield test_client
+    # Do not enter lifespan here: test_mcp_http owns FastMCP's single-use session manager and
+    # pytest may collect/run this module before or after it. Middleware tests need no lifespan.
+    yield TestClient(app, raise_server_exceptions=False)
 
 
 def test_healthz_is_ready_and_redacts_internals(client):
