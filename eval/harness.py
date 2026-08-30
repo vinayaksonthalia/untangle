@@ -16,7 +16,7 @@ import statistics
 import sys
 import time
 
-from eval.metrics import score
+from eval.metrics import format_ci, score
 
 
 def _print_report(m: dict) -> None:
@@ -26,6 +26,11 @@ def _print_report(m: dict) -> None:
     for rail, s in m["per_rail"].items():
         print(f"  {rail:<22}{s['precision']:>7.3f}{s['recall']:>8.3f}"
               f"{s['support']:>9}{s['tp']:>5}{s['fp']:>5}{s['fn']:>5}")
+    rzp = m["per_rail"].get("razorpay_settlement")
+    if rzp:
+        print(f"  Razorpay 95% CI (cluster bootstrap by settlement event): "
+              f"precision {format_ci(rzp['precision_ci95'])}, "
+              f"recall {format_ci(rzp['recall_ci95'])}")
 
     if "precision_at_coverage" in m:
         print("\nPrecision-at-coverage & Abstention Curve (threshold sweep):")

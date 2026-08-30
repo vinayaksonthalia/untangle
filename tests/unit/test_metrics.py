@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from engine.ingest import load_bank
-from eval.metrics import score
+from eval.metrics import cluster_bootstrap_ci95, format_ci, score, wilson_ci95
+from eval.sealed import _load_dev_metrics, _validated_display_totals
 
 _BANK_CSV = (
     "line_id,value_date,txn_date,narration,ref_no,debit,credit,balance\n"
@@ -62,6 +65,80 @@ def test_per_rail_precision_recall(tmp_path):
     assert rzp["precision"] == 0.5 and rzp["recall"] == 0.5
     og = m["per_rail"]["other_gateway"]
     assert og["tp"] == 1 and og["precision"] == 1.0 and og["recall"] == 1.0
+    assert rzp["precision_ci95"]["successes"] == 1
+    assert rzp["precision_ci95"]["trials"] == 2
+    assert rzp["precision_ci95"]["method"] == "cluster_bootstrap"
+    assert 0.0 <= rzp["precision_ci95"]["low"] <= rzp["precision_ci95"]["high"] <= 1.0
+
+
+def test_cluster_bootstrap_widens_interval_for_correlated_legs():
+    # Identical 6 correct / 4 wrong outcomes (point estimate 0.6 either way). As 10 independent lines
+    # the interval is narrow; grouped into 5 two-leg settlement events whose legs share an outcome
+    # (3 all-correct events, 2 all-wrong), there are only 5 independent, internally-correlated units,
+    # so the honest interval is wider. Counting the legs as independent — the bug Qodo #34 flagged —
+    # would understate that uncertainty.
+    singletons = {("line", str(i)): [1 if i < 6 else 0] for i in range(10)}
+    clustered = {("setl", (str(i),)): ([1, 1] if i < 3 else [0, 0]) for i in range(5)}
+    lo_s, hi_s = cluster_bootstrap_ci95(singletons)
+    lo_c, hi_c = cluster_bootstrap_ci95(clustered)
+    assert (hi_c - lo_c) > (hi_s - lo_s)
+
+
+def test_cluster_bootstrap_deterministic_and_unavailable_on_empty():
+    d = {("setl", ("a",)): [1, 0], ("line", "x"): [1]}
+    assert cluster_bootstrap_ci95(d) == cluster_bootstrap_ci95(d)  # fixed seed => reproducible
+    assert cluster_bootstrap_ci95({}) is None                      # no clusters => no estimand
+    assert cluster_bootstrap_ci95({("line", "x"): []}) is None     # zero denominator => unavailable
+
+
+def test_wilson_ci_boundaries_and_empty_denominator():
+    assert wilson_ci95(0, 0) is None
+    assert wilson_ci95(0, 10)[0] == 0.0
+    assert wilson_ci95(10, 10)[1] == 1.0
+    for successes in range(11):
+        low, high = wilson_ci95(successes, 10)
+        assert 0.0 <= low <= high <= 1.0
+
+
+def test_wilson_ci_is_deterministic_and_validates_counts():
+    assert wilson_ci95(5, 10) == wilson_ci95(5, 10)
+    with pytest.raises(ValueError):
+        wilson_ci95(11, 10)
+    with pytest.raises(ValueError):
+        wilson_ci95(-1, 10)
+    with pytest.raises(ValueError):
+        wilson_ci95(0, -1)
+
+
+def test_missing_or_malformed_dev_report_is_unavailable(tmp_path):
+    assert _load_dev_metrics(str(tmp_path / "missing.json")) is None
+    malformed = tmp_path / "malformed.json"
+    malformed.write_text("not json", encoding="utf-8")
+    assert _load_dev_metrics(str(malformed)) is None
+
+
+def test_format_ci_renders_unavailable_for_zero_denominator():
+    # A zero-denominator interval carries the counts but None bounds — it must never print [None, None].
+    assert format_ci({"successes": 0, "trials": 0, "low": None, "high": None}) == "unavailable"
+    assert format_ci(None) == "unavailable"
+    assert format_ci({"successes": 3, "trials": 4, "low": 0.1, "high": 0.9}) == "3/4 [0.1, 0.9]"
+
+
+def test_malformed_display_totals_rejected():
+    # A present-but-non-integer display total must raise so the caller marks the dev baseline wholly
+    # unavailable, rather than reaching f-string arithmetic and crashing the sealed comparison.
+    assert _validated_display_totals({"n_bank_lines": 4, "reconciled_count": 3}) == {
+        "n_bank_lines": 4, "reconciled_count": 3}
+    for bad in ({"fee_gst_recoverable_paise": "lots"},
+                {"n_bank_lines": 4.5},
+                {"reconciled_count": True},  # bool is not an accepted integer here
+                "not-a-dict"):
+        with pytest.raises(TypeError):
+            _validated_display_totals(bad)
+    # Counts and paise cannot be negative — reject rather than display a nonsensical baseline.
+    for neg in ({"n_bank_lines": -1}, {"fee_gst_recoverable_paise": -100}):
+        with pytest.raises(ValueError):
+            _validated_display_totals(neg)
 
 
 def test_decoy_false_positive_counted(tmp_path):
