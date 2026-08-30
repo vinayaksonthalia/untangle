@@ -22,7 +22,7 @@ from engine.verifier import verify_report
 # Optional asymmetric signing (adapted from the Obliviate erasure-certificate pattern). The core
 # stays stdlib-only: signing activates ONLY when the `cryptography` extra is installed AND a signing
 # key is configured; otherwise the certificate is still built and content-hashed (tamper-evident),
-# just unsigned — a judge can still recompute the hash and re-verify every packet.
+# just unsigned — anyone can recompute the hash and inspect the bound report's packet checks.
 try:  # optional extra: pip install "untangle[crypto]"
     from cryptography.hazmat.primitives import hashes as _hashes
     from cryptography.hazmat.primitives import serialization as _ser
@@ -98,7 +98,8 @@ def issue_certificate(report: dict) -> dict:
         # re-derivable from the source files (re-run the verifier), never "trust our attestation".
         "note": (
             "Tamper-evident content hash (SHA-256) over the certificate. Not a cryptographic "
-            "signature. Every verdict is independently re-derivable from the source report."
+            "signature. Packet checks can be re-run against the attached bound report; this does not "
+            "re-audit the original bank, settlement, or ledger source files."
         ),
     }
     key = _signing_key()
@@ -109,15 +110,17 @@ def issue_certificate(report: dict) -> dict:
         envelope["signed"] = True
         envelope["note"] = (
             "ECDSA (P-256) signed and tamper-evident. Re-derive the SHA-256 hash and check the "
-            "signature against the public key — a tampered field breaks the hash, a forgery fails "
-            "the signature. Every verdict is also independently re-derivable from the source report."
+            "signature against this deployment's pinned issuer key — a tampered field breaks the "
+            "hash, a forgery fails the signature. Packet checks can be re-run against the attached "
+            "bound report; this does not re-audit the original bank, settlement, or ledger source files."
         )
     return envelope
 
 
 def verify_certificate(payload: dict) -> dict:
     """Independently verify a close-certificate envelope: re-derive the SHA-256 content hash, re-run
-    every proof-packet check, and (when signed) check the ECDSA signature against the public key.
+    every proof-packet check, and (when signed) check the ECDSA signature against this deployment's
+    pinned issuer key.
     A tampered field breaks the hash; a forged certificate fails the signature. Never raises."""
     if not isinstance(payload, dict):
         return {"ok": False, "error": "payload is not a dict"}
@@ -147,7 +150,8 @@ def verify_certificate(payload: dict) -> dict:
                 signature_valid = False
 
     # Independent re-verification of an attached report is useful only when the report is bound to
-    # the report that was used at issuance. The report is not part of the signed certificate body.
+    # the report that was used at issuance. The raw report is omitted, but its digest is part of the
+    # signed/content-hashed certificate body.
     embedded_report = payload.get("report") if isinstance(payload.get("report"), dict) else None
     packets_verified = packets_passed = None
     report_binding_valid: bool | None = None
@@ -175,6 +179,7 @@ def verify_certificate(payload: dict) -> dict:
         "hash_matches": hash_matches,
         "signature_valid": signature_valid,
         "signed": bool(sig),
+        "authenticated": bool(sig) and signature_valid is True,
         # Issuer-attested packet verification recorded at issue time (Qodo #3: the standalone cert does
         # not embed the full report, so independent re-verification needs `report` supplied above; this
         # surfaces what the issuer attested, clearly distinct from an independent re-run).

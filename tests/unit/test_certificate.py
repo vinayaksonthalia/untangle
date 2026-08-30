@@ -32,6 +32,7 @@ def test_issue_certificate_is_content_hashed_and_verifies_unsigned(monkeypatch):
     v = verify_certificate(env)
     assert v["ok"] is True
     assert v["hash_matches"] is True
+    assert v["authenticated"] is False
     assert v["packets_passed"] == v["packets_verified"] > 0
     assert v["report_binding_valid"] is True
 
@@ -102,6 +103,7 @@ def test_signed_certificate_verifies_and_forgery_is_detected(monkeypatch):
     assert env["signed"] is True and "signature" in env and "public_key_pem" in env
     v = verify_certificate(env)
     assert v["signature_valid"] is True and v["ok"] is True
+    assert v["authenticated"] is True
     # Forge: tamper a signed certificate → signature must fail.
     env["certificate"]["proven_razorpay_count"] = 1
     vf = verify_certificate(env)

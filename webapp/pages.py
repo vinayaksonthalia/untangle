@@ -809,8 +809,9 @@ def verify_page() -> str:
     <button class="cta ghost" onclick="loadSample()">Load the sample certificate</button>
   </div>
   <div class="vres" id="vres"></div>
-  <p class="vnote">The certificate carries no personal data — only counts, rupee totals, an audit hash, and the
-  verification result. Nothing you paste here is stored.</p>
+  <p class="vnote">An unsigned certificate's matching hash is recomputable by anyone and is not authenticity.
+  Signed results use this deployment's pinned issuer key. Packet checks apply to the attached bound report;
+  they do not re-audit the original bank, settlement, or ledger files. Nothing you paste here is stored.</p>
 </div>
 <script>
 function vpill(v){ if(v===true) return '<span class="vpill ok">\\u2713 valid</span>';
@@ -820,7 +821,7 @@ function esc(s){ var d=document.createElement('span'); d.textContent=(s==null?''
 function show(d){
   var box=document.getElementById('vres'); box.style.display='block';
   if(d && d.error){ box.innerHTML='<div class="vverdict"><span class="vcheck" style="background:#b23b3b">\\u2717</span>'+esc(d.error)+'</div>'; return; }
-  var authentic = (d.signed===true) && (d.hash_matches===true) && (d.signature_valid===true) &&
+  var authentic = (d.authenticated===true) && (d.hash_matches===true) &&
                   (d.report_binding_valid!==false) &&
                   (d.packets_passed==null || d.packets_passed===d.packets_verified);
   var col = authentic ? 'var(--ok)' : '#b23b3b';
