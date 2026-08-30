@@ -25,10 +25,30 @@ from engine.evidence import ReconIndex
 from engine.feegst import fee_gst
 from engine.ingest import load_bank, load_recon
 from engine.reconcile import reconcile
-from eval.metrics import score
+from eval.metrics import format_ci, score
 
 DEFAULT_SEALED_SEED = 1337
 DEFAULT_SEALED_DIR = "data/sealed"
+
+
+# Display totals copied from the dev report and later formatted numerically in the comparison.
+# A present-but-non-integer value would only blow up at f-string arithmetic time; validate up front.
+_NUMERIC_DISPLAY_TOTALS = ("n_bank_lines", "reconciled_count", "fee_gst_recoverable_paise")
+
+
+def _validated_display_totals(totals: object) -> dict:
+    """Keep only well-typed display totals. A malformed value raises, which the caller turns into a
+    wholly-unavailable dev baseline rather than letting it crash later numeric formatting."""
+    if not isinstance(totals, dict):
+        raise TypeError("dev report 'totals' is not an object")
+    out: dict = {}
+    for k in _NUMERIC_DISPLAY_TOTALS:
+        if k in totals:
+            v = totals[k]
+            if isinstance(v, bool) or not isinstance(v, int):
+                raise TypeError(f"dev report total {k!r} is not an integer")
+            out[k] = v
+    return out
 
 
 def _load_dev_metrics(path: str = "out/report.json") -> dict | None:
@@ -37,7 +57,7 @@ def _load_dev_metrics(path: str = "out/report.json") -> dict | None:
         with open(path, encoding="utf-8") as fh:
             report = json.load(fh)
         metrics = score(report, "data/ground_truth.json", "data/bank_statement.csv")
-        metrics["_report_totals"] = report.get("totals", {})
+        metrics["_report_totals"] = _validated_display_totals(report.get("totals", {}))
         return metrics
     except (OSError, ValueError, KeyError, AssertionError, TypeError):
         return None
@@ -256,18 +276,14 @@ def run_sealed_holdout_comparison(seed: int = DEFAULT_SEALED_SEED, sealed_dir: s
     print(f"  Razorpay Precision               {dev_prec_text:<20} {s_rzp['precision']:.3f} ({prec_tag})")
     p_ci = s_rzp["precision_ci95"]
     r_ci = s_rzp["recall_ci95"]
-    dev_prec_ci_text = (f"{dev_prec_ci['successes']}/{dev_prec_ci['trials']} [{dev_prec_ci['low']}, {dev_prec_ci['high']}]"
-                        if dev_prec_ci else "unavailable")
-    print(f"  Precision 95% Wilson CI          {dev_prec_ci_text:<20} "
-          f"{p_ci['successes']}/{p_ci['trials']} [{p_ci['low']}, {p_ci['high']}]")
+    dev_prec_ci_text = format_ci(dev_prec_ci)
+    print(f"  Precision 95% CI (cluster boot)  {dev_prec_ci_text:<20} {format_ci(p_ci)}")
     dev_decoy_text = f"{dev_decoy}/181" if dev_decoy is not None else "unavailable"
     print(f"  Decoy False Positives            {dev_decoy_text:<20} {s_decoy['predicted_razorpay']}/{s_decoy['non_rzp_lines']} ({fp_tag})")
     dev_recall_text = f"{dev_recall:.3f}" if dev_recall is not None else "unavailable"
     print(f"  Razorpay Recall                  {dev_recall_text:<20} {s_rzp['recall']:.3f}")
-    dev_recall_ci_text = (f"{dev_recall_ci['successes']}/{dev_recall_ci['trials']} [{dev_recall_ci['low']}, {dev_recall_ci['high']}]"
-                          if dev_recall_ci else "unavailable")
-    print(f"  Recall 95% Wilson CI             {dev_recall_ci_text:<20} "
-          f"{r_ci['successes']}/{r_ci['trials']} [{r_ci['low']}, {r_ci['high']}]")
+    dev_recall_ci_text = format_ci(dev_recall_ci)
+    print(f"  Recall 95% CI (cluster boot)     {dev_recall_ci_text:<20} {format_ci(r_ci)}")
     dev_ece_text = f"{dev_ece:.4f}" if dev_ece is not None else "unavailable"
     print(f"  ECE Calibration                  {dev_ece_text:<20} {ece_val:.4f} ({ece_tag})")
     dev_reconciled = dev_totals.get("reconciled_count")

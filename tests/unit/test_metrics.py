@@ -8,8 +8,8 @@ import json
 import pytest
 
 from engine.ingest import load_bank
-from eval.metrics import cluster_bootstrap_ci95, score, wilson_ci95
-from eval.sealed import _load_dev_metrics
+from eval.metrics import cluster_bootstrap_ci95, format_ci, score, wilson_ci95
+from eval.sealed import _load_dev_metrics, _validated_display_totals
 
 _BANK_CSV = (
     "line_id,value_date,txn_date,narration,ref_no,debit,credit,balance\n"
@@ -115,6 +115,26 @@ def test_missing_or_malformed_dev_report_is_unavailable(tmp_path):
     malformed = tmp_path / "malformed.json"
     malformed.write_text("not json", encoding="utf-8")
     assert _load_dev_metrics(str(malformed)) is None
+
+
+def test_format_ci_renders_unavailable_for_zero_denominator():
+    # A zero-denominator interval carries the counts but None bounds — it must never print [None, None].
+    assert format_ci({"successes": 0, "trials": 0, "low": None, "high": None}) == "unavailable"
+    assert format_ci(None) == "unavailable"
+    assert format_ci({"successes": 3, "trials": 4, "low": 0.1, "high": 0.9}) == "3/4 [0.1, 0.9]"
+
+
+def test_malformed_display_totals_rejected():
+    # A present-but-non-integer display total must raise so the caller marks the dev baseline wholly
+    # unavailable, rather than reaching f-string arithmetic and crashing the sealed comparison.
+    assert _validated_display_totals({"n_bank_lines": 4, "reconciled_count": 3}) == {
+        "n_bank_lines": 4, "reconciled_count": 3}
+    for bad in ({"fee_gst_recoverable_paise": "lots"},
+                {"n_bank_lines": 4.5},
+                {"reconciled_count": True},  # bool is not an accepted integer here
+                "not-a-dict"):
+        with pytest.raises(TypeError):
+            _validated_display_totals(bad)
 
 
 def test_decoy_false_positive_counted(tmp_path):

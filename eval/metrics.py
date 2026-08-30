@@ -53,6 +53,18 @@ def wilson_ci95(successes: int, trials: int) -> tuple[float, float] | None:
     return (low, high)
 
 
+def format_ci(ci: dict | None) -> str:
+    """Render a precision/recall CI dict as ``s/n [low, high]``, or ``unavailable``.
+
+    The CI dict is always present (it carries the point counts), so a zero-denominator interval is
+    signalled by ``low``/``high`` being ``None`` — presentation must check the bounds, never the
+    dict's truthiness, or it would print the literal ``[None, None]``.
+    """
+    if not ci or ci.get("low") is None or ci.get("high") is None:
+        return "unavailable"
+    return f"{ci['successes']}/{ci['trials']} [{ci['low']}, {ci['high']}]"
+
+
 def _cluster_key(label: dict) -> tuple:
     """The independent-event key for a labelled bank line.
 
