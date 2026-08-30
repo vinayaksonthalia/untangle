@@ -91,3 +91,16 @@ def test_credit_debit_direction_is_unambiguous(tmp_path: Path, amounts):
     p.write_text(f"Date,Narration,Credit,Debit\n01/07/2026,broken,{amounts[0]},{amounts[1]}\n", encoding="utf-8")
     with pytest.raises(InputError, match="exactly one"):
         load_bank(str(p))
+
+
+@pytest.mark.parametrize("column", ["Credit", "Debit"])
+def test_negative_direction_amount_fails_closed(tmp_path: Path, column: str):
+    p = tmp_path / "negative.csv"
+    credit = "-100.00" if column == "Credit" else ""
+    debit = "-100.00" if column == "Debit" else ""
+    p.write_text(
+        f"Date,Narration,Credit,Debit\n01/07/2026,broken,{credit},{debit}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(InputError, match="non-negative"):
+        load_bank(str(p))

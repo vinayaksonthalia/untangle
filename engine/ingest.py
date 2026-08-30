@@ -187,6 +187,11 @@ def load_bank(path: str) -> list[BankCreditLine]:
                 narration = (row.get("narration") or "").strip()
                 credit_raw = (row.get("credit") or "").strip()
                 debit_raw = (row.get("debit") or "").strip()
+                if credit_raw.startswith("-") or debit_raw.startswith("-"):
+                    raise InputError(
+                        f"Bank statement row {line_no}: credit/debit amounts must be non-negative; "
+                        "use the appropriate column to indicate direction."
+                    )
                 if bool(credit_raw) == bool(debit_raw):
                     raise InputError(f"Bank statement row {line_no}: exactly one of credit or debit must be populated.")
                 is_credit = bool(credit_raw)
