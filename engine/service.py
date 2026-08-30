@@ -7,6 +7,9 @@ to a temp dir, calls this, then deletes them — nothing is persisted.
 
 from __future__ import annotations
 
+import os
+import stat
+
 from engine.attribute import attribute_all
 from engine.cli import build_report
 from engine.config import build_config
@@ -49,8 +52,14 @@ def reconcile_bytes(
 
 
 def read_input_snapshot(path: str, *, label: str, option: str) -> bytes:
+    fd = None
     try:
-        with open(path, "rb") as fh:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+        mode = os.fstat(fd).st_mode
+        if not stat.S_ISREG(mode):
+            raise InputError(f"{label} is not a regular file: {path}.")
+        with os.fdopen(fd, "rb") as fh:
+            fd = None
             chunks: list[bytes] = []
             total = 0
             while chunk := fh.read(min(_SNAPSHOT_CHUNK_BYTES, MAX_INPUT_BYTES + 1 - total)):
@@ -62,8 +71,18 @@ def read_input_snapshot(path: str, *, label: str, option: str) -> bytes:
                     )
                 chunks.append(chunk)
             return b"".join(chunks)
+    except InputError:
+        raise
     except FileNotFoundError as exc:
         raise InputError(f"{label} not found: {path}. Check the {option} path.") from exc
+    except (OSError, ValueError) as exc:
+        raise InputError(f"{label} could not be read: {path}. Check permissions and file accessibility.") from exc
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
 
 def reconcile(
