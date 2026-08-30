@@ -125,7 +125,11 @@ _BANK_ALIASES = {
 
 
 def _normalise_bank_rows(raw: str) -> tuple[list[str], list[dict[str, str]]]:
-    """Find a bank header after optional metadata and map known aliases."""
+    """Find a bank header after optional metadata and map known aliases.
+
+    Each returned data row is paired with its original one-based physical CSV line number, so
+    downstream parsing diagnostics point at the real line even when metadata rows precede the header.
+    """
     rows = list(csv.reader(io.StringIO(raw)))
     header_at = next((i for i, row in enumerate(rows)
                       if {(_BANK_ALIASES.get(c.strip().lower(), c.strip().lower())) for c in row}
@@ -145,7 +149,7 @@ def _normalise_bank_rows(raw: str) -> tuple[list[str], list[dict[str, str]]]:
             continue
         if len(row) != len(mapped):
             raise InputError(f"Bank statement row {row_number}: expected {len(mapped)} columns, found {len(row)}.")
-        data.append(dict(zip(mapped, row, strict=True)))
+        data.append((row_number, dict(zip(mapped, row, strict=True))))
     return mapped, data
 
 
@@ -164,20 +168,20 @@ def load_bank(path: str) -> list[BankCreditLine]:
                 )
             ref_col = "ref_no" if "ref_no" in fields else ("bank_ref" if "bank_ref" in fields else None)
             lines: list[BankCreditLine] = []
-            for i, row in enumerate(normalized_rows, start=2):
+            for line_no, row in normalized_rows:
                 narration = (row.get("narration") or "").strip()
                 credit_raw = (row.get("credit") or "").strip()
                 debit_raw = (row.get("debit") or "").strip()
                 if bool(credit_raw) == bool(debit_raw):
-                    raise InputError(f"Bank statement row {i}: exactly one of credit or debit must be populated.")
+                    raise InputError(f"Bank statement row {line_no}: exactly one of credit or debit must be populated.")
                 is_credit = bool(credit_raw)
                 if is_credit:
-                    amount = _rupees_to_paise(credit_raw, ctx=f"row {i}")
+                    amount = _rupees_to_paise(credit_raw, ctx=f"row {line_no}")
                 else:
-                    amount = -_rupees_to_paise(debit_raw, ctx=f"row {i}")
+                    amount = -_rupees_to_paise(debit_raw, ctx=f"row {line_no}")
                 bank_ref = (row.get(ref_col) or "").strip() if ref_col else None
                 vd_raw = (row.get("value_date") or "").strip()
-                parsed_date = _parse_date(vd_raw, ctx=f"Bank statement row {i}")
+                parsed_date = _parse_date(vd_raw, ctx=f"Bank statement row {line_no}")
                 key = _line_key(parsed_date.isoformat(), amount, narration, bank_ref)
                 lines.append(
                     BankCreditLine(

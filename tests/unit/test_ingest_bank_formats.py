@@ -23,6 +23,22 @@ def test_malformed_amount_is_actionable(tmp_path: Path):
         load_bank(str(p))
 
 
+def test_parse_error_after_metadata_reports_physical_line(tmp_path: Path):
+    # Two metadata lines precede the header, so the bad amount sits on physical line 5. The error must
+    # cite row 5, not the normalized position 3, or the message points the user at the wrong line.
+    p = tmp_path / "meta.csv"
+    p.write_text(
+        "Account statement,,,\n"
+        "Generated 2026-07-01,,,\n"
+        "Date,Narration,Credit,Debit\n"
+        "01/07/2026,good,100,\n"
+        "02/07/2026,broken,nope,\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(InputError, match="row 5"):
+        load_bank(str(p))
+
+
 def test_unknown_encoding_is_rejected(tmp_path: Path):
     p = tmp_path / "bad-encoding.csv"
     p.write_bytes(b"Date,Narration,Credit,Debit\n\xff")
