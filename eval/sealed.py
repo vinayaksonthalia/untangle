@@ -47,6 +47,8 @@ def _validated_display_totals(totals: object) -> dict:
             v = totals[k]
             if isinstance(v, bool) or not isinstance(v, int):
                 raise TypeError(f"dev report total {k!r} is not an integer")
+            if v < 0:
+                raise ValueError(f"dev report total {k!r} is negative ({v})")
             out[k] = v
     return out
 

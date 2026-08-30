@@ -135,6 +135,10 @@ def test_malformed_display_totals_rejected():
                 "not-a-dict"):
         with pytest.raises(TypeError):
             _validated_display_totals(bad)
+    # Counts and paise cannot be negative — reject rather than display a nonsensical baseline.
+    for neg in ({"n_bank_lines": -1}, {"fee_gst_recoverable_paise": -100}):
+        with pytest.raises(ValueError):
+            _validated_display_totals(neg)
 
 
 def test_decoy_false_positive_counted(tmp_path):
