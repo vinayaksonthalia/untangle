@@ -124,7 +124,7 @@ investigation experience — once the biggest gap — has since **SHIPPED (featu
 What follows records what it does (now built, not a remaining build):
 1. **Agentic exception-investigation loop** ✅ **SHIPPED** (the show-stopper): for an unresolved variance, autonomously
    detect → classify ROOT CAUSE from the data (cross-cycle refund lag, MDR/fee drift, on-hold release,
-   dispute deduction, small rounding drift (sub-₹1 residual), rolling reserve — else abstain as `unexplained`;
+   dispute deduction, small rounding drift (residual within ±₹1), rolling reserve — else abstain as `unexplained`;
    partial capture is deliberately gated off until the settlement schema carries authorized-vs-captured
    amounts, rather than guessed) → draft the corrective balanced journal + next action, with a visible reasoning trace and an
    "Investigate" button. MUST be deterministic-core (root-cause from data) + LLM only for narration —
