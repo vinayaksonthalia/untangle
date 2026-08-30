@@ -22,6 +22,8 @@ Record the terminal + the dashboard; speak plainly, no hype. Every number below 
 > ledger — and sorts every credit to its rail. One command, no AI, fully reproducible."
 
 ```bash
+# one-time: regenerate the seeded dataset (byte-identical every run; not committed)
+python3 -m generator.generate --seed 42 --scale 1.0 --out data
 python -m engine.cli run --bank data/bank_statement.csv --recon data/recon_report.json \
   --ledger data/order_ledger.csv --out out/ --no-ai --seed 42
 ```
@@ -83,8 +85,9 @@ python -m eval.harness --run out/report.json --truth data/ground_truth.json
 > Every schema claim in the repo cites a Razorpay fixture I verified myself, after getting
 > burned by a confident wrong reading early — that's incident 001 in the repo. It's read-only
 > toward money, PII is masked before any model call, and every decision is in a hash-chained
-> audit log. The full suite is deterministic: the pipeline command reproduces the dashboard's
-> numbers, and the evaluation command reproduces the precision, recall, and hard-case figures."
+> audit log. The full suite is deterministic: from the seed-42 dataset, the pipeline command
+> reproduces the dashboard's numbers, and the evaluation command reproduces the precision, recall,
+> and hard-case figures."
 
 **Close on:** the dashboard, and the repo's commit history.
 
