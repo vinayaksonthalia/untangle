@@ -61,3 +61,18 @@ def test_render_with_global_solver_rejected_matches():
     assert "s_01" in html_out
     assert "k_01" in html_out
     assert "k_02" in html_out
+
+
+def test_render_recovery_labels_debit_exposure_as_items_not_credits():
+    rep = _report()
+    rep["recovery_plan"] = {"recoverable_if_actioned_paise": 10000, "actions": [{
+        "action_type": "classify_counterparty", "cost": 0.5, "resolves": ["credit", "debit"],
+        "recoverable_paise": 10000, "debit_exposure_paise": 2950,
+        "description": "Classify counterparty — up to ₹100.00 recoverable across 2 items (including ₹29.50 debit exposure; not recoverable cash) if confirmed",
+    }]}
+    output = render(rep)
+    assert "Target Items" in output
+    assert "2 items" in output
+    assert "debit exposure" in output
+    assert "excluded" in output
+    assert "Target Credits" not in output

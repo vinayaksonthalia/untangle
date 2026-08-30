@@ -396,9 +396,10 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
         act_type = a.get("action_type", "")
         cost = a.get("cost", 1.0)
         rec_paise = a.get("recoverable_paise", 0)
+        debit_paise = a.get("debit_exposure_paise", 0)
         resolves = a.get("resolves", [])
         desc = a.get("description") or f"Action {act_type} — up to {_amt(rec_paise)} recoverable if confirmed"
-        resolves_str = f"{len(resolves)} credit{'s' if len(resolves) != 1 else ''}"
+        resolves_str = f"{len(resolves)} item{'s' if len(resolves) != 1 else ''}"
         resolves_keys = ", ".join(resolves[:3]) + (f" ... +{len(resolves)-3} more" if len(resolves) > 3 else "")
         recovery_rows.append(f"""
       <tr class="recov-row">
@@ -413,7 +414,7 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
         </td>
         <td class="mono" style="text-align:right">
           <div style="font-weight:600;color:var(--acc)">{_amt(rec_paise)}</div>
-          <div style="font-size:11px;color:var(--ts)">up to · if confirmed</div>
+          <div style="font-size:11px;color:var(--ts)">{'recoverable · if confirmed' if not debit_paise else f'debit exposure {_amt(debit_paise)} · excluded'}</div>
         </td>
         <td class="mono" style="text-align:right;font-size:12px;color:var(--ts)">
           {cost:.1f}
@@ -446,7 +447,7 @@ def render(report: dict, months_by_key: dict | None = None) -> str:
           <tr>
             <th style="width:50px">Rank</th>
             <th>Action &amp; Recommendation</th>
-            <th style="width:180px">Target Credits</th>
+            <th style="width:180px">Target Items</th>
             <th style="width:160px;text-align:right">Recoverable</th>
             <th style="width:70px;text-align:right">Cost</th>
           </tr>

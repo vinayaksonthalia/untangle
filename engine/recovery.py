@@ -96,13 +96,16 @@ class RecoveryAction:
         """Human-readable action description framing recoverable amount honestly."""
         inr_str = f"₹{self.recoverable_paise / 100:,.2f}"
         debit_str = f"₹{self.debit_exposure_paise / 100:,.2f}"
-        n_credits = len(self.resolves)
-        credit_plural = f"{n_credits} credit" if n_credits == 1 else f"{n_credits} credits"
+        n_items = len(self.resolves)
+        item_plural = f"{n_items} item" if n_items == 1 else f"{n_items} items"
+        target = f"across {item_plural}"
+        if self.debit_exposure_paise:
+            target += f" (including ₹{self.debit_exposure_paise / 100:,.2f} debit exposure; not recoverable cash)"
 
         if self.recoverable_paise == 0 and self.debit_exposure_paise:
             return (
                 f"{self.action_type.replace('_', ' ').capitalize()} — "
-                f"review {debit_str} debit exposure across {credit_plural}; "
+                f"review {debit_str} debit exposure across {item_plural}; "
                 "not recoverable cash"
             )
         if self.action_type == ACTION_EXPORT_SETTLEMENT_REPORT:
@@ -111,32 +114,32 @@ class RecoveryAction:
             window = f" ({d_from} to {d_to})" if d_from and d_to else ""
             return (
                 f"Export Razorpay settlement report{window} — "
-                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+                f"up to {inr_str} recoverable {target} if confirmed"
             )
         if self.action_type == ACTION_CONFIRM_UTR_WITH_BANK:
             dt = self.params.get("date", "")
             dt_str = f" for {dt}" if dt else ""
             return (
                 f"Confirm UTR with bank{dt_str} — "
-                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+                f"up to {inr_str} recoverable {target} if confirmed"
             )
         if self.action_type == ACTION_PROVIDE_SETTLEMENT_IDS:
             dt = self.params.get("date", "")
             dt_str = f" for {dt}" if dt else ""
             return (
                 f"Provide settlement IDs{dt_str} — "
-                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+                f"up to {inr_str} recoverable {target} if confirmed"
             )
         if self.action_type == ACTION_CLASSIFY_COUNTERPARTY:
             dt = self.params.get("date", "")
             dt_str = f" for {dt}" if dt else ""
             return (
                 f"Classify counterparty{dt_str} — "
-                f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+                f"up to {inr_str} recoverable {target} if confirmed"
             )
         return (
             f"Action {self.action_type} — "
-            f"up to {inr_str} recoverable across {credit_plural} if confirmed"
+            f"up to {inr_str} recoverable {target} if confirmed"
         )
 
     def to_dict(self) -> dict:

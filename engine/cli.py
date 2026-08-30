@@ -49,6 +49,13 @@ def _fmt_inr(paise: int) -> str:
     return ("-" if neg else "") + "₹" + s
 
 
+def _fmt_inr_exact(paise: int) -> str:
+    """Format paise without rounding, for exposure and other precise amounts."""
+    sign = "-" if paise < 0 else ""
+    absolute = abs(paise)
+    return f"{sign}₹{absolute // 100:,}.{absolute % 100:02d}"
+
+
 def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
                  *, with_recovery: bool = True, with_investigation: bool = True,
                  global_solver: bool = False,
@@ -275,7 +282,7 @@ def _print_summary(report: RunReport) -> None:
     if report.recovery_plan and report.recovery_plan.actions:
         plan = report.recovery_plan
         recov_inr = _fmt_inr(plan.recoverable_if_actioned_paise)
-        debit_inr = _fmt_inr(plan.unresolved_debit_paise)
+        debit_inr = _fmt_inr_exact(plan.unresolved_debit_paise)
         print(f"Active Recovery Plan: {len(plan.actions)} action(s) · up to {recov_inr} recoverable if confirmed")
         if plan.unresolved_debit_paise:
             print(f"    Debit exposure requiring review: {debit_inr} (excluded from recoverable cash)")

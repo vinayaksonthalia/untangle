@@ -6,6 +6,7 @@ from datetime import date, datetime
 
 import pytest
 
+from engine.cli import _fmt_inr_exact
 from engine.evidence import ReconIndex
 from engine.models import (
     BankCreditLine,
@@ -397,6 +398,23 @@ def test_recovery_debit_only_is_exposure_not_recoverable():
     assert plan.unresolved_debit_paise == 2950
     assert all("up to" not in a.description.lower() for a in plan.actions)
     assert any("debit exposure" in a.description.lower() for a in plan.actions)
+
+
+def test_recovery_mixed_action_discloses_debit_exposure_and_uses_item_wording():
+    action = RecoveryAction(
+        action_type=ACTION_CLASSIFY_COUNTERPARTY,
+        params={}, resolves=("credit", "debit"), recoverable_paise=10000,
+        cost=0.5, gain_per_cost=20000.0, debit_exposure_paise=2950,
+    )
+    text = action.description.lower()
+    assert "2 items" in text
+    assert "debit exposure" in text
+    assert "₹29.50" in action.description
+    assert "if confirmed" in text
+
+
+def test_recovery_cli_exposure_format_keeps_paise():
+    assert _fmt_inr_exact(2950) == "₹29.50"
 
 
 def test_build_recovery_plan_capping_with_note():
