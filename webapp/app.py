@@ -117,6 +117,91 @@ _RECONCILE_TIMEOUT_SECONDS = 90.0
 _RECONCILE_SEMAPHORE = threading.BoundedSemaphore(_RECONCILE_SLOTS)
 _LOG = logging.getLogger("untangle.web")
 
+# Aggregate request-body ceiling for the upload endpoints: three 15 MB files plus multipart framing.
+# Enforced by byte-counting the ASGI stream (below), so a chunked / Content-Length-less request
+# cannot spool an unbounded body before the per-file checks in _save run.
+_MAX_AGGREGATE_BYTES = 3 * _MAX_BYTES + 1024 * 1024
+_BODY_LIMITS = {
+    "/reconcile": _MAX_AGGREGATE_BYTES,
+    "/api/reconcile": _MAX_AGGREGATE_BYTES,
+    "/api/verify": _MAX_VERIFY_BYTES,
+}
+
+
+class BodySizeLimitMiddleware:
+    """Cap request-body size by reading bytes off the ASGI stream BEFORE the app parses them.
+
+    A ``Content-Length`` over the ceiling is rejected up front. For requests without one (chunked /
+    streamed), the body is buffered a chunk at a time only up to the ceiling; the instant the tally
+    exceeds it, we return 413 and never invoke the app — so multipart parsing can neither consume
+    nor spool more than the configured aggregate limit, regardless of transfer framing. Legitimate
+    under-limit bodies are replayed to the app unchanged, so memory is bounded to the ceiling.
+
+    Buffering (rather than a wrapped-receive that raises) is deliberate: an exception raised from
+    ``receive`` while the inner ``BaseHTTPMiddleware`` is streaming the body surfaces as a 500, not
+    a 413. Reading ahead and short-circuiting keeps the rejection clean.
+    """
+
+    def __init__(self, app, *, limits: dict[str, int]) -> None:
+        self.app = app
+        self.limits = limits
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("path") not in self.limits:
+            await self.app(scope, receive, send)
+            return
+        max_bytes = self.limits[scope["path"]]
+        headers = dict(scope.get("headers") or [])
+        content_length = headers.get(b"content-length")
+        if content_length is not None:
+            declared = content_length.decode("latin-1").strip()
+            if not declared.isdigit() or int(declared) > max_bytes:
+                await self._reject(send)
+                return
+
+        buffered: list[dict] = []
+        received = 0
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                buffered.append(message)  # e.g. http.disconnect — hand it through unchanged
+                break
+            received += len(message.get("body", b""))
+            if received > max_bytes:
+                await self._reject(send)
+                return
+            buffered.append(message)
+            if not message.get("more_body", False):
+                break
+
+        replay = iter(buffered)
+
+        async def replay_receive():
+            try:
+                return next(replay)
+            except StopIteration:
+                return await receive()  # any messages beyond the buffered body (e.g. disconnect)
+
+        await self.app(scope, replay_receive, send)
+
+    async def _reject(self, send) -> None:
+        # This layer sits outside safety_middleware, so it stamps the same baseline security headers
+        # (and a fresh request id) that the middleware would have added to a normal response.
+        body = b'{"detail":"Request body is too large."}'
+        await send({
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+                (b"x-request-id", uuid.uuid4().hex.encode()),
+                (b"x-content-type-options", b"nosniff"),
+                (b"x-frame-options", b"DENY"),
+                (b"referrer-policy", b"no-referrer"),
+            ],
+        })
+        await send({"type": "http.response.body", "body": body})
+
 
 @app.middleware("http")
 async def safety_middleware(request: Request, call_next):
@@ -160,6 +245,12 @@ async def safety_middleware(request: Request, call_next):
     # The existing demo pages intentionally use tiny inline scripts/styles.  Keep this explicit and
     # scoped; a future production UI should replace unsafe-inline with nonces or hashes.
     return finish(response)
+
+
+# Registered AFTER safety_middleware so it wraps it as the OUTERMOST layer: it must see the raw ASGI
+# receive stream (and be able to raise past the inner BaseHTTPMiddleware to return 413) before any
+# body is read or spooled.
+app.add_middleware(BodySizeLimitMiddleware, limits=_BODY_LIMITS)
 
 
 @app.get("/healthz")

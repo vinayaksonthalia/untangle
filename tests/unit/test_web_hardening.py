@@ -38,6 +38,26 @@ def test_verify_rejects_oversized_body_before_json_parsing(client):
     assert response.headers["x-request-id"]
 
 
+def test_chunked_upload_without_content_length_is_capped(client):
+    # A streamed (Content-Length-less) body must still be bounded by counting ASGI bytes, or a
+    # chunked request could spool an unbounded multipart body before per-file checks (Qodo #36).
+    over = 512 * 1024 + 1
+
+    def _chunks():
+        sent = 0
+        while sent < over:
+            step = min(64 * 1024, over - sent)
+            sent += step
+            yield b"x" * step
+
+    response = client.post(
+        "/api/verify", content=_chunks(),
+        headers={"content-type": "application/json"},  # httpx streams chunked, no content-length
+    )
+    assert response.status_code == 413
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
 def test_request_id_is_generated_and_csp_allows_existing_demo_inline_assets(client):
     response = client.get("/", headers={"x-request-id": "evil" * 1000})
     assert response.status_code == 200
