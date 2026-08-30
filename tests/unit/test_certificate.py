@@ -23,6 +23,22 @@ def _report():
     return reconcile("data/bank_statement.csv", "data/recon_report.json", "data/order_ledger.csv", no_ai=True, seed=42)
 
 
+def test_cli_emits_content_hashed_verifiable_envelope(tmp_path, monkeypatch):
+    # The CLI must emit the signed/content-hashed ENVELOPE (issue_certificate), not the raw body,
+    # so its output carries content_sha256 and can be passed to verify_certificate (Qodo #5).
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps(_report()), encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, "-m", "engine.certificate", "--run", str(report_path)],
+        capture_output=True, text=True, check=True,
+    )
+    env = json.loads(proc.stdout)
+    assert len(env["content_sha256"]) == 64  # envelope, not the raw certificate body
+    env["report"] = _report()
+    assert verify_certificate(env)["ok"] is True
+
+
 def test_issue_certificate_is_content_hashed_and_verifies_unsigned(monkeypatch):
     monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
     rep = _report()
@@ -275,6 +291,9 @@ def test_certificate_cli_execution(tmp_path):
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     out_data = json.loads(res.stdout)
-    assert "summary" in out_data
-    assert "verification" in out_data
-    assert out_data["proven_razorpay_count"] == report["totals"]["by_rail_count"].get("razorpay_settlement", 0)
+    # The CLI now emits the content-hashed envelope; the certificate body is nested under "certificate".
+    assert len(out_data["content_sha256"]) == 64
+    body = out_data["certificate"]
+    assert "summary" in body
+    assert "verification" in body
+    assert body["proven_razorpay_count"] == report["totals"]["by_rail_count"].get("razorpay_settlement", 0)
