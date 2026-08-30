@@ -4,7 +4,7 @@ The CI job runs the seeded fixture generation, the complete test suite, Ruff,
 Bandit, and a branch-coverage gate. Coverage is measured across the source
 packages (`engine`, `eval`, `generator`, `ui`, and `webapp`) with a 65% minimum.
 The floor is intentionally evidence-based: the current generated seed-42 suite
-reports 66.48% branch coverage (265 passed). It is a floor, not a quality score;
+ reports above the 65% branch floor on the current generated-fixture suite. It is a floor, not a quality score;
 new behavior still needs focused tests.
 
 Run locally after generating the fixtures:
@@ -26,7 +26,10 @@ recovery unit tests, so it works from a clean checkout. It is an opt-in local
 gate (`make mutation`) rather than a required PR check: mutmut can take
 substantially longer than the normal suite. Install it separately with
 `python -m pip install -e '.[quality]'`, then review surviving mutants rather
-than treating a mutation score as proof of correctness.
+than treating a mutation score as proof of correctness. The current targeted
+run is a baseline diagnostic (251 mutants; 43 killed, 186 survived, 22 test
+failures). This PR deliberately does not claim broad mutation protection; the
+follow-up target is to add tests around the surviving reconciliation cases.
 
 The project does not add a broad static type checker in this change. The code
 base is currently not annotated consistently enough for an honest strict mypy

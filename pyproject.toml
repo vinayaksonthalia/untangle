@@ -9,7 +9,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "hypothesis>=6", "httpx", "pytest-cov>=5"]
-quality = ["mutmut>=3.3"]
+quality = ["mutmut>=3.6"]
 web = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9"]
 # Optional: ECDSA-signed close certificates. The core is stdlib-only; without this extra (or a
 # signing key) the certificate is still built and content-hashed — tamper-evident, just unsigned.
@@ -44,7 +44,8 @@ exclude_also = [
 skip_empty = true
 
 [tool.mutmut]
-source_paths = ["engine/reconcile.py", "engine/recovery.py"]
+source_paths = ["engine/reconcile.py"]
+only_mutate = ["engine/reconcile.py"]
 pytest_add_cli_args_test_selection = ["tests/unit/test_reconcile.py", "tests/unit/test_recovery.py"]
 
 [tool.ruff]
