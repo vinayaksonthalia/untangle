@@ -124,8 +124,9 @@ investigation experience — once the biggest gap — has since **SHIPPED (featu
 What follows records what it does (now built, not a remaining build):
 1. **Agentic exception-investigation loop** ✅ **SHIPPED** (the show-stopper): for an unresolved variance, autonomously
    detect → classify ROOT CAUSE from the data (cross-cycle refund lag, MDR/fee drift, on-hold release,
-   dispute deduction, partial capture, bank charge/rounding, rolling reserve — else abstain as
-   `unexplained`) → draft the corrective balanced journal + next action, with a visible reasoning trace and an
+   dispute deduction, bank charge/rounding, rolling reserve — else abstain as `unexplained`;
+   partial capture is deliberately gated off until the settlement schema carries authorized-vs-captured
+   amounts, rather than guessed) → draft the corrective balanced journal + next action, with a visible reasoning trace and an
    "Investigate" button. MUST be deterministic-core (root-cause from data) + LLM only for narration —
    NOT an LLM guessing. This is our safety requirement, not a quoted official disqualifier. Extends the recovery controller.
 2. **Our MCP server** (shipped, read-only) — the multi-surface + agent checkbox. Optionally CONSUME
