@@ -69,7 +69,7 @@ def test_parse_error_after_multiline_quoted_field_reports_physical_line(tmp_path
 def test_unknown_encoding_is_rejected(tmp_path: Path):
     p = tmp_path / "bad-encoding.csv"
     p.write_bytes(b"Date,Narration,Credit,Debit\n\xff")
-    with pytest.raises(UnicodeDecodeError):
+    with pytest.raises(InputError, match="Bank statement .* is not valid UTF-8 text"):
         load_bank(str(p))
 
 
