@@ -59,9 +59,9 @@ python -m eval.harness --run out/report.json --truth data/ground_truth.json
 > "Precision 1.000 on every rail. Zero decoy false-positives — and those decoys are credits
 > engineered to look like Razorpay; a naive keyword search gets 100% of them wrong, we get
 > zero. On the genuinely hard cases — split settlements, destroyed UTRs — recall drops to
-> 0.5–0.8, and you can see it *abstains* there rather than misattribute. I validated on four
-> unseen seeds: precision and zero-decoy-FP hold; recall drops honestly to 0.86–0.94. Those
-> are out-of-sample numbers, not a memorised benchmark."
+> 0.5–0.8, and you can see it *abstains* there rather than misattribute. I validated on unseen
+> generated seeds: precision and zero-decoy-FP hold; recall varies by seed. Those are out-of-sample
+> synthetic-generator results, not validation of arbitrary real bank exports."
 
 **On screen:** the per-hard-case table; the difficulty-probe table showing naive baselines collapse.
 
@@ -83,7 +83,7 @@ python -m eval.harness --run out/report.json --truth data/ground_truth.json
 > Every schema claim in the repo cites a Razorpay fixture I verified myself, after getting
 > burned by a confident wrong reading early — that's incident 001 in the repo. It's read-only
 > toward money, PII is masked before any model call, and every decision is in a hash-chained
-> audit log. 37 tests, deterministic, one command to reproduce every number on this screen."
+> audit log. 265 tests, deterministic, one command to reproduce every number on this screen."
 
 **Close on:** the dashboard, and the repo's commit history.
 

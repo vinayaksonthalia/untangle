@@ -26,7 +26,7 @@ Deadline: **5 Sep 2026**. Track 4 — AI Finance Controller.
 
 ## 2. Current state (updated 29 Aug 2026)
 
-**Merged to main, reviewed, zero known bugs** — Evidence Courtroom · honest 4-label taxonomy · journal
+**Merged to main, reviewed** — Evidence Courtroom · honest 4-label taxonomy · journal
 export (Tally XML + JSON, convention-agnostic) · independent verifier + close certificate + /verify ·
 **MCP server (stdio, read-only)** · **Active Recovery Controller** · **Agentic Exception-Investigation
 Loop (feature 006 — the 30% pillar, PR #26, 14 correctness bugs caught+fixed in review)** · README
@@ -50,7 +50,7 @@ branch → PR → `/review` → fix all bot findings → **manual** merge (never
 | # | Item | Owner | Risk | Definition of done |
 |---|------|-------|------|--------------------|
 | 1 | **Wire the polished Stitch UI into the real FastAPI app** — export the 5 screens' HTML, integrate with real data/routes, then click-through-and-break it live | **C** | **HIGH** (integration; C does it) | Every screen renders from real engine output; motion/copy/tooltips/FAQ work; no interaction bugs; responsive. |
-| 2 | **Remote (streamable-HTTP) MCP** — a public endpoint a judge can call from ChatGPT / Claude.ai with no local install (matches Agent-Audit's shipped differentiator; our stdio server is local-only) | **A** (spec by C), C reviews | MED | Public `/mcp` streamable-HTTP transport exposing the read-only tools; handshake works from claude.ai + ChatGPT; stays read-only. |
+| 2 | **Remote (streamable-HTTP) MCP** — a public endpoint a judge can call from ChatGPT / Claude.ai with no local install | **A** (spec by C), C reviews | MED | **DONE (merged in PR #29/#30)** — `/mcp` streamable-HTTP transport exposes the read-only tools; public-host verification remains deployment work. |
 | 3 | **Confidence intervals on headline metrics** — wrap precision/recall (and the coverage curve) in bootstrap CIs; label any partial/degraded run (rigor, like Agent-Audit) | **C** | LOW | Eval reports each headline number with a 95% CI; README/dashboard show "± CI"; no bare point claims. |
 | 4 | **Deploy public URL** (Render) | **U** | — | Judge clicks a live URL; sample loads; BYOD works. |
 | 5 | **Duplicate-key covered-row identity fix** — reconcile must preserve WHICH covered row (feegst/proof/journal/investigate pick by lossy key today). Deferred from #27; task chip spawned. | **C leads** (spec + build; correctness-sensitive, touches core) | **HIGH** | covered rows carry unambiguous identity; feegst/proof/journal/investigate sum from exact rows; regression test with a non-first duplicate; metrics byte-identical for the common case. |
@@ -79,8 +79,8 @@ branch → PR → `/review` → fix all bot findings → **manual** merge (never
   and **C keeps** them (higher risk; do not delegate).
 
 ## 4a. Competitive learnings — from Agent-Audit (Track 01, rated "best overall" by another agent)
-Blunt read: genuinely excellent — novel problem + research rigor (CIs on every metric) + **deployed live**
-+ **remote MCP callable by ChatGPT/Claude.ai** + safety-by-design. What we steal: **remote MCP (#2)**,
+Blunt read: genuinely excellent — novel problem + research rigor + **remote MCP implementation**
++ safety-by-design. Deployment and public-host verification remain open. What we steal: **remote MCP (#2)**,
 **CIs on metrics (#3)**, **SAFETY.md + checkbox roadmap (#6)**, **₹-at-risk headline (#7)**. Where we win by
 design: we're **read-only** (their MCP payment tool is unauthenticated + on their pending list), and we have
 no multi-model dependency to stabilize. Their one crack: a "640-trial" headline that's actually 220 in the

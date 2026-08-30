@@ -48,7 +48,7 @@ Priority = (impact on winning ÷ effort). Owner: **C**=Claude (design/correctnes
 
 | # | Feature | Why (evidence) | Owner | Status |
 |---|---|---|---|---|
-| **P0** | **Agentic exception-investigation loop** (the 30% rubric pillar) — autonomous detect → deterministic root-cause classify → draft corrective journal + next action, visible reasoning trace, "Investigate" button. Extends the merged recovery controller (feat 005). Deterministic-core + LLM narration only. | THE gap. Rubric's 30% agentic pillar; the show-stopper demo moment; the disqualifier if done as an LLM guesser. | A (spec by C), C reviews | **TODO — top priority** |
+| **P0** | **Agentic exception-investigation loop** (the 30% rubric pillar) — autonomous detect → deterministic root-cause classify → draft corrective journal + next action, visible reasoning trace, "Investigate" button. Extends the merged recovery controller (feat 005). Deterministic-core + LLM narration only. | THE gap. Rubric's 30% agentic pillar; the show-stopper demo moment; the disqualifier if done as an LLM guesser. | A (spec by C), C reviews | **DONE (merged, feature 006 / PR #26)** |
 | **P0** | **Deploy public URL** (Render; established, not antideploy) | No demo URL = capped score. Judges must click it. | U | **pending** |
 | **P0** | **Reframe pitch/README** around §1 (5%-eats-80%, 78%-tax abstention, GST ROI, journal deliverable) + official Track-4 language (§6c) | Two research rounds; kills the overclaim a judge would attack. | C | **todo (verify current README)** |
 | **P1** | **Docs pass** (usage for web/CLI/MCP/API, one-glance quickstart) | The Lethe lesson: dedicated docs won it. | C | **todo** |
@@ -60,7 +60,7 @@ Priority = (impact on winning ÷ effort). Owner: **C**=Claude (design/correctnes
 | ✅ | **Honest 4-label taxonomy** (proven/non-Razorpay/ambiguous/unattributed) | Kills the alternate-rail overclaim. | C | **DONE (merged)** |
 | ✅ | **Journal-entry export** (Tally XML `<ENVELOPE>` + double-entry JSON, convention-agnostic) | #1 "makes them pay" feature; completes the finance loop. | C+A | **DONE (merged)** |
 | ✅ | **Independent verifier + close certificate** (+ /verify page, download) | Trust layer — "re-check our claims without trusting us." | A+C | **DONE (merged, 3 security bugs fixed)** |
-| ✅ | **MCP server** (untangle-specific, read-only, 9 tools) | Multi-surface = the Lethe winning factor. | A (spec by C) | **DONE (merged)** |
+| ✅ | **MCP server** (untangle-specific, read-only, 10 tools; stdio + streamable HTTP) | Multi-surface = the Lethe winning factor. | A (spec by C) | **DONE (merged, PR #29/#30)** |
 | ✅ | **Active Recovery Controller** (ranked next-best recovery actions, info-gain, recovery trail) | Structured suggestive exception queue — the foundation the agentic loop extends. | A (spec by C)+C | **DONE (merged, PR #18)** |
 | ✅ | **Frictionless demo + BYOD polish** (upload redesign, month filter, sample↔own-data) | Ease-of-use is decisive. | C | **mostly done** |
 
@@ -90,7 +90,8 @@ the demo. **CA-firm multi-client distribution** = go-to-market, post-buildathon.
   `entity_id, type, debit, credit, amount, currency, fee, tax, on_hold, settled, created_at,
   settled_at, settlement_id, description, notes, payment_id, settlement_utr, order_id, order_receipt,
   method, card_network, card_issuer, card_type, dispute_id`. **untangle's recon schema already mirrors
-  this** → a real Razorpay export is largely already ingestible (the credibility anchor, near-free).
+  this** → the normalized schema mirrors a real Razorpay export. Raw-provider export parsing still needs
+  fixtures and adapter validation; this is not a claim that every real export is currently ingestible.
 - **Fee/tax convention divergence found & fixed.** Real Razorpay: `credit = amount − fee − tax` (fee is
   ex-GST, tax separate). untangle synthetic: `credit = amount − fee` (GST folded into fee). Verified on
   data/. The journal export now DETECTS the convention per settlement (`_tax_inside_fee`) so MDR-ex-GST
@@ -100,8 +101,8 @@ the demo. **CA-firm multi-client distribution** = go-to-market, post-buildathon.
   ref, debit, credit, balance) + UTR-in-narration regex patterns per bank + metadata-row quirks (HDFC
   ~5 header rows; RBL/Kotak truncation 50–100 chars). Use to make BYOD accept real bank exports.
 - **Razorpay GST invoice**: SAC `997159`, monthly e-invoice with IRN/QR, flows to GSTR-2B Table 4 (ITC).
-- **Journal-entry export shipped** (Tally XML + JSON, balanced, convention-agnostic). **MCP server** in
-  build (Antigravity) — under review before commit.
+- **Journal-entry export shipped** (Tally XML + JSON, balanced, convention-agnostic). **MCP server** is
+  shipped (stdio + streamable HTTP, read-only; see [MCP.md](MCP.md)).
 
 ## 6c. OFFICIAL Track 4 rubric & winning plan (round-4 research — the north star)
 
@@ -123,7 +124,7 @@ agentic pillar.** Top remaining builds, ranked:
    charge) → draft the corrective balanced journal + next action, with a visible reasoning trace and an
    "Investigate" button. MUST be deterministic-core (root-cause from data) + LLM only for narration —
    NOT an LLM guessing (that's the disqualifier the rubric warns about). Extends the recovery controller.
-2. **Our MCP server** (Antigravity, in progress) — the multi-surface + agent checkbox. Optionally CONSUME
+2. **Our MCP server** (shipped, read-only) — the multi-surface + agent checkbox. Optionally CONSUME
    Razorpay's official MCP (github.com/razorpay/razorpay-mcp-server) if deployed against a real test acct
    (won't work on synthetic data — don't fake it).
 3. **Journal export UI** (download Tally XML/JSON + "Post to your books" section) — surfacing, mine.
