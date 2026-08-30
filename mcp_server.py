@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from functools import lru_cache
 from typing import Any
 
@@ -25,7 +26,7 @@ from engine.ingest import load_bank, load_recon
 from engine.investigate import investigate
 from engine.journal import JournalEntry, build_journal_entries, to_journal_json, to_tally_xml
 from engine.reconcile import reconcile as reconcile_core
-from engine.service import reconcile
+from engine.service import reconcile_bytes
 from engine.verifier import verify_proof_packet as verify_packet_core
 
 # Initialize FastMCP Server
@@ -128,43 +129,61 @@ def _content_token(*paths: str) -> tuple[str, ...]:
     return tuple(tokens)
 
 
+def _snapshot_inputs(*paths: str) -> tuple[tuple[bytes, ...], tuple[str, ...]]:
+    """Read each input once and derive cache tokens from those exact immutable bytes."""
+    contents: list[bytes] = []
+    tokens: list[str] = []
+    for path in paths:
+        with open(path, "rb") as fh:
+            content = fh.read()
+        contents.append(content)
+        tokens.append(hashlib.sha256(content).hexdigest())
+    return tuple(contents), tuple(tokens)
+
+
 @lru_cache(maxsize=16)
 def _cached_reconcile(
-    bank_path: str,
-    recon_path: str,
-    ledger_path: str,
+    bank_bytes: bytes,
+    recon_bytes: bytes,
+    ledger_bytes: bytes,
     _content_token: tuple[str, str, str],
 ) -> dict[str, Any]:
-    return reconcile(bank_path, recon_path, ledger_path, no_ai=True, seed=42)
+    return reconcile_bytes(bank_bytes, recon_bytes, ledger_bytes, no_ai=True, seed=42)
 
 
 def _get_report(bank_path: str, recon_path: str, ledger_path: str) -> dict[str, Any]:
     """Load and reconcile files, cached by file CONTENT so replacing a file (even with the same mtime)
     never returns a stale report."""
     bank_path, recon_path, ledger_path = _safe_path(bank_path), _safe_path(recon_path), _safe_path(ledger_path)
-    token = _content_token(bank_path, recon_path, ledger_path)
-    return _cached_reconcile(bank_path, recon_path, ledger_path, token)
+    snapshots, token = _snapshot_inputs(bank_path, recon_path, ledger_path)
+    return _cached_reconcile(*snapshots, token)
 
 
 @lru_cache(maxsize=16)
 def _cached_journal_entries(
-    bank_path: str,
-    recon_path: str,
+    bank_bytes: bytes,
+    recon_bytes: bytes,
     _content_token: tuple[str, str],
 ) -> list[JournalEntry]:
-    lines = load_bank(bank_path)
-    recon_rows = load_recon(recon_path)
-    index = ReconIndex(recon_rows)
-    attributions = attribute_all(lines, index, 0.55, audit_challenger=True)
-    lines_by_key = {ln.key: ln for ln in lines}
-    reconciliations, _u, _s = reconcile_core(lines_by_key, attributions, recon_rows)
-    return build_journal_entries(reconciliations, recon_rows)
+    with tempfile.TemporaryDirectory(prefix="untangle-journal-") as tmpdir:
+        bank_path = os.path.join(tmpdir, "bank_statement.csv")
+        recon_path = os.path.join(tmpdir, "recon_report.json")
+        for path, content in ((bank_path, bank_bytes), (recon_path, recon_bytes)):
+            with open(path, "wb") as fh:
+                fh.write(content)
+        lines = load_bank(bank_path)
+        recon_rows = load_recon(recon_path)
+        index = ReconIndex(recon_rows)
+        attributions = attribute_all(lines, index, 0.55, audit_challenger=True)
+        lines_by_key = {ln.key: ln for ln in lines}
+        reconciliations, _u, _s = reconcile_core(lines_by_key, attributions, recon_rows)
+        return build_journal_entries(reconciliations, recon_rows)
 
 
 def _get_journal_entries(bank_path: str, recon_path: str) -> list[JournalEntry]:
     bank_path, recon_path = _safe_path(bank_path), _safe_path(recon_path)
-    token = _content_token(bank_path, recon_path)
-    return _cached_journal_entries(bank_path, recon_path, token)
+    snapshots, token = _snapshot_inputs(bank_path, recon_path)
+    return _cached_journal_entries(*snapshots, token)
 
 
 # -----------------------------------------------------------------------------
@@ -719,4 +738,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
