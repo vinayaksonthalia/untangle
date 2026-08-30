@@ -310,7 +310,10 @@ def main() -> None:
         sys.exit(2)
 
     try:
-        cert = build_close_certificate(report)
+        # issue_certificate wraps build_close_certificate in the signed/content-hashed envelope, so
+        # the CLI output carries content_sha256 (and a signature when a key is configured) and can be
+        # passed to verify_certificate — matching the web/MCP surfaces (Qodo full-tree #5).
+        cert = issue_certificate(report)
     except Exception as exc:
         print(f"Error generating close certificate: {exc}", file=sys.stderr)
         sys.exit(2)
