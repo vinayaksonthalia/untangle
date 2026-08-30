@@ -15,6 +15,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+from collections.abc import Iterable, Iterator
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
@@ -43,6 +44,8 @@ def _rupees_to_paise(raw: str, *, ctx: str) -> int:
     """Parse a rupee string to integer paise. Rounds (never truncates) sub-paise fractions using
     banker's-safe half-up, so 12345.789 → 1234579 paise, not 1234578. Decimal keeps it exact."""
     raw = (raw or "").strip().replace(",", "")
+    # Some exports suffix amount columns with an accounting marker.
+    raw = raw.removesuffix(" CR").removesuffix(" DR").strip()
     if not raw:
         return 0
     try:
@@ -56,11 +59,17 @@ def _rupees_to_paise(raw: str, *, ctx: str) -> int:
 
 
 def _parse_date(raw: str, *, ctx: str) -> date:
+    raw = raw.strip()
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y", "%d-%m-%y", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
     try:
-        return date.fromisoformat(raw.strip())
+        return date.fromisoformat(raw)
     except ValueError as exc:
         raise InputError(
-            f"{ctx}: could not parse date {raw!r}. Expected ISO format YYYY-MM-DD."
+            f"{ctx}: could not parse date {raw!r}. Supported formats: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, DD/MM/YY, DD-MM-YY, DD.MM.YYYY."
         ) from exc
 
 
@@ -104,12 +113,68 @@ def _as_int_paise(v, *, ctx: str) -> int:
 
 _BANK_REQUIRED = {"value_date", "narration", "credit", "debit"}
 
+# Common Indian bank-export labels. This is deliberately a format adapter, not a
+# claim that Untangle has validated any particular bank's production export.
+_BANK_ALIASES = {
+    "value date": "value_date", "value dt": "value_date", "date": "value_date",
+    "narration": "narration", "description": "narration", "particulars": "narration",
+    "chq./ref.no.": "ref_no", "chq/ref no": "ref_no", "ref no": "ref_no", "reference": "ref_no",
+    "deposit amt.": "credit", "deposit amount": "credit", "credit": "credit",
+    "withdrawal amt.": "debit", "withdrawal amount": "debit", "debit": "debit",
+}
+
+
+def _normalise_bank_rows(
+    line_source: Iterable[str],
+) -> tuple[list[str], Iterator[tuple[int, dict[str, str]]]]:
+    """Find a bank header after optional metadata and stream the mapped data rows.
+
+    Reads ``line_source`` (a file handle or any iterable of physical lines) through a single
+    ``csv.reader`` pass. Only metadata up to the header is examined during discovery; data rows are
+    then yielded lazily, so the whole export is never held as records AND dictionaries at once. Each
+    yielded row carries its one-based physical starting line (``csv.reader.line_num`` — correct even
+    when a quoted field spans several physical lines), so parsing diagnostics cite the real line.
+    """
+    reader = csv.reader(line_source)
+    end_line = 0  # physical line where the previous record ended
+    mapped: list[str] | None = None
+    for row in reader:
+        end_line = reader.line_num
+        # Use the SAME normalized (lower-cased) key for both discovery and mapping so an uppercase or
+        # mixed-case canonical header (e.g. VALUE_DATE) is not discovered and then rejected as missing.
+        if {_BANK_ALIASES.get(c.strip().lower(), c.strip().lower()) for c in row} >= {"value_date", "narration"}:
+            mapped = [_BANK_ALIASES.get(c.strip().lower(), c.strip().lower()) for c in row]
+            break
+    if mapped is None:
+        raise InputError("Bank statement: could not find a header row with date and narration columns.")
+    if "value_date" not in mapped or "narration" not in mapped:
+        raise InputError("Bank statement: header must contain date and narration columns.")
+    if len(mapped) != len(set(mapped)):
+        duplicates = sorted({name for name in mapped if mapped.count(name) > 1})
+        raise InputError(f"Bank statement: duplicate columns after normalization: {duplicates}.")
+
+    def _data_rows() -> Iterator[tuple[int, dict[str, str]]]:
+        nonlocal end_line
+        for row in reader:
+            start_line = end_line + 1
+            end_line = reader.line_num
+            if not any(x.strip() for x in row):
+                continue
+            if len(row) != len(mapped):
+                raise InputError(f"Bank statement row {start_line}: expected {len(mapped)} columns, found {len(row)}.")
+            yield start_line, dict(zip(mapped, row, strict=True))
+
+    return mapped, _data_rows()
+
 
 def load_bank(path: str) -> list[BankCreditLine]:
     try:
-        with open(path, newline="", encoding="utf-8") as fh:
-            reader = csv.DictReader(fh)
-            fields = set(reader.fieldnames or [])
+        with open(path, newline="", encoding="utf-8-sig") as fh:
+            # Stream rows straight from the handle — no full-file string, records list, or dict list
+            # is materialized; only the output BankCreditLine list grows.
+            mapped_fields, normalized_rows = _normalise_bank_rows(fh)
+            fields = set(mapped_fields)
+            # Normalized input follows the same path and output semantics as before.
             missing = _BANK_REQUIRED - fields
             if missing:
                 raise InputError(
@@ -118,23 +183,25 @@ def load_bank(path: str) -> list[BankCreditLine]:
                 )
             ref_col = "ref_no" if "ref_no" in fields else ("bank_ref" if "bank_ref" in fields else None)
             lines: list[BankCreditLine] = []
-            for i, row in enumerate(reader, start=2):
+            for line_no, row in normalized_rows:
                 narration = (row.get("narration") or "").strip()
                 credit_raw = (row.get("credit") or "").strip()
                 debit_raw = (row.get("debit") or "").strip()
+                if bool(credit_raw) == bool(debit_raw):
+                    raise InputError(f"Bank statement row {line_no}: exactly one of credit or debit must be populated.")
                 is_credit = bool(credit_raw)
                 if is_credit:
-                    amount = _rupees_to_paise(credit_raw, ctx=f"row {i}")
+                    amount = _rupees_to_paise(credit_raw, ctx=f"row {line_no}")
                 else:
-                    amount = -_rupees_to_paise(debit_raw, ctx=f"row {i}")
+                    amount = -_rupees_to_paise(debit_raw, ctx=f"row {line_no}")
                 bank_ref = (row.get(ref_col) or "").strip() if ref_col else None
                 vd_raw = (row.get("value_date") or "").strip()
-                _parse_date(vd_raw, ctx=f"Bank statement row {i}")
-                key = _line_key(vd_raw, amount, narration, bank_ref)
+                parsed_date = _parse_date(vd_raw, ctx=f"Bank statement row {line_no}")
+                key = _line_key(parsed_date.isoformat(), amount, narration, bank_ref)
                 lines.append(
                     BankCreditLine(
                         key=key,
-                        value_date=date.fromisoformat(vd_raw),
+                        value_date=parsed_date,
                         amount_paise=amount,
                         narration=narration,
                         bank_ref=bank_ref or None,
