@@ -121,40 +121,49 @@ _LOG = logging.getLogger("untangle.web")
 
 @app.middleware("http")
 async def safety_middleware(request: Request, call_next):
+    global _RATE_BUCKETS
     started = time.perf_counter()
-    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+    # Never log caller-controlled request IDs: even a valid-looking value can contain newlines or
+    # grow without bound.  The generated UUID is the only identifier used in responses/logs.
+    request_id = uuid.uuid4().hex
+
+    def finish(response):
+        response.headers["x-request-id"] = request_id
+        response.headers.setdefault("x-content-type-options", "nosniff")
+        response.headers.setdefault("x-frame-options", "DENY")
+        response.headers.setdefault("referrer-policy", "no-referrer")
+        response.headers.setdefault("content-security-policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'")
+        _LOG.info("request_id=%s method=%s status=%s latency_ms=%.1f", request_id, request.method,
+                  response.status_code, (time.perf_counter() - started) * 1000)
+        return response
     # Multipart uploads are bounded again while streaming each individual file in _save.  The
     # aggregate bound prevents a client from sending an unbounded multipart envelope.
     if request.url.path in {"/reconcile", "/api/reconcile"}:
         length = request.headers.get("content-length")
         if length and (not length.isdigit() or int(length) > _MAX_REQUEST_BYTES):
             response = JSONResponse({"detail": "Request body is too large."}, status_code=413)
-            response.headers["x-request-id"] = request_id
-            return response
+            return finish(response)
     if request.url.path in {"/reconcile", "/api/reconcile", "/api/verify"}:
         client = request.client.host if request.client else "unknown"
         now = time.monotonic()
         with _RATE_LOCK:
+            if len(_RATE_BUCKETS) > 4096:
+                _RATE_BUCKETS = {key: values for key, values in _RATE_BUCKETS.items()
+                                 if values and now - values[-1] < _RATE_WINDOW_SECONDS}
             recent = [t for t in _RATE_BUCKETS.get(client, []) if now - t < _RATE_WINDOW_SECONDS]
             if len(recent) >= _RATE_LIMIT:
                 _RATE_BUCKETS[client] = recent
                 response = JSONResponse({"detail": "Too many requests; try again shortly."}, status_code=429)
                 response.headers["retry-after"] = "60"
-                response.headers["x-request-id"] = request_id
-                return response
+                return finish(response)
             recent.append(now)
             _RATE_BUCKETS[client] = recent
     response = await call_next(request)
-    response.headers["x-request-id"] = request_id
-    response.headers.setdefault("x-content-type-options", "nosniff")
-    response.headers.setdefault("x-frame-options", "DENY")
-    response.headers.setdefault("referrer-policy", "no-referrer")
     # Keep the policy compatible with the deliberately self-contained demo pages (which use a
     # small inline script), while still preventing framing and unexpected base-URL changes.
-    response.headers.setdefault("content-security-policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'self'")
-    _LOG.info("request_id=%s method=%s status=%s latency_ms=%.1f", request_id, request.method,
-              response.status_code, (time.perf_counter() - started) * 1000)
-    return response
+    # The existing demo pages intentionally use tiny inline scripts/styles.  Keep this explicit and
+    # scoped; a future production UI should replace unsafe-inline with nonces or hashes.
+    return finish(response)
 
 
 @app.get("/healthz")
@@ -245,9 +254,23 @@ async def _run_safely_async(tmp: str, bank: str, recon: str, ledger: str) -> dic
     A timeout stops waiting for the worker, but cannot kill Python work already running in a
     thread; the semaphore still holds that slot until the worker actually returns.
     """
+    # Read inputs before dispatching.  The worker owns its TemporaryDirectory, so an HTTP timeout
+    # cannot delete files underneath a still-running thread when the request handler exits.
+    inputs = tuple(open(path, "rb").read() for path in (bank, recon, ledger))
+
+    def worker() -> dict:
+        with tempfile.TemporaryDirectory(prefix="untangle_worker_") as worker_tmp:
+            paths = []
+            for name, data in zip(("bank_statement.csv", "recon_report.json", "order_ledger.csv"), inputs):
+                path = os.path.join(worker_tmp, name)
+                with open(path, "wb") as fh:
+                    fh.write(data)
+                paths.append(path)
+            return _run_safely(worker_tmp, *paths)
+
     try:
         return await asyncio.wait_for(
-            asyncio.to_thread(_run_safely, tmp, bank, recon, ledger),
+            asyncio.to_thread(worker),
             timeout=_RECONCILE_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError as exc:

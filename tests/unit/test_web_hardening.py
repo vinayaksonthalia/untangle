@@ -20,3 +20,13 @@ def test_verify_rejects_oversized_body_before_json_parsing():
             headers={"content-type": "application/json"},
         )
     assert response.status_code == 413
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-request-id"]
+
+
+def test_request_id_is_generated_and_csp_allows_existing_demo_inline_assets():
+    with TestClient(app) as client:
+        response = client.get("/", headers={"x-request-id": "evil" * 1000})
+    assert response.status_code == 200
+    assert len(response.headers["x-request-id"]) == 32
+    assert "script-src 'self' 'unsafe-inline'" in response.headers["content-security-policy"]
