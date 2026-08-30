@@ -73,8 +73,10 @@ def read_input_snapshot(path: str, *, label: str, option: str) -> bytes:
             return b"".join(chunks)
     except InputError:
         raise
-    except (OSError, ValueError) as exc:
+    except FileNotFoundError as exc:
         raise InputError(f"{label} not found: {path}. Check the {option} path.") from exc
+    except (OSError, ValueError) as exc:
+        raise InputError(f"{label} could not be read: {path}. Check permissions and file accessibility.") from exc
     finally:
         if fd is not None:
             try:
