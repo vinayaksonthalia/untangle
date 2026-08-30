@@ -9,13 +9,18 @@ database, ever. Read-only toward money. The deterministic (--no-ai) path is the 
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 import os
 import shutil
 import tempfile
 import threading
+import time
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 
@@ -97,7 +102,162 @@ async def lifespan(app: FastAPI):
         yield
 
 
+_MAX_BYTES = 15 * 1024 * 1024  # 15 MB per file
 app = FastAPI(title="untangle", docs_url="/api/docs", lifespan=lifespan)
+
+# This is deliberately process-local: the public demo has no shared state store.  It protects a
+# single instance from accidental refresh storms without pretending to be production auth/quotas.
+_RATE_WINDOW_SECONDS = 60.0
+_RATE_LIMIT = 20
+_RATE_LOCK = threading.Lock()
+_RATE_BUCKETS: dict[str, list[float]] = {}
+_MAX_VERIFY_BYTES = 512 * 1024
+_RECONCILE_SLOTS = 2
+_RECONCILE_TIMEOUT_SECONDS = 90.0
+_RECONCILE_SEMAPHORE = threading.BoundedSemaphore(_RECONCILE_SLOTS)
+_LOG = logging.getLogger("untangle.web")
+
+# Aggregate request-body ceiling for the upload endpoints: three 15 MB files plus multipart framing.
+# Enforced by byte-counting the ASGI stream (below), so a chunked / Content-Length-less request
+# cannot spool an unbounded body before the per-file checks in _save run.
+_MAX_AGGREGATE_BYTES = 3 * _MAX_BYTES + 1024 * 1024
+_BODY_LIMITS = {
+    "/reconcile": _MAX_AGGREGATE_BYTES,
+    "/api/reconcile": _MAX_AGGREGATE_BYTES,
+    "/api/verify": _MAX_VERIFY_BYTES,
+}
+
+
+class BodySizeLimitMiddleware:
+    """Cap request-body size by reading bytes off the ASGI stream BEFORE the app parses them.
+
+    A ``Content-Length`` over the ceiling is rejected up front. For requests without one (chunked /
+    streamed), the body is buffered a chunk at a time only up to the ceiling; the instant the tally
+    exceeds it, we return 413 and never invoke the app — so multipart parsing can neither consume
+    nor spool more than the configured aggregate limit, regardless of transfer framing. Legitimate
+    under-limit bodies are replayed to the app unchanged, so memory is bounded to the ceiling.
+
+    Buffering (rather than a wrapped-receive that raises) is deliberate: an exception raised from
+    ``receive`` while the inner ``BaseHTTPMiddleware`` is streaming the body surfaces as a 500, not
+    a 413. Reading ahead and short-circuiting keeps the rejection clean.
+    """
+
+    def __init__(self, app, *, limits: dict[str, int]) -> None:
+        self.app = app
+        self.limits = limits
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("path") not in self.limits:
+            await self.app(scope, receive, send)
+            return
+        max_bytes = self.limits[scope["path"]]
+        headers = dict(scope.get("headers") or [])
+        content_length = headers.get(b"content-length")
+        if content_length is not None:
+            declared = content_length.decode("latin-1").strip()
+            if not declared.isdigit() or int(declared) > max_bytes:
+                await self._reject(send)
+                return
+
+        buffered: list[dict] = []
+        received = 0
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                buffered.append(message)  # e.g. http.disconnect — hand it through unchanged
+                break
+            received += len(message.get("body", b""))
+            if received > max_bytes:
+                await self._reject(send)
+                return
+            buffered.append(message)
+            if not message.get("more_body", False):
+                break
+
+        replay = iter(buffered)
+
+        async def replay_receive():
+            try:
+                return next(replay)
+            except StopIteration:
+                return await receive()  # any messages beyond the buffered body (e.g. disconnect)
+
+        await self.app(scope, replay_receive, send)
+
+    async def _reject(self, send) -> None:
+        # Stamp the baseline security headers and a request id directly, so the 413 carries them even
+        # if this layer's ordering changes; safety_middleware also applies them via setdefault.
+        body = b'{"detail":"Request body is too large."}'
+        await send({
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+                (b"x-request-id", uuid.uuid4().hex.encode()),
+                (b"x-content-type-options", b"nosniff"),
+                (b"x-frame-options", b"DENY"),
+                (b"referrer-policy", b"no-referrer"),
+            ],
+        })
+        await send({"type": "http.response.body", "body": body})
+
+
+# Registered BEFORE safety_middleware so safety_middleware ends up the OUTERMOST layer: the per-IP
+# rate-limit / admission decision must run before this middleware consumes (buffers) the body, so an
+# already-limited client is turned away cheaply instead of forcing full request ingestion each time.
+# safety_middleware never reads the body, so this middleware still sees the raw byte stream.
+app.add_middleware(BodySizeLimitMiddleware, limits=_BODY_LIMITS)
+
+
+@app.middleware("http")
+async def safety_middleware(request: Request, call_next):
+    global _RATE_BUCKETS
+    started = time.perf_counter()
+    # Never log caller-controlled request IDs: even a valid-looking value can contain newlines or
+    # grow without bound.  The generated UUID is the only identifier used in responses/logs.
+    request_id = uuid.uuid4().hex
+
+    def finish(response):
+        response.headers["x-request-id"] = request_id
+        response.headers.setdefault("x-content-type-options", "nosniff")
+        response.headers.setdefault("x-frame-options", "DENY")
+        response.headers.setdefault("referrer-policy", "no-referrer")
+        response.headers.setdefault("content-security-policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'")
+        _LOG.info("request_id=%s method=%s status=%s latency_ms=%.1f", request_id, request.method,
+                  response.status_code, (time.perf_counter() - started) * 1000)
+        return response
+    if request.url.path in {"/reconcile", "/api/reconcile", "/api/verify"}:
+        client = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        with _RATE_LOCK:
+            if len(_RATE_BUCKETS) >= 4096 and client not in _RATE_BUCKETS:
+                # Hard cap: evict the least-recently-seen bucket, even when all entries are active.
+                oldest = min(_RATE_BUCKETS, key=lambda key: _RATE_BUCKETS[key][-1])
+                del _RATE_BUCKETS[oldest]
+            if len(_RATE_BUCKETS) > 4096:
+                _RATE_BUCKETS = {key: values for key, values in _RATE_BUCKETS.items()
+                                 if values and now - values[-1] < _RATE_WINDOW_SECONDS}
+            recent = [t for t in _RATE_BUCKETS.get(client, []) if now - t < _RATE_WINDOW_SECONDS]
+            if len(recent) >= _RATE_LIMIT:
+                _RATE_BUCKETS[client] = recent
+                response = JSONResponse({"detail": "Too many requests; try again shortly."}, status_code=429)
+                response.headers["retry-after"] = "60"
+                return finish(response)
+            recent.append(now)
+            _RATE_BUCKETS[client] = recent
+    response = await call_next(request)
+    # Keep the policy compatible with the deliberately self-contained demo pages (which use a
+    # small inline script), while still preventing framing and unexpected base-URL changes.
+    # The existing demo pages intentionally use tiny inline scripts/styles.  Keep this explicit and
+    # scoped; a future production UI should replace unsafe-inline with nonces or hashes.
+    return finish(response)
+
+
+@app.get("/healthz")
+def healthz() -> JSONResponse:
+    """Small readiness endpoint; no filesystem, customer data, or internal paths are exposed."""
+    return JSONResponse({"status": "ok", "version": os.environ.get("UNTANGLE_VERSION", "dev")})
 
 if _MCP_AVAILABLE:
     # Align CORS with the MCP transport-security origin allowlist so a browser origin that clears the
@@ -126,7 +286,6 @@ if _MCP_AVAILABLE:
     app.mount("/mcp", mcp_subapp)
 
 
-_MAX_BYTES = 15 * 1024 * 1024  # 15 MB per file — a month of settlements is far smaller
 # Dedicated demo dir — kept separate from data/ (the seed-42 single-month test/README baseline) so
 # the multi-month demo can never overwrite the fixture the property tests pin to.
 _SAMPLE = "sample_data"
@@ -147,12 +306,17 @@ _SLOT_LABEL = {"bank_statement.csv": "file", "recon_report.json": "file",
                "order_ledger.csv": "file"}
 
 
-def _kind_error(tmp: str, exc: Exception) -> HTTPException:
-    """Turn any ingest/parse failure into a human message that never leaks server paths."""
+def _kind_error(exc: Exception, *tmp_roots: str) -> HTTPException:
+    """Turn any ingest/parse/IO failure into a human message that never leaks server paths.
+
+    Every temporary directory involved (the handler's upload dir and the worker's own dir) is
+    scrubbed, so a message from a read, a temp-file write, or reconciliation is equally safe.
+    """
     msg = str(exc)
-    for fname, label in _SLOT_LABEL.items():
-        msg = msg.replace(os.path.join(tmp, fname), f"your {label}")
-    msg = msg.replace(tmp + os.sep, "").replace(tmp, "")
+    for root in tmp_roots:
+        for fname, label in _SLOT_LABEL.items():
+            msg = msg.replace(os.path.join(root, fname), f"your {label}")
+        msg = msg.replace(root + os.sep, "").replace(root, "")
     if isinstance(exc, InputError):
         return HTTPException(422, f"Could not read your files: {msg}")
     if isinstance(exc, (UnicodeDecodeError, ValueError, KeyError)):
@@ -166,11 +330,77 @@ def _kind_error(tmp: str, exc: Exception) -> HTTPException:
                               "Nothing was stored. Please try again.")
 
 
-def _run_safely(tmp: str, bank: str, recon: str, ledger: str) -> dict:
+async def _run_safely_async(tmp: str, bank: str, recon: str, ledger: str) -> dict:
+    """Run reconciliation off the event loop, under the concurrency bound.
+
+    Admission FIRST: reserve a reconciliation slot before any large read or copy, so an
+    over-capacity request is turned away (503) cheaply instead of buffering ~45 MB and stalling the
+    event loop on synchronous I/O. Every file read/copy/parse then runs in the worker THREAD, not on
+    the loop, and every failure there is mapped to a leak-free HTTP error.
+
+    Slot ownership is handed off atomically under ``slot_lock``: exactly one party releases the slot.
+    A *running* worker keeps its slot until it finishes (so a timed-out/cancelled handler cannot free
+    a slot still in use, and the worker owns its own TemporaryDirectory so the handler's tmp cleanup
+    can't race it); but if cancellation kills the offload *before* the worker starts, the handler
+    frees the slot so it can never leak.
+    """
+    if not _RECONCILE_SEMAPHORE.acquire(timeout=0):
+        raise HTTPException(503, "Reconciliation capacity is busy; please try again shortly.")
+
+    slot_lock = threading.Lock()
+    slot_state = "held"  # held -> running (worker owns + releases) | freed (handler released it)
+
+    def worker() -> dict:
+        nonlocal slot_state
+        with slot_lock:
+            if slot_state != "held":
+                return {}  # handler already freed the slot after cancellation; do not run or release
+            slot_state = "running"
+        try:
+            try:
+                with tempfile.TemporaryDirectory(prefix="untangle_worker_") as worker_tmp:
+                    try:
+                        inputs = []
+                        for path in (bank, recon, ledger):
+                            with open(path, "rb") as fh:
+                                inputs.append(fh.read())
+                        paths = []
+                        for name, data in zip(("bank_statement.csv", "recon_report.json", "order_ledger.csv"),
+                                              inputs, strict=True):
+                            p = os.path.join(worker_tmp, name)
+                            with open(p, "wb") as fh:
+                                fh.write(data)
+                            paths.append(p)
+                        return reconcile(*paths)
+                    except HTTPException:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 — sanitize every read/write/parse failure
+                        raise _kind_error(exc, tmp, worker_tmp) from exc
+            except HTTPException:
+                raise
+            except Exception as exc:  # noqa: BLE001 — e.g. the temp dir itself could not be created
+                raise _kind_error(exc, tmp) from exc
+        finally:
+            _RECONCILE_SEMAPHORE.release()  # this worker owns the slot; release exactly once
+
+    def _free_slot_if_worker_never_started() -> None:
+        nonlocal slot_state
+        with slot_lock:
+            if slot_state == "held":  # the worker never took ownership; releasing here can't collide
+                slot_state = "freed"
+                _RECONCILE_SEMAPHORE.release()
+
     try:
-        return reconcile(bank, recon, ledger)
-    except Exception as exc:  # noqa: BLE001 — every failure becomes a kind, leak-free message
-        raise _kind_error(tmp, exc) from exc
+        return await asyncio.wait_for(
+            asyncio.to_thread(worker),
+            timeout=_RECONCILE_TIMEOUT_SECONDS,
+        )
+    except TimeoutError as exc:
+        _free_slot_if_worker_never_started()
+        raise HTTPException(504, "Reconciliation timed out; no result was committed.") from exc
+    except asyncio.CancelledError:
+        _free_slot_if_worker_never_started()
+        raise
 
 
 async def _save(tmp: str, name: str, up: UploadFile | None) -> str:
@@ -254,7 +484,7 @@ async def reconcile_upload(
         b = await _save(tmp, "bank_statement.csv", bank)
         r = await _save(tmp, "recon_report.json", recon)
         ln = await _save(tmp, "order_ledger.csv", ledger)
-        report = _run_safely(tmp, b, r, ln)
+        report = await _run_safely_async(tmp, b, r, ln)
         return render_dashboard(report, _months_by_key(b))
     # temp dir (and every uploaded byte) is deleted here — nothing is kept.
 
@@ -270,7 +500,7 @@ async def api_reconcile(
         b = await _save(tmp, "bank_statement.csv", bank)
         r = await _save(tmp, "recon_report.json", recon)
         ln = await _save(tmp, "order_ledger.csv", ledger)
-        report = _run_safely(tmp, b, r, ln)
+        report = await _run_safely_async(tmp, b, r, ln)
         return JSONResponse(report)
 
 
@@ -306,10 +536,24 @@ def api_journal_tally() -> Response:
 
 
 @app.post("/api/verify")
-async def api_verify(payload: dict) -> JSONResponse:
+async def api_verify(request: Request) -> JSONResponse:
     """Independently verify a close-certificate envelope: re-derive its SHA-256 content hash and, when
     signed, check the ECDSA signature. No trust in this server required — a tampered field breaks the
     hash; a forged certificate fails the signature."""
+    length = request.headers.get("content-length")
+    if length and (not length.isdigit() or int(length) > _MAX_VERIFY_BYTES):
+        raise HTTPException(413, "Certificate payload is larger than 512 KB.")
+    try:
+        raw = await request.body()
+        if len(raw) > _MAX_VERIFY_BYTES:
+            raise HTTPException(413, "Certificate payload is larger than 512 KB.")
+        payload = json.loads(raw)
+    except HTTPException:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(422, "Certificate payload must be valid JSON.") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(422, "Certificate payload must be a JSON object.")
     return JSONResponse(verify_certificate(payload))
 
 
