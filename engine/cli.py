@@ -275,7 +275,10 @@ def _print_summary(report: RunReport) -> None:
     if report.recovery_plan and report.recovery_plan.actions:
         plan = report.recovery_plan
         recov_inr = _fmt_inr(plan.recoverable_if_actioned_paise)
+        debit_inr = _fmt_inr(plan.unresolved_debit_paise)
         print(f"Active Recovery Plan: {len(plan.actions)} action(s) · up to {recov_inr} recoverable if confirmed")
+        if plan.unresolved_debit_paise:
+            print(f"    Debit exposure requiring review: {debit_inr} (excluded from recoverable cash)")
         for i, act in enumerate(plan.actions[:3], 1):
             print(f"    {i}. {act.description}")
         if len(plan.actions) > 3:
