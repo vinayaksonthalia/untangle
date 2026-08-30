@@ -119,9 +119,10 @@ trustworthy operation; they are not appended to the official Track-4 quotation a
 pipeline + agentic exception investigator + real accounting output;
 runner-up = an "ask your data" LLM chat wrapper that breaks on messy edge cases.
 
-**untangle already hits ~80%** (audit trail, abstention/exceptions, journal export). **Our perceived gap is the agentic
-investigation experience.** Top remaining builds, ranked:
-1. **Agentic exception-investigation loop** (the show-stopper): for an unresolved variance, autonomously
+**untangle already hits ~80%** (audit trail, abstention/exceptions, journal export). The agentic
+investigation experience — once the biggest gap — has since **SHIPPED (feature 006, merged in PR #26)**.
+What follows records what it does (now built, not a remaining build):
+1. **Agentic exception-investigation loop** ✅ **SHIPPED** (the show-stopper): for an unresolved variance, autonomously
    detect → classify ROOT CAUSE from the data (cross-cycle refund, MDR/fee drift, missing UTR, bank
    charge) → draft the corrective balanced journal + next action, with a visible reasoning trace and an
    "Investigate" button. MUST be deterministic-core (root-cause from data) + LLM only for narration —
