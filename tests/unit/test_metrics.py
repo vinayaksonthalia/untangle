@@ -224,3 +224,67 @@ def test_run_sealed_rejects_non_frozen_seed_before_generating(tmp_path):
     rc = run_sealed_holdout_comparison(seed=DEFAULT_SEALED_SEED + 1, sealed_dir=str(target))
     assert rc == 2
     assert not target.exists()  # rejected before any generation
+
+
+def test_sealed_manifest_rejects_non_regular_artifacts_without_raw_os_errors(tmp_path):
+    import os
+    import shutil
+
+    from eval.sealed import (
+        DEFAULT_SEALED_SEED,
+        SealedIntegrityError,
+        _verify_sealed_manifest,
+        generate_sealed_holdout,
+    )
+
+    frozen = tmp_path / "frozen"
+    generate_sealed_holdout(DEFAULT_SEALED_SEED, str(frozen))
+
+    directory_case = tmp_path / "directory_case"
+    shutil.copytree(frozen, directory_case)
+    artifact = directory_case / "bank_statement.csv"
+    artifact.unlink()
+    artifact.mkdir()
+    with pytest.raises(SealedIntegrityError, match="not a regular file"):
+        _verify_sealed_manifest(str(directory_case))
+
+    if hasattr(os, "mkfifo"):
+        fifo_case = tmp_path / "fifo_case"
+        shutil.copytree(frozen, fifo_case)
+        fifo = fifo_case / "bank_statement.csv"
+        fifo.unlink()
+        os.mkfifo(fifo)
+        with pytest.raises(SealedIntegrityError, match="not a regular file"):
+            _verify_sealed_manifest(str(fifo_case))
+
+
+def test_sealed_artifact_hashing_reads_in_bounded_chunks(tmp_path, monkeypatch):
+    import hashlib
+
+    import eval.sealed as sealed
+
+    artifact = tmp_path / "large-artifact"
+    content = b"x" * (2 * 65536 + 1)
+    artifact.write_bytes(content)
+    real_fdopen = sealed.os.fdopen
+    read_sizes = []
+
+    class BoundedReader:
+        def __init__(self, raw):
+            self.raw = raw
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.raw.close()
+
+        def read(self, size=-1):
+            read_sizes.append(size)
+            assert size == 65536
+            return self.raw.read(size)
+
+    monkeypatch.setattr(sealed.os, "fdopen", lambda fd, mode: BoundedReader(real_fdopen(fd, mode)))
+
+    assert sealed._hash_file(str(artifact)) == hashlib.sha256(content).hexdigest()
+    assert read_sizes == [65536, 65536, 65536, 65536]

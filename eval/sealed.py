@@ -16,8 +16,10 @@ import argparse
 import hashlib
 import json
 import os
+import stat
 import subprocess
 import sys
+from contextlib import contextmanager
 
 from engine.attribute import attribute_all
 from engine.config import DEFAULT_THRESHOLD
@@ -65,12 +67,42 @@ def _load_dev_metrics(path: str = "out/report.json") -> dict | None:
         return None
 
 
+@contextmanager
+def _open_regular_file(path: str, *, label: str):
+    """Yield a validated regular file without blocking on a FIFO or leaking a raw OS error."""
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    fd: int | None = None
+    try:
+        fd = os.open(path, flags)
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise SealedIntegrityError(f"{label} is not a regular file: {path}")
+        with os.fdopen(fd, "rb") as fh:
+            fd = None  # fdopen owns and closes it
+            yield fh
+    except SealedIntegrityError:
+        raise
+    except OSError as exc:
+        raise SealedIntegrityError(f"{label} is not a regular readable file: {path}: {exc}") from exc
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def _read_regular_file(path: str, *, label: str) -> bytes:
+    """Read a small regular file such as the sealed manifest into memory."""
+    with _open_regular_file(path, label=label) as fh:
+        return fh.read()
+
+
 def _hash_file(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while chunk := f.read(65536):
-            h.update(chunk)
-    return h.hexdigest()
+    digest = hashlib.sha256()
+    with _open_regular_file(path, label="sealed artifact") as fh:
+        while chunk := fh.read(65536):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def generate_sealed_holdout(seed: int, out_dir: str) -> dict[str, str]:
@@ -130,14 +162,13 @@ def _verify_sealed_manifest(sealed_dir: str) -> None:
     manifest is rejected; (2) INTEGRITY — every required artifact exists and re-hashes to its manifest
     value. A modified holdout must never be scored as the frozen benchmark (Qodo full-tree #4)."""
     manifest_path = os.path.join(sealed_dir, "manifest.json")
-    if not os.path.exists(manifest_path):
-        raise SealedIntegrityError(f"sealed manifest not found: {manifest_path}")
     try:
-        with open(manifest_path, encoding="utf-8") as fh:
-            manifest = json.load(fh)
+        manifest = json.loads(_read_regular_file(manifest_path, label="sealed manifest"))
         expected = manifest["files"]
         seed = manifest["seed"]
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except SealedIntegrityError:
+        raise
+    except (ValueError, KeyError, TypeError) as exc:
         raise SealedIntegrityError(f"sealed manifest is unreadable or malformed: {exc}") from exc
     if not isinstance(expected, dict):
         raise SealedIntegrityError("sealed manifest 'files' is not an object")
@@ -156,8 +187,6 @@ def _verify_sealed_manifest(sealed_dir: str) -> None:
         if fname not in expected:
             raise SealedIntegrityError(f"sealed manifest has no hash for required artifact {fname!r}")
         fpath = os.path.join(sealed_dir, fname)
-        if not os.path.exists(fpath):
-            raise SealedIntegrityError(f"sealed artifact missing: {fname}")
         actual = _hash_file(fpath)
         if actual != expected[fname]:
             raise SealedIntegrityError(
