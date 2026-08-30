@@ -58,6 +58,20 @@ def test_chunked_upload_without_content_length_is_capped(client):
     assert response.headers["x-content-type-options"] == "nosniff"
 
 
+def test_rate_limit_decided_before_body_is_buffered(client, monkeypatch):
+    # An already-rate-limited client must get 429 without the body-size middleware first ingesting
+    # the payload — the admission decision precedes body consumption (Qodo #36).
+    monkeypatch.setattr(web_app, "_RATE_BUCKETS", {})
+    over = 512 * 1024 + 1
+    # Saturate this client's window.
+    for _ in range(web_app._RATE_LIMIT):
+        client.post("/api/verify", content=b"{}", headers={"content-type": "application/json"})
+    # The next request is over the size limit too; if size ran first it would be 413. Rate wins => 429.
+    resp = client.post("/api/verify", content=b"x" * over, headers={"content-type": "application/json"})
+    assert resp.status_code == 429
+    assert resp.headers["retry-after"] == "60"
+
+
 def test_request_id_is_generated_and_csp_allows_existing_demo_inline_assets(client):
     response = client.get("/", headers={"x-request-id": "evil" * 1000})
     assert response.status_code == 200
@@ -88,9 +102,13 @@ def test_mcp_path_is_not_counted_by_web_limiter(client):
     assert not web_app._RATE_BUCKETS
 
 
-def test_saturated_reconcile_returns_503():
-    paths = []
+def test_saturated_reconcile_returns_503_before_reading(monkeypatch):
+    # A slot must be reserved BEFORE any file read/copy, so an over-capacity request is turned away
+    # without ingesting ~45 MB or stalling the event loop (Qodo #36: admission before preprocessing).
+    reconciled = []
+    monkeypatch.setattr(web_app, "reconcile", lambda *a: reconciled.append(True) or {})
     with tempfile.TemporaryDirectory() as tmp:
+        paths = []
         for name in ("b", "r", "l"):
             path = os.path.join(tmp, name)
             open(path, "wb").close()
@@ -99,8 +117,9 @@ def test_saturated_reconcile_returns_503():
         web_app._RECONCILE_SEMAPHORE.acquire()
         try:
             with pytest.raises(HTTPException) as caught:
-                web_app._run_safely(tmp, *paths)
+                asyncio.run(web_app._run_safely_async(tmp, *paths))
             assert caught.value.status_code == 503
+            assert reconciled == []  # rejected before any read / reconcile ran
         finally:
             web_app._RECONCILE_SEMAPHORE.release()
             web_app._RECONCILE_SEMAPHORE.release()

@@ -185,8 +185,8 @@ class BodySizeLimitMiddleware:
         await self.app(scope, replay_receive, send)
 
     async def _reject(self, send) -> None:
-        # This layer sits outside safety_middleware, so it stamps the same baseline security headers
-        # (and a fresh request id) that the middleware would have added to a normal response.
+        # Stamp the baseline security headers and a request id directly, so the 413 carries them even
+        # if this layer's ordering changes; safety_middleware also applies them via setdefault.
         body = b'{"detail":"Request body is too large."}'
         await send({
             "type": "http.response.start",
@@ -201,6 +201,13 @@ class BodySizeLimitMiddleware:
             ],
         })
         await send({"type": "http.response.body", "body": body})
+
+
+# Registered BEFORE safety_middleware so safety_middleware ends up the OUTERMOST layer: the per-IP
+# rate-limit / admission decision must run before this middleware consumes (buffers) the body, so an
+# already-limited client is turned away cheaply instead of forcing full request ingestion each time.
+# safety_middleware never reads the body, so this middleware still sees the raw byte stream.
+app.add_middleware(BodySizeLimitMiddleware, limits=_BODY_LIMITS)
 
 
 @app.middleware("http")
@@ -245,12 +252,6 @@ async def safety_middleware(request: Request, call_next):
     # The existing demo pages intentionally use tiny inline scripts/styles.  Keep this explicit and
     # scoped; a future production UI should replace unsafe-inline with nonces or hashes.
     return finish(response)
-
-
-# Registered AFTER safety_middleware so it wraps it as the OUTERMOST layer: it must see the raw ASGI
-# receive stream (and be able to raise past the inner BaseHTTPMiddleware to return 413) before any
-# body is read or spooled.
-app.add_middleware(BodySizeLimitMiddleware, limits=_BODY_LIMITS)
 
 
 @app.get("/healthz")
@@ -324,40 +325,45 @@ def _kind_error(tmp: str, exc: Exception) -> HTTPException:
                               "Nothing was stored. Please try again.")
 
 
-def _run_safely(tmp: str, bank: str, recon: str, ledger: str) -> dict:
-    if not _RECONCILE_SEMAPHORE.acquire(timeout=0):
-        raise HTTPException(503, "Reconciliation capacity is busy; please try again shortly.")
+def _reconcile_leak_safe(tmp: str, bank: str, recon: str, ledger: str) -> dict:
+    """Reconcile the three inputs, mapping any failure to a leak-free HTTP error. Assumes a
+    reconciliation slot is already held by the caller."""
     try:
         return reconcile(bank, recon, ledger)
     except Exception as exc:  # noqa: BLE001 — every failure becomes a kind, leak-free message
         raise _kind_error(tmp, exc) from exc
-    finally:
-        _RECONCILE_SEMAPHORE.release()
 
 
 async def _run_safely_async(tmp: str, bank: str, recon: str, ledger: str) -> dict:
-    """Run CPU-heavy reconciliation off the event loop.
+    """Run reconciliation off the event loop, under the concurrency bound.
 
-    A timeout stops waiting for the worker, but cannot kill Python work already running in a
-    thread; the semaphore still holds that slot until the worker actually returns.
+    Admission FIRST: reserve a reconciliation slot before any large read or copy, so an
+    over-capacity request is turned away (503) cheaply instead of buffering ~45 MB and stalling the
+    event loop on synchronous I/O. Every file read/copy then happens in the worker THREAD, not on
+    the loop. The worker releases the slot itself, so a timed-out or cancelled HTTP handler — which
+    cannot kill the still-running thread — never frees a slot the worker is still using, and the
+    worker owns its own TemporaryDirectory so the handler's tmp cleanup cannot race it.
     """
-    # Read inputs before dispatching.  The worker owns its TemporaryDirectory, so an HTTP timeout
-    # cannot delete files underneath a still-running thread when the request handler exits.
-    inputs_list = []
-    for path in (bank, recon, ledger):
-        with open(path, "rb") as fh:
-            inputs_list.append(fh.read())
-    inputs = tuple(inputs_list)
+    if not _RECONCILE_SEMAPHORE.acquire(timeout=0):
+        raise HTTPException(503, "Reconciliation capacity is busy; please try again shortly.")
 
     def worker() -> dict:
-        with tempfile.TemporaryDirectory(prefix="untangle_worker_") as worker_tmp:
-            paths = []
-            for name, data in zip(("bank_statement.csv", "recon_report.json", "order_ledger.csv"), inputs, strict=True):
-                path = os.path.join(worker_tmp, name)
-                with open(path, "wb") as fh:
-                    fh.write(data)
-                paths.append(path)
-            return _run_safely(worker_tmp, *paths)
+        try:
+            inputs = []
+            for path in (bank, recon, ledger):
+                with open(path, "rb") as fh:
+                    inputs.append(fh.read())
+            with tempfile.TemporaryDirectory(prefix="untangle_worker_") as worker_tmp:
+                paths = []
+                for name, data in zip(("bank_statement.csv", "recon_report.json", "order_ledger.csv"),
+                                      inputs, strict=True):
+                    path = os.path.join(worker_tmp, name)
+                    with open(path, "wb") as fh:
+                        fh.write(data)
+                    paths.append(path)
+                return _reconcile_leak_safe(worker_tmp, *paths)
+        finally:
+            _RECONCILE_SEMAPHORE.release()
 
     try:
         return await asyncio.wait_for(
