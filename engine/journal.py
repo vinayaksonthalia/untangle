@@ -124,7 +124,7 @@ def build_journal_entries(
     CGST+SGST (same state as the gateway GSTIN) vs a single IGST line (inter-state)."""
     from collections import defaultdict
 
-    from engine.covered import resolve_covered_rows_by_id
+    from engine.covered import resolve_covered_rows_by_id, rows_by_canonical_id
 
     # Qodo #7: index recon rows as a MULTIMAP so duplicate (type, entity_id) rows are not collapsed to
     # the last one — each covered-key occurrence consumes a distinct row.
@@ -133,7 +133,7 @@ def build_journal_entries(
         rows_by_key[(r.type, r.entity_id)].append(r)
 
     entries: list[JournalEntry] = []
-    rows_by_id = {f"recon_{i}": r for i, r in enumerate(recon_rows)}
+    rows_by_id = rows_by_canonical_id(recon_rows)
     for rec in sorted(reconciliations, key=lambda x: x.line_key):
         if rec.covered_row_ids:
             # Strict path: exact, validated rows (fail-closed on identity/duplicate mismatch).

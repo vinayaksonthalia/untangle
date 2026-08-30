@@ -17,7 +17,59 @@ way.
 
 from __future__ import annotations
 
+import hashlib
+from collections import defaultdict
+
 from engine.models import ReconciliationResult, ReconRow
+
+
+def _row_signature(r: ReconRow) -> tuple:
+    """The full set of distinguishing fields for a settlement row.
+
+    Two rows that agree on every one of these are genuinely interchangeable — the same fee, tax,
+    settlement, dates and flags flow into any accounting artifact regardless of which is chosen —
+    so an occurrence counter is enough to tell true duplicates apart. Any *meaningful* difference
+    (e.g. two same-``(type, entity_id)`` rows with different fees) yields a different signature and
+    therefore a different, position-independent id. The caller-supplied ``row_id`` is deliberately
+    excluded: it is untrusted and must never decide physical identity.
+    """
+    return (
+        r.type, r.entity_id, r.amount_paise, r.fee_paise, r.tax_paise, r.debit_paise, r.credit_paise,
+        r.settlement_id, r.settlement_utr,
+        r.settled_at.isoformat() if r.settled_at else None,
+        r.created_at.isoformat() if r.created_at else None,
+        r.on_hold, r.dispute_id, r.order_id, r.method, r.description,
+    )
+
+
+def canonical_row_ids(recon_rows: list[ReconRow]) -> dict[int, str]:
+    """Map ``id(row) -> stable content-derived canonical id``.
+
+    The id is a hash of the row's distinguishing fields plus an occurrence index among rows with
+    an identical signature. Because it is derived from content, not list position, reordering or
+    subsetting ``recon_rows`` between reconciliation and any downstream consumer cannot silently
+    rebind a covered id to a different physical row — the property a bare ``recon_<position>`` id
+    could not guarantee.
+    """
+    seen: dict[tuple, int] = defaultdict(int)
+    out: dict[int, str] = {}
+    for r in recon_rows:
+        sig = _row_signature(r)
+        occ = seen[sig]
+        seen[sig] += 1
+        digest = hashlib.sha1(repr(sig).encode("utf-8")).hexdigest()[:16]
+        out[id(r)] = f"row_{digest}_{occ}"
+    return out
+
+
+def rows_by_canonical_id(recon_rows: list[ReconRow]) -> dict[str, ReconRow]:
+    """Inverse view ``canonical id -> row`` for downstream resolution.
+
+    Keys are unique by construction (the occurrence index disambiguates identical signatures), and
+    the mapping is independent of ``recon_rows`` order for every row that differs meaningfully.
+    """
+    ids = canonical_row_ids(recon_rows)
+    return {ids[id(r)]: r for r in recon_rows}
 
 
 def resolve_covered_rows_by_id(

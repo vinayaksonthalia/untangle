@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from engine.covered import resolve_covered_rows_by_id
+from engine.covered import resolve_covered_rows_by_id, rows_by_canonical_id
 from engine.evidence import narration_rail_signals
 from engine.models import (
     BankCreditLine,
@@ -62,7 +62,7 @@ def build_proof_packets(
     # Key tax by the FULL (type, entity_id) join — the same composite key reconciliation and
     # fee_gst use — so two entities of different types sharing an id can't collide (Qodo #3).
     tax_by_entity = {(r.type, r.entity_id): r.tax_paise for r in recon_rows}
-    row_by_id = {f"recon_{i}": r for i, r in enumerate(recon_rows)}
+    row_by_id = rows_by_canonical_id(recon_rows)
     # Multimap for the legacy (pre-row-id) fallback: occurrence-consuming so duplicate covered keys
     # still resolve to distinct REAL rows (a bare tax map yields ints, losing settlement ids).
     from collections import defaultdict

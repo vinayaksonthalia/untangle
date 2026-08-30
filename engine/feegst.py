@@ -9,7 +9,7 @@ transaction, so your accountant can see it." Every rupee is traceable to a speci
 
 from __future__ import annotations
 
-from engine.covered import resolve_covered_rows_by_id
+from engine.covered import resolve_covered_rows_by_id, rows_by_canonical_id
 from engine.models import FeeGstRecovery, ReconciliationResult, ReconRow
 
 
@@ -17,7 +17,7 @@ def fee_gst(
     reconciliations: list[ReconciliationResult],
     recon_rows: list[ReconRow],
 ) -> FeeGstRecovery:
-    by_row_id = {f"recon_{i}": r for i, r in enumerate(recon_rows)}
+    by_row_id = rows_by_canonical_id(recon_rows)
     by_id = {(r.type, r.entity_id): r for r in recon_rows}
     total = 0
     by_entity: list[tuple[str, int]] = []

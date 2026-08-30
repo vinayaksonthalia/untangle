@@ -205,15 +205,18 @@ def investigate(
     # per covered-key occurrence, mirroring the journal/feegst/proof fix.
     from collections import defaultdict
 
-    from engine.covered import resolve_covered_rows_by_id
+    from engine.covered import resolve_covered_rows_by_id, rows_by_canonical_id
 
     associated_rows: list[ReconRow] = []
-    rows_by_id = {f"recon_{i}": r for i, r in enumerate(recon_rows)}
+    rows_by_id = rows_by_canonical_id(recon_rows)
     rows_by_key: dict[tuple[str, str], list[ReconRow]] = defaultdict(list)
     for r in recon_rows:
         rows_by_key[(r.type, r.entity_id)].append(r)
 
-    if reconciliation is not None and reconciliation.covered_entity_ids:
+    # Enter the resolution path whenever the reconciliation names covered rows by EITHER identity
+    # list — an id-bearing rec with an empty entity list must still hit the strict resolver's
+    # count-parity check and fail closed, exactly like fee-GST/journal/proof.
+    if reconciliation is not None and (reconciliation.covered_entity_ids or reconciliation.covered_row_ids):
         expected_net = reconciliation.covered_net_paise
         if reconciliation.covered_row_ids:
             # Strict path: exact, validated rows (fail-closed on identity/duplicate mismatch).
