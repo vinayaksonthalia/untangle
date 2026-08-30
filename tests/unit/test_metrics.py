@@ -224,3 +224,35 @@ def test_run_sealed_rejects_non_frozen_seed_before_generating(tmp_path):
     rc = run_sealed_holdout_comparison(seed=DEFAULT_SEALED_SEED + 1, sealed_dir=str(target))
     assert rc == 2
     assert not target.exists()  # rejected before any generation
+
+
+def test_sealed_manifest_rejects_non_regular_artifacts_without_raw_os_errors(tmp_path):
+    import os
+    import shutil
+
+    from eval.sealed import (
+        DEFAULT_SEALED_SEED,
+        SealedIntegrityError,
+        _verify_sealed_manifest,
+        generate_sealed_holdout,
+    )
+
+    frozen = tmp_path / "frozen"
+    generate_sealed_holdout(DEFAULT_SEALED_SEED, str(frozen))
+
+    directory_case = tmp_path / "directory_case"
+    shutil.copytree(frozen, directory_case)
+    artifact = directory_case / "bank_statement.csv"
+    artifact.unlink()
+    artifact.mkdir()
+    with pytest.raises(SealedIntegrityError, match="not a regular file"):
+        _verify_sealed_manifest(str(directory_case))
+
+    if hasattr(os, "mkfifo"):
+        fifo_case = tmp_path / "fifo_case"
+        shutil.copytree(frozen, fifo_case)
+        fifo = fifo_case / "bank_statement.csv"
+        fifo.unlink()
+        os.mkfifo(fifo)
+        with pytest.raises(SealedIntegrityError, match="not a regular file"):
+            _verify_sealed_manifest(str(fifo_case))
