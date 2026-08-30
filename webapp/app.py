@@ -306,12 +306,17 @@ _SLOT_LABEL = {"bank_statement.csv": "file", "recon_report.json": "file",
                "order_ledger.csv": "file"}
 
 
-def _kind_error(tmp: str, exc: Exception) -> HTTPException:
-    """Turn any ingest/parse failure into a human message that never leaks server paths."""
+def _kind_error(exc: Exception, *tmp_roots: str) -> HTTPException:
+    """Turn any ingest/parse/IO failure into a human message that never leaks server paths.
+
+    Every temporary directory involved (the handler's upload dir and the worker's own dir) is
+    scrubbed, so a message from a read, a temp-file write, or reconciliation is equally safe.
+    """
     msg = str(exc)
-    for fname, label in _SLOT_LABEL.items():
-        msg = msg.replace(os.path.join(tmp, fname), f"your {label}")
-    msg = msg.replace(tmp + os.sep, "").replace(tmp, "")
+    for root in tmp_roots:
+        for fname, label in _SLOT_LABEL.items():
+            msg = msg.replace(os.path.join(root, fname), f"your {label}")
+        msg = msg.replace(root + os.sep, "").replace(root, "")
     if isinstance(exc, InputError):
         return HTTPException(422, f"Could not read your files: {msg}")
     if isinstance(exc, (UnicodeDecodeError, ValueError, KeyError)):
@@ -325,45 +330,65 @@ def _kind_error(tmp: str, exc: Exception) -> HTTPException:
                               "Nothing was stored. Please try again.")
 
 
-def _reconcile_leak_safe(tmp: str, bank: str, recon: str, ledger: str) -> dict:
-    """Reconcile the three inputs, mapping any failure to a leak-free HTTP error. Assumes a
-    reconciliation slot is already held by the caller."""
-    try:
-        return reconcile(bank, recon, ledger)
-    except Exception as exc:  # noqa: BLE001 — every failure becomes a kind, leak-free message
-        raise _kind_error(tmp, exc) from exc
-
-
 async def _run_safely_async(tmp: str, bank: str, recon: str, ledger: str) -> dict:
     """Run reconciliation off the event loop, under the concurrency bound.
 
     Admission FIRST: reserve a reconciliation slot before any large read or copy, so an
     over-capacity request is turned away (503) cheaply instead of buffering ~45 MB and stalling the
-    event loop on synchronous I/O. Every file read/copy then happens in the worker THREAD, not on
-    the loop. The worker releases the slot itself, so a timed-out or cancelled HTTP handler — which
-    cannot kill the still-running thread — never frees a slot the worker is still using, and the
-    worker owns its own TemporaryDirectory so the handler's tmp cleanup cannot race it.
+    event loop on synchronous I/O. Every file read/copy/parse then runs in the worker THREAD, not on
+    the loop, and every failure there is mapped to a leak-free HTTP error.
+
+    Slot ownership is handed off atomically under ``slot_lock``: exactly one party releases the slot.
+    A *running* worker keeps its slot until it finishes (so a timed-out/cancelled handler cannot free
+    a slot still in use, and the worker owns its own TemporaryDirectory so the handler's tmp cleanup
+    can't race it); but if cancellation kills the offload *before* the worker starts, the handler
+    frees the slot so it can never leak.
     """
     if not _RECONCILE_SEMAPHORE.acquire(timeout=0):
         raise HTTPException(503, "Reconciliation capacity is busy; please try again shortly.")
 
+    slot_lock = threading.Lock()
+    slot_state = "held"  # held -> running (worker owns + releases) | freed (handler released it)
+
     def worker() -> dict:
+        nonlocal slot_state
+        with slot_lock:
+            if slot_state != "held":
+                return {}  # handler already freed the slot after cancellation; do not run or release
+            slot_state = "running"
         try:
-            inputs = []
-            for path in (bank, recon, ledger):
-                with open(path, "rb") as fh:
-                    inputs.append(fh.read())
-            with tempfile.TemporaryDirectory(prefix="untangle_worker_") as worker_tmp:
-                paths = []
-                for name, data in zip(("bank_statement.csv", "recon_report.json", "order_ledger.csv"),
-                                      inputs, strict=True):
-                    path = os.path.join(worker_tmp, name)
-                    with open(path, "wb") as fh:
-                        fh.write(data)
-                    paths.append(path)
-                return _reconcile_leak_safe(worker_tmp, *paths)
+            try:
+                with tempfile.TemporaryDirectory(prefix="untangle_worker_") as worker_tmp:
+                    try:
+                        inputs = []
+                        for path in (bank, recon, ledger):
+                            with open(path, "rb") as fh:
+                                inputs.append(fh.read())
+                        paths = []
+                        for name, data in zip(("bank_statement.csv", "recon_report.json", "order_ledger.csv"),
+                                              inputs, strict=True):
+                            p = os.path.join(worker_tmp, name)
+                            with open(p, "wb") as fh:
+                                fh.write(data)
+                            paths.append(p)
+                        return reconcile(*paths)
+                    except HTTPException:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 — sanitize every read/write/parse failure
+                        raise _kind_error(exc, tmp, worker_tmp) from exc
+            except HTTPException:
+                raise
+            except Exception as exc:  # noqa: BLE001 — e.g. the temp dir itself could not be created
+                raise _kind_error(exc, tmp) from exc
         finally:
-            _RECONCILE_SEMAPHORE.release()
+            _RECONCILE_SEMAPHORE.release()  # this worker owns the slot; release exactly once
+
+    def _free_slot_if_worker_never_started() -> None:
+        nonlocal slot_state
+        with slot_lock:
+            if slot_state == "held":  # the worker never took ownership; releasing here can't collide
+                slot_state = "freed"
+                _RECONCILE_SEMAPHORE.release()
 
     try:
         return await asyncio.wait_for(
@@ -371,7 +396,11 @@ async def _run_safely_async(tmp: str, bank: str, recon: str, ledger: str) -> dic
             timeout=_RECONCILE_TIMEOUT_SECONDS,
         )
     except TimeoutError as exc:
+        _free_slot_if_worker_never_started()
         raise HTTPException(504, "Reconciliation timed out; no result was committed.") from exc
+    except asyncio.CancelledError:
+        _free_slot_if_worker_never_started()
+        raise
 
 
 async def _save(tmp: str, name: str, up: UploadFile | None) -> str:

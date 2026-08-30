@@ -157,3 +157,42 @@ def test_timeout_keeps_worker_inputs_until_release(monkeypatch):
             time.sleep(0.05)
     finally:
         web_app._RECONCILE_TIMEOUT_SECONDS = old_timeout
+
+
+def test_cancellation_before_worker_starts_releases_slot(monkeypatch):
+    # If the offload is cancelled before the worker thread runs, the handler must free the slot it
+    # reserved — otherwise the slot leaks and later requests get a spurious 503 (Qodo #36).
+    async def _cancel_before_worker(fn, *args, **kwargs):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(web_app.asyncio, "to_thread", _cancel_before_worker)
+    with tempfile.TemporaryDirectory() as tmp:
+        paths = []
+        for name in ("b", "r", "l"):
+            path = os.path.join(tmp, name)
+            open(path, "wb").close()
+            paths.append(path)
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(web_app._run_safely_async(tmp, *paths))
+    # The slot must be free again: acquire both slots without blocking, then restore.
+    assert web_app._RECONCILE_SEMAPHORE.acquire(timeout=0)
+    assert web_app._RECONCILE_SEMAPHORE.acquire(timeout=0)
+    web_app._RECONCILE_SEMAPHORE.release()
+    web_app._RECONCILE_SEMAPHORE.release()
+
+
+def test_worker_file_read_failure_is_sanitized(monkeypatch):
+    # A missing input makes the worker's read fail; that must surface as a leak-free HTTPException
+    # (mapped through _kind_error), not an unhandled exception carrying a server path (Qodo #36).
+    with tempfile.TemporaryDirectory() as tmp:
+        # Only recon and ledger exist; the bank path is missing so open() raises inside the worker.
+        paths = [os.path.join(tmp, n) for n in ("b", "r", "l")]
+        for p in paths[1:]:
+            open(p, "wb").close()
+        with pytest.raises(HTTPException) as caught:
+            asyncio.run(web_app._run_safely_async(tmp, *paths))
+        assert caught.value.status_code in (422, 500)
+        assert tmp not in str(caught.value.detail)  # no server path leaked
+    # slot restored after the sanitized failure
+    assert web_app._RECONCILE_SEMAPHORE.acquire(timeout=0)
+    web_app._RECONCILE_SEMAPHORE.release()
