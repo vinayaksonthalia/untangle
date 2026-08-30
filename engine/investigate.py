@@ -205,19 +205,30 @@ def investigate(
     # per covered-key occurrence, mirroring the journal/feegst/proof fix.
     from collections import defaultdict
 
+    from engine.covered import resolve_covered_rows_by_id, rows_by_canonical_id
+
     associated_rows: list[ReconRow] = []
+    rows_by_id = rows_by_canonical_id(recon_rows)
     rows_by_key: dict[tuple[str, str], list[ReconRow]] = defaultdict(list)
     for r in recon_rows:
         rows_by_key[(r.type, r.entity_id)].append(r)
 
-    if reconciliation is not None and reconciliation.covered_entity_ids:
+    # Enter the resolution path whenever the reconciliation names covered rows by EITHER identity
+    # list — an id-bearing rec with an empty entity list must still hit the strict resolver's
+    # count-parity check and fail closed, exactly like fee-GST/journal/proof.
+    if reconciliation is not None and (reconciliation.covered_entity_ids or reconciliation.covered_row_ids):
         expected_net = reconciliation.covered_net_paise
-        _seen: dict[tuple[str, str], int] = defaultdict(int)
-        for k in reconciliation.covered_entity_ids:
-            bucket = rows_by_key.get(k, [])
-            if _seen[k] < len(bucket):
-                associated_rows.append(bucket[_seen[k]])
-            _seen[k] += 1
+        if reconciliation.covered_row_ids:
+            # Strict path: exact, validated rows (fail-closed on identity/duplicate mismatch).
+            associated_rows = resolve_covered_rows_by_id(reconciliation, rows_by_id)
+        else:
+            # Legacy fallback: occurrence-consuming (type, entity_id) for pre-row-id reconciliations.
+            _seen: dict[tuple[str, str], int] = defaultdict(int)
+            for k in reconciliation.covered_entity_ids:
+                bucket = rows_by_key.get(tuple(k), [])
+                if _seen[tuple(k)] < len(bucket):
+                    associated_rows.append(bucket[_seen[tuple(k)]])
+                _seen[tuple(k)] += 1
         if associated_rows:
             sid = next((r.settlement_id for r in associated_rows if r.settlement_id), line.key)
             ref_id = str(sid)
