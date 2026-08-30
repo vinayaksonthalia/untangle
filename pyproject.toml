@@ -8,7 +8,7 @@ requires-python = ">=3.12"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "hypothesis>=6", "httpx", "pytest-cov>=5"]
+dev = ["pytest>=8", "hypothesis>=6", "httpx", "pytest-cov>=5", "ruff", "coverage[toml]>=7"]
 quality = ["mutmut>=3.6"]
 web = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9"]
 # Optional: ECDSA-signed close certificates. The core is stdlib-only; without this extra (or a
