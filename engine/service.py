@@ -7,14 +7,11 @@ to a temp dir, calls this, then deletes them — nothing is persisted.
 
 from __future__ import annotations
 
-import os
-import tempfile
-
 from engine.attribute import attribute_all
 from engine.cli import build_report
 from engine.config import build_config
 from engine.evidence import ReconIndex
-from engine.ingest import InputError, load_bank, load_ledger, load_recon
+from engine.ingest import InputError, load_bank_bytes, load_ledger_bytes, load_recon_bytes
 from engine.llm.client import LLMClient
 from engine.llm.narrate import resolve_unknowns
 
@@ -32,40 +29,28 @@ def reconcile_bytes(
     global_solver: bool = False,
 ) -> dict:
     """Reconcile one immutable in-memory snapshot of the three inputs."""
-    with tempfile.TemporaryDirectory(prefix="untangle-input-") as tmpdir:
-        bank_path = os.path.join(tmpdir, "bank_statement.csv")
-        recon_path = os.path.join(tmpdir, "recon_report.json")
-        ledger_path = os.path.join(tmpdir, "order_ledger.csv")
-        for path, content in (
-            (bank_path, bank_bytes),
-            (recon_path, recon_bytes),
-            (ledger_path, ledger_bytes),
-        ):
-            with open(path, "wb") as fh:
-                fh.write(content)
-        try:
-            return _reconcile_snapshot(
-                bank_path,
-                recon_path,
-                ledger_path,
-                no_ai=no_ai,
-                provider=provider,
-                model=model,
-                threshold=threshold,
-                seed=seed,
-                global_solver=global_solver,
-            )
-        except InputError as exc:
-            # Snapshot paths are implementation details and may contain server temp roots. Preserve
-            # the kind error while reporting only stable input labels to every caller.
-            message = str(exc)
-            for path, label in (
-                (bank_path, "bank statement"),
-                (recon_path, "reconciliation report"),
-                (ledger_path, "order ledger"),
-            ):
-                message = message.replace(path, label)
-            raise InputError(message) from exc
+    lines = load_bank_bytes(bank_bytes)
+    recon_rows = load_recon_bytes(recon_bytes)
+    order_ledger = load_ledger_bytes(ledger_bytes)
+    return _reconcile_loaded(
+        lines,
+        recon_rows,
+        order_ledger,
+        no_ai=no_ai,
+        provider=provider,
+        model=model,
+        threshold=threshold,
+        seed=seed,
+        global_solver=global_solver,
+    )
+
+
+def read_input_snapshot(path: str, *, label: str, option: str) -> bytes:
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except FileNotFoundError as exc:
+        raise InputError(f"{label} not found: {path}. Check the {option} path.") from exc
 
 
 def reconcile(
@@ -81,10 +66,11 @@ def reconcile(
     global_solver: bool = False,
 ) -> dict:
     """Read every input once, then reconcile the exact immutable byte snapshot."""
-    snapshots: list[bytes] = []
-    for path in (bank_path, recon_path, ledger_path):
-        with open(path, "rb") as fh:
-            snapshots.append(fh.read())
+    snapshots = (
+        read_input_snapshot(bank_path, label="Bank statement", option="--bank"),
+        read_input_snapshot(recon_path, label="Recon report", option="--recon"),
+        read_input_snapshot(ledger_path, label="Order ledger", option="--ledger"),
+    )
     return reconcile_bytes(
         *snapshots,
         no_ai=no_ai,
@@ -96,10 +82,10 @@ def reconcile(
     )
 
 
-def _reconcile_snapshot(
-    bank_path: str,
-    recon_path: str,
-    ledger_path: str,
+def _reconcile_loaded(
+    lines,
+    recon_rows,
+    order_ledger,
     *,
     no_ai: bool = True,
     provider: str | None = None,
@@ -108,7 +94,7 @@ def _reconcile_snapshot(
     seed: int = 42,
     global_solver: bool = False,
 ) -> dict:
-    """Ingest → attribute → reconcile → fee-GST → exceptions from snapshot paths."""
+    """Attribute → reconcile → fee-GST → exceptions from already parsed snapshots."""
     cfg = build_config(
         no_ai=no_ai,
         provider=provider,
@@ -117,9 +103,6 @@ def _reconcile_snapshot(
         seed=seed,
         global_solver=global_solver,
     )
-    lines = load_bank(bank_path)
-    recon_rows = load_recon(recon_path)
-    order_ledger = load_ledger(ledger_path)  # Feature 003: cross-checked against the proven slice
     index = ReconIndex(recon_rows)
     solver_out: dict = {}
     attributions = attribute_all(

@@ -183,12 +183,15 @@ def test_investigate_variance_tool():
     assert isinstance(inv["reasoning_trace"], list)
 
 
-def test_error_handling_invalid_paths():
+def test_error_handling_invalid_paths(monkeypatch):
     """Tools return structured errors when given nonexistent paths without raising unhandled exceptions."""
+    monkeypatch.delenv("UNTANGLE_MCP_SANDBOX", raising=False)
     res = reconcile_files("invalid/bank.csv", "invalid/recon.json", "invalid/ledger.csv")
     assert res["ok"] is False
     assert "error" in res
     assert "error_type" in res
+    assert res["error_type"] == "InputError"
+    assert "Bank statement not found" in res["error"]
 
     res_journal = export_journal_entries("invalid/bank.csv", "invalid/recon.json", format="unknown_format")
     assert res_journal["ok"] is False
@@ -199,22 +202,53 @@ def test_error_handling_invalid_paths():
     assert "error" in res_inv
 
 
+def test_service_snapshot_missing_paths_preserve_kind_specific_input_errors(tmp_path):
+    from engine.ingest import InputError
+    from engine.service import reconcile
+
+    missing = str(tmp_path / "missing")
+    cases = (
+        ((missing, _RECON_PATH, _LEDGER_PATH), "Bank statement not found", "--bank"),
+        ((_BANK_PATH, missing, _LEDGER_PATH), "Recon report not found", "--recon"),
+        ((_BANK_PATH, _RECON_PATH, missing), "Order ledger not found", "--ledger"),
+    )
+    for paths, label, option in cases:
+        with pytest.raises(InputError) as raised:
+            reconcile(*paths)
+        assert label in str(raised.value)
+        assert option in str(raised.value)
+
+
+def test_journal_snapshot_errors_use_stable_labels(tmp_path, monkeypatch):
+    monkeypatch.delenv("UNTANGLE_MCP_SANDBOX", raising=False)
+    malformed = tmp_path / "recon.json"
+    malformed.write_bytes(b"not json")
+
+    res = export_journal_entries(_BANK_PATH, str(malformed), format="json")
+
+    assert res["ok"] is False
+    assert res["error_type"] == "InputError"
+    assert "reconciliation report" in res["error"]
+    assert str(tmp_path) not in res["error"]
+    assert "untangle-" not in res["error"]
+
+
 def test_content_token_detects_change_under_identical_mtime(tmp_path):
     # The reconcile cache keys on file CONTENT, not mtime: replacing a file while preserving its mtime
     # must still change the token (mtime-only keying would serve a stale report). Qodo full-tree #6.
     import os
 
-    from mcp_server import _content_token
+    from mcp_server import _snapshot_inputs
 
     p = tmp_path / "bank.csv"
     p.write_text("original", encoding="utf-8")
     mtime = os.path.getmtime(p)
-    tok1 = _content_token(str(p))
+    tok1 = _snapshot_inputs((str(p), "Bank statement", "--bank"))[1]
 
     p.write_text("tampered-different-content", encoding="utf-8")
     os.utime(p, (mtime, mtime))  # restore the ORIGINAL mtime
     assert os.path.getmtime(str(p)) == mtime  # mtime is unchanged...
-    tok2 = _content_token(str(p))
+    tok2 = _snapshot_inputs((str(p), "Bank statement", "--bank"))[1]
     assert tok1 != tok2  # ...but the content token differs, so the cache misses correctly
 
 
@@ -236,12 +270,12 @@ def test_cache_processing_uses_the_same_bytes_as_its_token(tmp_path, monkeypatch
     original_bank = bank.read_bytes()
     real_snapshot = mcp_server._snapshot_inputs
 
-    def replace_after_snapshot(*paths):
-        snapshot = real_snapshot(*paths)
+    def replace_after_snapshot(*inputs):
+        snapshot = real_snapshot(*inputs)
         bank.write_bytes(b"not,a,valid,bank\n")
         return snapshot
 
-    mcp_server._cached_reconcile.cache_clear()
+    mcp_server._clear_caches()
     monkeypatch.setattr(mcp_server, "_snapshot_inputs", replace_after_snapshot)
     report = mcp_server._get_report(str(bank), str(recon), str(ledger))
     assert report["totals"]["n_bank_lines"] == 294
@@ -249,8 +283,9 @@ def test_cache_processing_uses_the_same_bytes_as_its_token(tmp_path, monkeypatch
     assert mcp_server._get_report(str(bank), str(recon), str(ledger)) == report
     bank.write_bytes(original_bank)
 
-    mcp_server._cached_journal_entries.cache_clear()
     entries = mcp_server._get_journal_entries(str(bank), str(recon))
     assert len(entries) == 91
     bank.write_bytes(original_bank)
     assert mcp_server._get_journal_entries(str(bank), str(recon)) == entries
+    assert all(isinstance(part, str) for key in mcp_server._REPORT_CACHE for part in key)
+    assert all(isinstance(part, str) for key in mcp_server._JOURNAL_CACHE for part in key)

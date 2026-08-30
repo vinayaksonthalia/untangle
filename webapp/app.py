@@ -26,7 +26,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from engine.certificate import issue_certificate, verify_certificate
 from engine.ingest import InputError, load_bank
-from engine.service import reconcile
+from engine.service import reconcile, reconcile_bytes
 from ui.dashboard import render as render_dashboard
 from webapp.pages import landing_page, upload_page, verify_page
 
@@ -340,9 +340,9 @@ async def _run_safely_async(tmp: str, bank: str, recon: str, ledger: str) -> dic
 
     Slot ownership is handed off atomically under ``slot_lock``: exactly one party releases the slot.
     A *running* worker keeps its slot until it finishes (so a timed-out/cancelled handler cannot free
-    a slot still in use, and the worker owns its own TemporaryDirectory so the handler's tmp cleanup
-    can't race it); but if cancellation kills the offload *before* the worker starts, the handler
-    frees the slot so it can never leak.
+    a slot still in use, and the worker owns immutable input bytes so the handler's tmp cleanup can't
+    race it); but if cancellation kills the offload *before* the worker starts, the handler frees the
+    slot so it can never leak.
     """
     if not _RECONCILE_SEMAPHORE.acquire(timeout=0):
         raise HTTPException(503, "Reconciliation capacity is busy; please try again shortly.")
@@ -358,27 +358,14 @@ async def _run_safely_async(tmp: str, bank: str, recon: str, ledger: str) -> dic
             slot_state = "running"
         try:
             try:
-                with tempfile.TemporaryDirectory(prefix="untangle_worker_") as worker_tmp:
-                    try:
-                        inputs = []
-                        for path in (bank, recon, ledger):
-                            with open(path, "rb") as fh:
-                                inputs.append(fh.read())
-                        paths = []
-                        for name, data in zip(("bank_statement.csv", "recon_report.json", "order_ledger.csv"),
-                                              inputs, strict=True):
-                            p = os.path.join(worker_tmp, name)
-                            with open(p, "wb") as fh:
-                                fh.write(data)
-                            paths.append(p)
-                        return reconcile(*paths)
-                    except HTTPException:
-                        raise
-                    except Exception as exc:  # noqa: BLE001 — sanitize every read/write/parse failure
-                        raise _kind_error(exc, tmp, worker_tmp) from exc
+                inputs = []
+                for path in (bank, recon, ledger):
+                    with open(path, "rb") as fh:
+                        inputs.append(fh.read())
+                return reconcile_bytes(*inputs)
             except HTTPException:
                 raise
-            except Exception as exc:  # noqa: BLE001 — e.g. the temp dir itself could not be created
+            except Exception as exc:  # noqa: BLE001 — sanitize every read/parse failure
                 raise _kind_error(exc, tmp) from exc
         finally:
             _RECONCILE_SEMAPHORE.release()  # this worker owns the slot; release exactly once

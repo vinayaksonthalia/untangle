@@ -13,8 +13,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import tempfile
-from functools import lru_cache
+import threading
+from collections import OrderedDict
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -22,11 +22,11 @@ from mcp.server.fastmcp import FastMCP
 from engine.attribute import attribute_all
 from engine.certificate import issue_certificate
 from engine.evidence import ReconIndex
-from engine.ingest import load_bank, load_recon
+from engine.ingest import load_bank_bytes, load_recon_bytes
 from engine.investigate import investigate
 from engine.journal import JournalEntry, build_journal_entries, to_journal_json, to_tally_xml
 from engine.reconcile import reconcile as reconcile_core
-from engine.service import reconcile_bytes
+from engine.service import read_input_snapshot, reconcile_bytes
 from engine.verifier import verify_proof_packet as verify_packet_core
 
 # Initialize FastMCP Server
@@ -111,79 +111,86 @@ def _safe_path(p: str) -> str:
 # -----------------------------------------------------------------------------
 # Caching helpers for deterministic read-only file processing
 # -----------------------------------------------------------------------------
-def _content_token(*paths: str) -> tuple[str, ...]:
-    """A per-file SHA-256 content token for the caches. mtime alone is unsafe: replacing a file while
-    preserving its mtime would serve a stale reconciliation from the process-global cache (the trusted
-    stdio MCP accepts caller-supplied stable paths). Keying on content means identical inputs still hit
-    and any change misses (Qodo full-tree #6)."""
-    tokens: list[str] = []
-    for path in paths:
-        h = hashlib.sha256()
-        try:
-            with open(path, "rb") as fh:
-                while chunk := fh.read(65536):
-                    h.update(chunk)
-            tokens.append(h.hexdigest())
-        except OSError:
-            tokens.append("")  # unreadable → distinct token; the loader surfaces the real error
-    return tuple(tokens)
-
-
-def _snapshot_inputs(*paths: str) -> tuple[tuple[bytes, ...], tuple[str, ...]]:
+def _snapshot_inputs(*inputs: tuple[str, str, str]) -> tuple[tuple[bytes, ...], tuple[str, ...]]:
     """Read each input once and derive cache tokens from those exact immutable bytes."""
     contents: list[bytes] = []
     tokens: list[str] = []
-    for path in paths:
-        with open(path, "rb") as fh:
-            content = fh.read()
+    for path, label, option in inputs:
+        content = read_input_snapshot(path, label=label, option=option)
         contents.append(content)
         tokens.append(hashlib.sha256(content).hexdigest())
     return tuple(contents), tuple(tokens)
 
 
-@lru_cache(maxsize=16)
-def _cached_reconcile(
-    bank_bytes: bytes,
-    recon_bytes: bytes,
-    ledger_bytes: bytes,
-    _content_token: tuple[str, str, str],
-) -> dict[str, Any]:
-    return reconcile_bytes(bank_bytes, recon_bytes, ledger_bytes, no_ai=True, seed=42)
+_CACHE_MAX_ENTRIES = 16
+_CACHE_LOCK = threading.RLock()
+_REPORT_CACHE: OrderedDict[tuple[str, ...], dict[str, Any]] = OrderedDict()
+_JOURNAL_CACHE: OrderedDict[tuple[str, ...], list[JournalEntry]] = OrderedDict()
+
+
+def _cache_get(cache: OrderedDict, token: tuple[str, ...]):
+    with _CACHE_LOCK:
+        value = cache.get(token)
+        if value is not None:
+            cache.move_to_end(token)
+        return value
+
+
+def _cache_put(cache: OrderedDict, token: tuple[str, ...], value) -> None:
+    with _CACHE_LOCK:
+        cache[token] = value
+        cache.move_to_end(token)
+        while len(cache) > _CACHE_MAX_ENTRIES:
+            cache.popitem(last=False)
+
+
+def _clear_caches() -> None:
+    with _CACHE_LOCK:
+        _REPORT_CACHE.clear()
+        _JOURNAL_CACHE.clear()
 
 
 def _get_report(bank_path: str, recon_path: str, ledger_path: str) -> dict[str, Any]:
     """Load and reconcile files, cached by file CONTENT so replacing a file (even with the same mtime)
     never returns a stale report."""
     bank_path, recon_path, ledger_path = _safe_path(bank_path), _safe_path(recon_path), _safe_path(ledger_path)
-    snapshots, token = _snapshot_inputs(bank_path, recon_path, ledger_path)
-    return _cached_reconcile(*snapshots, token)
+    snapshots, token = _snapshot_inputs(
+        (bank_path, "Bank statement", "--bank"),
+        (recon_path, "Recon report", "--recon"),
+        (ledger_path, "Order ledger", "--ledger"),
+    )
+    return _report_from_snapshot(snapshots, token)
 
 
-@lru_cache(maxsize=16)
-def _cached_journal_entries(
-    bank_bytes: bytes,
-    recon_bytes: bytes,
-    _content_token: tuple[str, str],
-) -> list[JournalEntry]:
-    with tempfile.TemporaryDirectory(prefix="untangle-journal-") as tmpdir:
-        bank_path = os.path.join(tmpdir, "bank_statement.csv")
-        recon_path = os.path.join(tmpdir, "recon_report.json")
-        for path, content in ((bank_path, bank_bytes), (recon_path, recon_bytes)):
-            with open(path, "wb") as fh:
-                fh.write(content)
-        lines = load_bank(bank_path)
-        recon_rows = load_recon(recon_path)
-        index = ReconIndex(recon_rows)
-        attributions = attribute_all(lines, index, 0.55, audit_challenger=True)
-        lines_by_key = {ln.key: ln for ln in lines}
-        reconciliations, _u, _s = reconcile_core(lines_by_key, attributions, recon_rows)
-        return build_journal_entries(reconciliations, recon_rows)
+def _report_from_snapshot(
+    snapshots: tuple[bytes, ...], token: tuple[str, ...]
+) -> dict[str, Any]:
+    cached = _cache_get(_REPORT_CACHE, token)
+    if cached is not None:
+        return cached
+    report = reconcile_bytes(*snapshots, no_ai=True, seed=42)
+    _cache_put(_REPORT_CACHE, token, report)
+    return report
 
 
 def _get_journal_entries(bank_path: str, recon_path: str) -> list[JournalEntry]:
     bank_path, recon_path = _safe_path(bank_path), _safe_path(recon_path)
-    snapshots, token = _snapshot_inputs(bank_path, recon_path)
-    return _cached_journal_entries(*snapshots, token)
+    snapshots, token = _snapshot_inputs(
+        (bank_path, "Bank statement", "--bank"),
+        (recon_path, "Recon report", "--recon"),
+    )
+    cached = _cache_get(_JOURNAL_CACHE, token)
+    if cached is not None:
+        return cached
+    lines = load_bank_bytes(snapshots[0])
+    recon_rows = load_recon_bytes(snapshots[1])
+    index = ReconIndex(recon_rows)
+    attributions = attribute_all(lines, index, 0.55, audit_challenger=True)
+    lines_by_key = {ln.key: ln for ln in lines}
+    reconciliations, _u, _s = reconcile_core(lines_by_key, attributions, recon_rows)
+    entries = build_journal_entries(reconciliations, recon_rows)
+    _cache_put(_JOURNAL_CACHE, token, entries)
+    return entries
 
 
 # -----------------------------------------------------------------------------
@@ -204,7 +211,17 @@ def reconcile_files(bank_path: str, recon_path: str, ledger_path: str) -> dict[s
         Structured dictionary with totals, audit_root, and key reconciliation metrics.
     """
     try:
-        report = _get_report(bank_path, recon_path, ledger_path)
+        bank_path, recon_path, ledger_path = (
+            _safe_path(bank_path),
+            _safe_path(recon_path),
+            _safe_path(ledger_path),
+        )
+        snapshots, token = _snapshot_inputs(
+            (bank_path, "Bank statement", "--bank"),
+            (recon_path, "Recon report", "--recon"),
+            (ledger_path, "Order ledger", "--ledger"),
+        )
+        report = _report_from_snapshot(snapshots, token)
         totals = report.get("totals", {})
         return {
             "ok": True,
@@ -650,7 +667,17 @@ def investigate_variance(
         candidates_tried, and corrective_entry draft.
     """
     try:
-        report = _get_report(bank_path, recon_path, ledger_path)
+        bank_path, recon_path, ledger_path = (
+            _safe_path(bank_path),
+            _safe_path(recon_path),
+            _safe_path(ledger_path),
+        )
+        snapshots, token = _snapshot_inputs(
+            (bank_path, "Bank statement", "--bank"),
+            (recon_path, "Recon report", "--recon"),
+            (ledger_path, "Order ledger", "--ledger"),
+        )
+        report = _report_from_snapshot(snapshots, token)
         investigations = report.get("investigations", [])
         for inv in investigations:
             if inv.get("line_key") == line_key:
@@ -660,8 +687,8 @@ def investigate_variance(
                 }
 
         # If not pre-computed in report, investigate on the fly
-        lines = load_bank(_safe_path(bank_path))
-        recon_rows = load_recon(_safe_path(recon_path))
+        lines = load_bank_bytes(snapshots[0])
+        recon_rows = load_recon_bytes(snapshots[1])
         index = ReconIndex(recon_rows)
         attributions = attribute_all(lines, index, 0.55, audit_challenger=True)
         lines_by_key = {ln.key: ln for ln in lines}
