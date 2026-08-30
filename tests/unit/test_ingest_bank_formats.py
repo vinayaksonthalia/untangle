@@ -39,6 +39,17 @@ def test_parse_error_after_metadata_reports_physical_line(tmp_path: Path):
         load_bank(str(p))
 
 
+def test_uppercase_canonical_headers_are_accepted(tmp_path: Path):
+    # Canonical names in upper/mixed case are absent from the alias table; discovery and mapping must
+    # normalize them the same way, or a valid header is discovered and then rejected as "missing".
+    p = tmp_path / "upper.csv"
+    p.write_text("VALUE_DATE,NARRATION,CREDIT,DEBIT\n01/07/2026,NEFT ACME,500,\n", encoding="utf-8")
+    lines = load_bank(str(p))
+    assert lines[0].amount_paise == 50000
+    assert lines[0].value_date.isoformat() == "2026-07-01"
+    assert lines[0].is_credit
+
+
 def test_parse_error_after_multiline_quoted_field_reports_physical_line(tmp_path: Path):
     # The first metadata record is a quoted field spanning physical lines 1-2, so the header is on
     # line 3, the good row on 4, and the bad row on 5. A record-index count would say 4; only the

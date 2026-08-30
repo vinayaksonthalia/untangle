@@ -140,8 +140,10 @@ def _normalise_bank_rows(
     mapped: list[str] | None = None
     for row in reader:
         end_line = reader.line_num
-        if {(_BANK_ALIASES.get(c.strip().lower(), c.strip().lower())) for c in row} >= {"value_date", "narration"}:
-            mapped = [_BANK_ALIASES.get(c.strip().lower(), c.strip()) for c in row]
+        # Use the SAME normalized (lower-cased) key for both discovery and mapping so an uppercase or
+        # mixed-case canonical header (e.g. VALUE_DATE) is not discovered and then rejected as missing.
+        if {_BANK_ALIASES.get(c.strip().lower(), c.strip().lower()) for c in row} >= {"value_date", "narration"}:
+            mapped = [_BANK_ALIASES.get(c.strip().lower(), c.strip().lower()) for c in row]
             break
     if mapped is None:
         raise InputError("Bank statement: could not find a header row with date and narration columns.")
