@@ -98,6 +98,14 @@ def build_config(
     # e.g. `confidence < NaN` is always False, so low-confidence guesses get emitted instead of
     # abstained. Reject it rather than let an invalid runtime option disable the gate.
     resolved_threshold = DEFAULT_THRESHOLD if threshold is None else threshold
+    # reconcile() is a reusable Python entry point too, so a caller may pass any type. Convert an
+    # unsupported type (str, complex, ...) into the same ConfigError as other invalid thresholds —
+    # never let math.isfinite raise a bare TypeError past the configuration-error contract.
+    if isinstance(resolved_threshold, bool) or not isinstance(resolved_threshold, (int, float)):
+        raise ConfigError(
+            f"threshold must be a number in [0, 1]; got {resolved_threshold!r} of type "
+            f"{type(resolved_threshold).__name__}."
+        )
     if not math.isfinite(resolved_threshold) or not (0.0 <= resolved_threshold <= 1.0):
         raise ConfigError(
             f"threshold must be a finite number in [0, 1]; got {resolved_threshold!r}. "
