@@ -213,7 +213,8 @@ def load_recon(path: str) -> list[ReconRow]:
                 order_id=(str(r["order_id"]) if r.get("order_id") else None),
                 method=(str(r["method"]) if r.get("method") else None),
                 description=(str(r["description"]) if r.get("description") else None),
-                row_id=str(r.get("row_id") or f"recon_{i}"),
+                # Vendor-provided IDs are metadata only; physical position is canonical.
+                row_id=f"recon_{i}",
             )
         )
     if not rows:

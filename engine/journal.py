@@ -133,6 +133,8 @@ def build_journal_entries(
     entries: list[JournalEntry] = []
     rows_by_id = {f"recon_{i}": r for i, r in enumerate(recon_rows)}
     for rec in sorted(reconciliations, key=lambda x: x.line_key):
+        if rec.covered_row_ids and len(rec.covered_row_ids) != len(rec.covered_entity_ids):
+            raise ValueError(f"{rec.line_key}: covered row identity count does not match covered entities")
         seen: dict[tuple[str, str], int] = defaultdict(int)
         covered = []
         for pos, k in enumerate(rec.covered_entity_ids):

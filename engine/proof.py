@@ -105,6 +105,8 @@ def build_proof_packets(
         settlement = None
         claimed_sids: set[str] = set()
         if rec is not None:
+            if rec.covered_row_ids and len(rec.covered_row_ids) != len(rec.covered_entity_ids):
+                raise ValueError(f"{rec.line_key}: covered row identity count does not match covered entities")
             covered = []
             for i, (t, eid) in enumerate(rec.covered_entity_ids):
                 item = {"type": t, "entity_id": eid}
@@ -113,7 +115,7 @@ def build_proof_packets(
                 covered.append(item)
             covered_rows = [row_by_id.get(rid) for rid in rec.covered_row_ids] if rec.covered_row_ids else []
             if rec.covered_row_ids and (len(covered_rows) != len(rec.covered_entity_ids) or any(r is None for r in covered_rows)):
-                continue  # malformed result cannot produce a proof packet
+                raise ValueError(f"{rec.line_key}: covered row identity is missing")
             fee_gst_paise = (
                 sum(r.tax_paise for r in covered_rows if r is not None)
                 if covered_rows

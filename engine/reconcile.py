@@ -37,7 +37,8 @@ class SettlementIndex:
         self.date_by_sid: dict[str, object] = {}
         self.row_ids: dict[int, str] = {}
         for i, r in enumerate(rows):
-            self.row_ids[id(r)] = r.row_id or f"recon_{i}"
+            # External row_id is untrusted; physical position is the canonical identity.
+            self.row_ids[id(r)] = f"recon_{i}"
             sid = r.settlement_id
             if not sid:
                 continue

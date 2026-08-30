@@ -212,6 +212,8 @@ def investigate(
         rows_by_key[(r.type, r.entity_id)].append(r)
 
     if reconciliation is not None and reconciliation.covered_entity_ids:
+        if reconciliation.covered_row_ids and len(reconciliation.covered_row_ids) != len(reconciliation.covered_entity_ids):
+            raise ValueError(f"{reconciliation.line_key}: covered row identity count does not match covered entities")
         expected_net = reconciliation.covered_net_paise
         _seen: dict[tuple[str, str], int] = defaultdict(int)
         for pos, k in enumerate(reconciliation.covered_entity_ids):
