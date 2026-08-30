@@ -9,13 +9,13 @@ database, ever. Read-only toward money. The deterministic (--no-ai) path is the 
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 import os
 import shutil
 import tempfile
 import threading
-import asyncio
-import json
-import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -273,7 +273,7 @@ async def _run_safely_async(tmp: str, bank: str, recon: str, ledger: str) -> dic
             asyncio.to_thread(worker),
             timeout=_RECONCILE_TIMEOUT_SECONDS,
         )
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise HTTPException(504, "Reconciliation timed out; no result was committed.") from exc
 
 
