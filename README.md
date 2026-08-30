@@ -12,7 +12,7 @@ proves every verdict, and hands you a balanced journal entry ready to post to Ta
 [![Run it locally](https://img.shields.io/badge/RUN_IT_LOCALLY-14140f?style=for-the-badge)](#quickstart)
 
 ![CI](https://github.com/vinayaksonthalia/untangle/actions/workflows/ci.yml/badge.svg)
-![tests](https://img.shields.io/badge/tests-265_passing-1b7a4d)
+![tests](https://img.shields.io/badge/tests-passing-1b7a4d)
 ![precision](https://img.shields.io/badge/Razorpay_precision-1.000-1b7a4d)
 ![abstains](https://img.shields.io/badge/abstains-never_guesses-b4720a)
 ![python](https://img.shields.io/badge/python-3.12-3776ab)

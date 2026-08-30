@@ -83,7 +83,7 @@ python -m eval.harness --run out/report.json --truth data/ground_truth.json
 > Every schema claim in the repo cites a Razorpay fixture I verified myself, after getting
 > burned by a confident wrong reading early — that's incident 001 in the repo. It's read-only
 > toward money, PII is masked before any model call, and every decision is in a hash-chained
-> audit log. 265 tests, deterministic, one command to reproduce every number on this screen."
+> the full test suite, deterministic, one command to reproduce every number on this screen."
 
 **Close on:** the dashboard, and the repo's commit history.
 

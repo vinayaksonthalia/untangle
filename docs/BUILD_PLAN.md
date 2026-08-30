@@ -24,19 +24,19 @@ Deadline: **5 Sep 2026**. Track 4 — AI Finance Controller.
 - **U (Vinayak)** — runs the research prompts (GPT + Gemini), deploys (Render), records the demo video,
   provides/sources one real statement, final product judgment.
 
-## 2. Current state (updated 29 Aug 2026)
+## 2. Current state (updated 30 Aug 2026)
 
 **Merged to main, reviewed** — Evidence Courtroom · honest 4-label taxonomy · journal
 export (Tally XML + JSON, convention-agnostic) · independent verifier + close certificate + /verify ·
-**MCP server (stdio, read-only)** · **Active Recovery Controller** · **Agentic Exception-Investigation
-Loop (feature 006 — the 30% pillar, PR #26, 14 correctness bugs caught+fixed in review)** · README
+**MCP server (stdio + streamable HTTP, read-only)** · **Active Recovery Controller** · **Agentic
+Exception-Investigation Loop (feature 006, PR #26, 14 correctness bugs caught+fixed in review)** · README
 overclaim fixes (#25) · UTC-determinism fix (#27) · BYOD polish.
 
 **UI (in Stitch, not yet in the app):** all 5 screens designed + premium-polished (motion, count-ups,
 copy-to-clipboard, tooltips, FAQ, framed hero preview). Stitch MCP connected. **Not yet wired into the
 FastAPI app** — that's the next big C task.
 
-The Track-4 rubric is now well covered. The remaining work is about **competitive differentiation,
+Our interpretation of the Track-4 requirements is now well covered. The remaining work is about **competitive differentiation,
 polish, shipping (deploy), and the demo** — informed by a competitor review (Agent-Audit, Track 01) and
 our own research (see §4a competitive learnings).
 
@@ -125,7 +125,7 @@ If a PR adds capability but not docs, it is **not done**. C enforces this at rev
 ## 6. The bar (what "winning" means, so we don't drift)
 
 - **Deterministic core, LLM only for narration.** An LLM guessing a debit or a root cause is the
-  rubric's disqualifier. Every number and every verdict is provable without the LLM.
+  strategy's safety bar. Every number and every verdict is provable without the LLM.
 - **Abstain over guess.** A wrong match in India can attract ~78% tax (§115BBE) — precision is a
   financial safeguard, not a nicety.
 - **Usable on every surface** (web + CLI + MCP + API) with docs — the Lethe factor that wins.
