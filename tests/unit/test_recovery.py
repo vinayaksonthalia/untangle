@@ -400,6 +400,26 @@ def test_recovery_debit_only_is_exposure_not_recoverable():
     assert any("debit exposure" in a.description.lower() for a in plan.actions)
 
 
+def test_mixed_sign_action_description_discloses_debit_and_does_not_call_lines_credits():
+    # A single export action whose window merged a positive and a negative line: the description
+    # must state the recoverable credit AND disclose the debit exposure, and must never label the
+    # resolved lines as "credits" (Qodo #33: debit actions misstate targets).
+    action = RecoveryAction(
+        action_type=ACTION_EXPORT_SETTLEMENT_REPORT,
+        params={"date_from": "2026-06-10", "date_to": "2026-06-10"},
+        resolves=("credit", "debit"),
+        recoverable_paise=100000,
+        debit_exposure_paise=2950,
+        cost=1.0,
+        gain_per_cost=100000.0,
+    )
+    desc = action.description
+    assert "up to ₹1,000.00 recoverable" in desc  # the positive credit, not netted against the debit
+    assert "debit exposure" in desc.lower() and "₹29.50" in desc  # exposure disclosed
+    assert "2 items" in desc.lower()  # neutral count
+    assert "credit" not in desc.lower()  # no resolved line is labelled a credit
+
+
 def test_recovery_mixed_action_discloses_debit_exposure_and_uses_item_wording():
     action = RecoveryAction(
         action_type=ACTION_CLASSIFY_COUNTERPARTY,
