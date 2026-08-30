@@ -44,7 +44,7 @@ exclude_also = [
 skip_empty = true
 
 [tool.mutmut]
-source_paths = ["engine/reconcile.py", "engine/journal.py", "engine/recovery.py"]
+source_paths = ["engine/reconcile.py", "engine/recovery.py"]
 pytest_add_cli_args_test_selection = ["tests/unit/test_reconcile.py", "tests/unit/test_recovery.py"]
 
 [tool.ruff]

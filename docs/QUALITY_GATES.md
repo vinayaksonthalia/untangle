@@ -18,8 +18,9 @@ python -m engine.cli run --bank data/bank_statement.csv \
 make coverage
 ```
 
-Mutation testing is deliberately scoped to reconciliation, journal, and
-recovery logic because those modules contain the accounting invariants. The
+Mutation testing is deliberately scoped to reconciliation and recovery logic
+because those modules contain the accounting invariants and have
+fixture-independent unit coverage. The
 mutmut test selection is limited to fixture-independent reconciliation and
 recovery unit tests, so it works from a clean checkout. It is an opt-in local
 gate (`make mutation`) rather than a required PR check: mutmut can take
