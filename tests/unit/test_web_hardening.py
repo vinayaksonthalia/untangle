@@ -131,13 +131,12 @@ def test_timeout_keeps_worker_inputs_until_release(monkeypatch):
     observed = []
 
     def blocked(bank, *_args):
-        with open(bank, "rb") as fh:
-            observed.append(fh.read())
+        observed.append(bank)
         started.set()
         release.wait(2)
         return {}
 
-    monkeypatch.setattr(web_app, "reconcile", blocked)
+    monkeypatch.setattr(web_app, "reconcile_bytes", blocked)
     old_timeout = web_app._RECONCILE_TIMEOUT_SECONDS
     web_app._RECONCILE_TIMEOUT_SECONDS = 0.02
     try:

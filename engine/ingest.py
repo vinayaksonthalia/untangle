@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 from collections.abc import Iterable, Iterator
 from datetime import UTC, date, datetime
@@ -195,51 +196,45 @@ def _normalise_bank_rows(
     return mapped, _data_rows()
 
 
-def load_bank(path: str) -> list[BankCreditLine]:
-    try:
-        with open(path, newline="", encoding="utf-8-sig") as fh:
-            # Stream rows straight from the handle — no full-file string, records list, or dict list
-            # is materialized; only the output BankCreditLine list grows.
-            mapped_fields, normalized_rows = _normalise_bank_rows(fh)
-            fields = set(mapped_fields)
-            # Normalized input follows the same path and output semantics as before.
-            missing = _BANK_REQUIRED - fields
-            if missing:
-                raise InputError(
-                    f"Bank statement {path}: missing required column(s) {sorted(missing)}. "
-                    f"Found columns: {sorted(fields)}."
-                )
-            ref_col = "ref_no" if "ref_no" in fields else ("bank_ref" if "bank_ref" in fields else None)
-            lines: list[BankCreditLine] = []
-            for line_no, row in normalized_rows:
-                narration = (row.get("narration") or "").strip()
-                credit_raw = (row.get("credit") or "").strip()
-                debit_raw = (row.get("debit") or "").strip()
-                if bool(credit_raw) == bool(debit_raw):
-                    raise InputError(f"Bank statement row {line_no}: exactly one of credit or debit must be populated.")
-                is_credit = bool(credit_raw)
-                if is_credit:
-                    amount = _parse_direction_amount(credit_raw, column="credit", ctx=f"row {line_no}")
-                else:
-                    amount = -_parse_direction_amount(debit_raw, column="debit", ctx=f"row {line_no}")
-                bank_ref = (row.get(ref_col) or "").strip() if ref_col else None
-                vd_raw = (row.get("value_date") or "").strip()
-                parsed_date = _parse_date(vd_raw, ctx=f"Bank statement row {line_no}")
-                key = _line_key(parsed_date.isoformat(), amount, narration, bank_ref)
-                lines.append(
-                    BankCreditLine(
-                        key=key,
-                        value_date=parsed_date,
-                        amount_paise=amount,
-                        narration=narration,
-                        bank_ref=bank_ref or None,
-                        is_credit=is_credit,
-                    )
-                )
-    except FileNotFoundError as exc:
-        raise InputError(f"Bank statement not found: {path}. Check the --bank path.") from exc
+def _load_bank_text(fh: Iterable[str], source: str) -> list[BankCreditLine]:
+    # Stream rows straight from the handle — no records list or dictionaries list is materialized.
+    mapped_fields, normalized_rows = _normalise_bank_rows(fh)
+    fields = set(mapped_fields)
+    missing = _BANK_REQUIRED - fields
+    if missing:
+        raise InputError(
+            f"Bank statement {source}: missing required column(s) {sorted(missing)}. "
+            f"Found columns: {sorted(fields)}."
+        )
+    ref_col = "ref_no" if "ref_no" in fields else ("bank_ref" if "bank_ref" in fields else None)
+    lines: list[BankCreditLine] = []
+    for line_no, row in normalized_rows:
+        narration = (row.get("narration") or "").strip()
+        credit_raw = (row.get("credit") or "").strip()
+        debit_raw = (row.get("debit") or "").strip()
+        if bool(credit_raw) == bool(debit_raw):
+            raise InputError(f"Bank statement row {line_no}: exactly one of credit or debit must be populated.")
+        is_credit = bool(credit_raw)
+        if is_credit:
+            amount = _parse_direction_amount(credit_raw, column="credit", ctx=f"row {line_no}")
+        else:
+            amount = -_parse_direction_amount(debit_raw, column="debit", ctx=f"row {line_no}")
+        bank_ref = (row.get(ref_col) or "").strip() if ref_col else None
+        vd_raw = (row.get("value_date") or "").strip()
+        parsed_date = _parse_date(vd_raw, ctx=f"Bank statement row {line_no}")
+        key = _line_key(parsed_date.isoformat(), amount, narration, bank_ref)
+        lines.append(
+            BankCreditLine(
+                key=key,
+                value_date=parsed_date,
+                amount_paise=amount,
+                narration=narration,
+                bank_ref=bank_ref or None,
+                is_credit=is_credit,
+            )
+        )
     if not lines:
-        raise InputError(f"Bank statement {path} contained no data rows.")
+        raise InputError(f"Bank statement {source} contained no data rows.")
     # Duplicate keys would break the 1:1 line↔verdict invariant.
     seen: dict[str, int] = {}
     for ln in lines:
@@ -261,15 +256,20 @@ def load_bank(path: str) -> list[BankCreditLine]:
     return lines
 
 
-def load_recon(path: str) -> list[ReconRow]:
+def load_bank(path: str) -> list[BankCreditLine]:
     try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
+        with open(path, newline="", encoding="utf-8-sig") as fh:
+            return _load_bank_text(fh, path)
     except FileNotFoundError as exc:
-        raise InputError(f"Recon report not found: {path}. Check the --recon path.") from exc
-    except json.JSONDecodeError as exc:
-        raise InputError(f"Recon report {path} is not valid JSON: {exc}.") from exc
+        raise InputError(f"Bank statement not found: {path}. Check the --bank path.") from exc
 
+
+def load_bank_bytes(content: bytes, source: str = "bank statement") -> list[BankCreditLine]:
+    """Parse a caller-owned immutable byte snapshot without reopening a mutable path."""
+    return _load_bank_text(io.StringIO(content.decode("utf-8-sig"), newline=""), source)
+
+
+def _load_recon_data(data, source: str) -> list[ReconRow]:
     if isinstance(data, dict):
         # Tolerate an envelope {"items": [...]} or {"rows": [...]}.
         for k in ("items", "rows", "recon", "data"):
@@ -278,7 +278,7 @@ def load_recon(path: str) -> list[ReconRow]:
                 break
     if not isinstance(data, list):
         raise InputError(
-            f"Recon report {path}: expected a JSON array of settled transactions."
+            f"Recon report {source}: expected a JSON array of settled transactions."
         )
     rows: list[ReconRow] = []
     for i, r in enumerate(data):
@@ -313,31 +313,60 @@ def load_recon(path: str) -> list[ReconRow]:
             )
         )
     if not rows:
-        raise InputError(f"Recon report {path} contained no rows.")
+        raise InputError(f"Recon report {source} contained no rows.")
     return rows
+
+
+def load_recon(path: str) -> list[ReconRow]:
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError as exc:
+        raise InputError(f"Recon report not found: {path}. Check the --recon path.") from exc
+    except json.JSONDecodeError as exc:
+        raise InputError(f"Recon report {path} is not valid JSON: {exc}.") from exc
+    return _load_recon_data(data, path)
+
+
+def load_recon_bytes(content: bytes, source: str = "reconciliation report") -> list[ReconRow]:
+    """Parse a caller-owned immutable byte snapshot without reopening a mutable path."""
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise InputError(f"Recon report {source} is not valid JSON: {exc}.") from exc
+    return _load_recon_data(data, source)
+
+
+def _load_ledger_text(fh: Iterable[str], source: str) -> list[OrderLedgerEntry]:
+    reader = csv.DictReader(fh)
+    fields = set(reader.fieldnames or [])
+    if "amount_paise" not in fields:
+        raise InputError(
+            f"Order ledger {source}: missing required column 'amount_paise'. "
+            f"Found: {sorted(fields)}."
+        )
+    entries: list[OrderLedgerEntry] = []
+    for i, row in enumerate(reader, start=2):
+        oid = (row.get("order_id") or "").strip() or None
+        entries.append(
+            OrderLedgerEntry(
+                order_id=oid,
+                amount_paise=_as_int_paise(row.get("amount_paise"), ctx=f"ledger row {i}"),
+                status=(row.get("status") or "").strip(),
+                created_at=_parse_dt(row.get("created_at") or ""),
+            )
+        )
+    return entries
 
 
 def load_ledger(path: str) -> list[OrderLedgerEntry]:
     try:
         with open(path, newline="", encoding="utf-8") as fh:
-            reader = csv.DictReader(fh)
-            fields = set(reader.fieldnames or [])
-            if "amount_paise" not in fields:
-                raise InputError(
-                    f"Order ledger {path}: missing required column 'amount_paise'. "
-                    f"Found: {sorted(fields)}."
-                )
-            entries: list[OrderLedgerEntry] = []
-            for i, row in enumerate(reader, start=2):
-                oid = (row.get("order_id") or "").strip() or None
-                entries.append(
-                    OrderLedgerEntry(
-                        order_id=oid,
-                        amount_paise=_as_int_paise(row.get("amount_paise"), ctx=f"ledger row {i}"),
-                        status=(row.get("status") or "").strip(),
-                        created_at=_parse_dt(row.get("created_at") or ""),
-                    )
-                )
+            return _load_ledger_text(fh, path)
     except FileNotFoundError as exc:
         raise InputError(f"Order ledger not found: {path}. Check the --ledger path.") from exc
-    return entries
+
+
+def load_ledger_bytes(content: bytes, source: str = "order ledger") -> list[OrderLedgerEntry]:
+    """Parse a caller-owned immutable byte snapshot without reopening a mutable path."""
+    return _load_ledger_text(io.StringIO(content.decode("utf-8"), newline=""), source)
