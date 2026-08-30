@@ -84,3 +84,26 @@ def test_proof_and_investigation_fail_closed_on_identity_mismatch():
         build_proof_packets([line], [attr], [rec], [row], fee_gst([], []))
     with pytest.raises(ValueError):
         investigate(line, attr, rec, [row], ReconIndex([row]))
+
+
+def test_duplicate_row_id_in_covered_fails_closed():
+    # A reused physical row id would count one row twice — reject it everywhere.
+    rows = [_row(100, 18), _row(700, 126)]
+    rec = ReconciliationResult(
+        "k", [("payment", "same"), ("payment", "same")], 20000, 20000, 0, True, ["recon_0", "recon_0"]
+    )
+    with pytest.raises(ValueError):
+        fee_gst([rec], rows)
+    with pytest.raises(ValueError):
+        build_journal_entries([rec], rows)
+
+
+def test_covered_row_id_resolving_to_wrong_entity_fails_closed():
+    # recon_0 is ("payment", "same") but the covered entity tuple claims a different entity_id —
+    # the row and the entity list have drifted apart, so accounting must not proceed.
+    rows = [_row(100, 18)]
+    rec = ReconciliationResult("k", [("payment", "other")], 10000, 10000, 0, True, ["recon_0"])
+    with pytest.raises(ValueError):
+        fee_gst([rec], rows)
+    with pytest.raises(ValueError):
+        build_journal_entries([rec], rows)

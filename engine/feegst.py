@@ -9,6 +9,7 @@ transaction, so your accountant can see it." Every rupee is traceable to a speci
 
 from __future__ import annotations
 
+from engine.covered import resolve_covered_rows_by_id
 from engine.models import FeeGstRecovery, ReconciliationResult, ReconRow
 
 
@@ -21,14 +22,13 @@ def fee_gst(
     total = 0
     by_entity: list[tuple[str, int]] = []
     for rec in reconciliations:
-        if rec.covered_row_ids and len(rec.covered_row_ids) != len(rec.covered_entity_ids):
-            raise ValueError(f"{rec.line_key}: covered row identity count does not match covered entities")
-        keys = rec.covered_row_ids or [None] * len(rec.covered_entity_ids)
-        for i, key in enumerate(rec.covered_entity_ids):
-            row_id = keys[i]
-            row = by_row_id.get(row_id) if row_id else by_id.get(tuple(key))
-            if rec.covered_row_ids and row is None:
-                raise ValueError(f"{rec.line_key}: covered row {row_id!r} is missing")
+        if rec.covered_row_ids:
+            # Strict path: exact, validated rows (fail-closed on identity/duplicate mismatch).
+            rows = resolve_covered_rows_by_id(rec, by_row_id)
+        else:
+            # Legacy fallback: lossy (type, entity_id) lookup for pre-row-id reconciliations.
+            rows = [by_id.get(tuple(key)) for key in rec.covered_entity_ids]
+        for row in rows:
             if row is not None and row.tax_paise:
                 total += row.tax_paise
                 by_entity.append((row.entity_id, row.tax_paise))
