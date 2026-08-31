@@ -42,6 +42,7 @@ enforces both — this is what makes the reported numbers trustworthy.
 
 | Module | Job | Why it's separate |
 |---|---|---|
+| `engine/bank_adapters.py` | Detect schema and parse bank exports via fail-closed adapters | Isolate bank format variations behind a deterministic, fail-closed schema boundary |
 | `engine/ingest.py` | Load + validate the 3 files; derive a **stable line_key** = hash(value_date, amount, narration, bank_ref) | Real statements have no stable row id; we must never use the generator's `line_id` (that would be cheating) |
 | `engine/evidence.py` | Turn a credit into **weighted signals** (UTR match, narration keyword, amount correlation, date proximity, Razorpay identity) | Signals are facts; keeping them separate from the verdict makes both testable |
 | `engine/attribute.py` | Combine signals into a **rail verdict or UNKNOWN** via Tiers A→B→C | The decision logic lives in one auditable place |
@@ -52,6 +53,23 @@ enforces both — this is what makes the reported numbers trustworthy.
 | `engine/audit.py` | Hash-chained ledger of decisions | Tamper-evidence for a money-adjacent system |
 | `engine/cli.py` | The `run` command → report + console | The product's interface |
 | `eval/metrics.py` + `eval/harness.py` | Score vs blind ground truth: per-rail + per-hard-case P/R, decoy FP, conservation | The only component allowed to see the answer key |
+
+## Bank statement adapter boundary
+
+Bank statement parsing is governed by a fail-closed adapter architecture (`engine/bank_adapters.py`)
+that normalizes recognized statements into canonical `BankCreditLine` records:
+
+- **Deterministic Schema Detection**: Schema detection is strictly structural and deterministic based on
+  normalized header names (handling case variations, UTF-8 BOM, and surrounding whitespace). It never
+  uses fuzzy matching, bank keywords, or transaction narration to detect format schemas.
+- **Fail-Closed Decision Contract**:
+  1. *Exactly one adapter matches*: input is parsed by the matching adapter.
+  2. *Zero adapters match*: fails closed with an actionable `InputError`.
+  3. *Multiple adapters match*: fails closed with an actionable ambiguity `InputError` (never guesses or picks first).
+- **Registration Order Independence**: Detection and resolution behavior is invariant to adapter registration order.
+- **Production Scope**: Currently, only the existing generic CSV adapter (`GenericCsvBankAdapter`, version 1.0.0)
+  is registered. Bank-specific adapters will be introduced separately with evidence-backed fixtures.
+
 
 ## The three attribution tiers (the heart of it)
 
