@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -57,13 +57,27 @@ class BankStatementAdapter(Protocol):
         """Return True if this adapter recognizes the header schema."""
         ...
 
-    def parse(
+    def parse_rows(
         self,
-        line_source: Iterable[str],
+        header: Sequence[str],
+        rows: CsvRowReader,
         *,
         source: str,
+        header_end_line: int,
     ) -> BankLoadResult:
-        """Parse text/lines into a BankLoadResult."""
+        """Parse rows from the already-open CSV reader into a BankLoadResult."""
+        ...
+
+
+class CsvRowReader(Protocol):
+    """The streaming subset of ``csv.reader`` consumed by adapters."""
+
+    line_num: int
+
+    def __iter__(self) -> Iterator[list[str]]:
+        ...
+
+    def __next__(self) -> list[str]:
         ...
 
 
@@ -190,21 +204,20 @@ class GenericCsvBankAdapter:
         *,
         source: str,
     ) -> BankLoadResult:
-        """Parse generic CSV bank statement lines into a BankLoadResult."""
-        reader = csv.reader(line_source)
-        end_line = 0
-        mapped: list[str] | None = None
-        for row in reader:
-            end_line = reader.line_num
-            if not any(x.strip() for x in row):
-                continue
-            if self.detect(row):
-                cleaned = [_clean_header_token(c) for c in row]
-                mapped = [_BANK_ALIASES.get(c, c) for c in cleaned]
-                break
+        """Compatibility entry point; dispatch and parse the source in one streaming pass."""
+        return parse_bank_statement(line_source, source=source, adapters=(self,))
 
-        if mapped is None:
-            raise InputError("Bank statement: could not find a header row with date and narration columns.")
+    def parse_rows(
+        self,
+        header: Sequence[str],
+        rows: CsvRowReader,
+        *,
+        source: str,
+        header_end_line: int,
+    ) -> BankLoadResult:
+        """Parse data rows after the dispatcher has selected this adapter from ``header``."""
+        cleaned = [_clean_header_token(c) for c in header]
+        mapped = [_BANK_ALIASES.get(c, c) for c in cleaned]
         if "value_date" not in mapped or "narration" not in mapped:
             raise InputError("Bank statement: header must contain date and narration columns.")
         if len(mapped) != len(set(mapped)):
@@ -219,9 +232,10 @@ class GenericCsvBankAdapter:
 
         ref_col = "ref_no" if "ref_no" in mapped else ("bank_ref" if "bank_ref" in mapped else None)
         lines: list[BankCreditLine] = []
-        for row in reader:
+        end_line = header_end_line
+        for row in rows:
             start_line = end_line + 1
-            end_line = reader.line_num
+            end_line = rows.line_num
             if not any(x.strip() for x in row):
                 continue
             if len(row) != len(mapped):
@@ -342,35 +356,31 @@ def parse_bank_statement(
     if not adapter_list:
         raise InputError(f"Bank statement {source}: no bank adapters configured.")
 
-    # Materialize lines so detection and parsing can both inspect the stream safely.
-    raw_lines = list(line_source)
-    if not raw_lines or not any(line.strip() for line in raw_lines):
-        raise InputError(f"Bank statement {source} is empty.")
-
     try:
-        reader = csv.reader(raw_lines)
-    except csv.Error as exc:
-        raise InputError(f"Bank statement {source}: CSV parsing error: {exc}.") from exc
-
-    selected_adapter: BankStatementAdapter | None = None
-    for row in reader:
-        if not any(x.strip() for x in row):
-            continue
-        matching = [a for a in adapter_list if a.detect(row)]
-        if matching:
+        reader = csv.reader(line_source)
+        saw_nonempty_record = False
+        for row in reader:
+            if not any(x.strip() for x in row):
+                continue
+            saw_nonempty_record = True
+            matching = [a for a in adapter_list if a.detect(row)]
+            if not matching:
+                continue
             if len(matching) > 1:
                 adapter_ids = sorted([a.adapter_id for a in matching])
                 raise InputError(
                     f"Bank statement {source}: ambiguous schema detected; "
                     f"multiple adapters matched: {adapter_ids}."
                 )
-            selected_adapter = matching[0]
-            break
+            return matching[0].parse_rows(
+                row,
+                reader,
+                source=source,
+                header_end_line=reader.line_num,
+            )
 
-    if selected_adapter is None:
+        if not saw_nonempty_record:
+            raise InputError(f"Bank statement {source} is empty.")
         raise InputError("Bank statement: could not find a header row with date and narration columns.")
-
-    try:
-        return selected_adapter.parse(raw_lines, source=source)
     except csv.Error as exc:
         raise InputError(f"Bank statement {source}: CSV parsing error: {exc}.") from exc
