@@ -9,8 +9,10 @@ Verifies:
 
 from __future__ import annotations
 
+import csv
 import io
 from collections.abc import Sequence
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -43,7 +45,7 @@ class FakeOverlappingAdapterA:
     def detect(self, headers: Sequence[str]) -> bool:
         return {"date", "narration", "credit", "debit"}.issubset({h.strip().lower() for h in headers})
 
-    def parse(self, line_source, *, source: str) -> BankLoadResult:
+    def parse_rows(self, header, rows, *, source: str, header_end_line: int) -> BankLoadResult:
         provenance = BankInputProvenance(self.adapter_id, self.adapter_version, source)
         return BankLoadResult(lines=(), provenance=provenance)
 
@@ -55,9 +57,37 @@ class FakeOverlappingAdapterB:
     def detect(self, headers: Sequence[str]) -> bool:
         return {"date", "narration", "credit", "debit"}.issubset({h.strip().lower() for h in headers})
 
-    def parse(self, line_source, *, source: str) -> BankLoadResult:
+    def parse_rows(self, header, rows, *, source: str, header_end_line: int) -> BankLoadResult:
         provenance = BankInputProvenance(self.adapter_id, self.adapter_version, source)
         return BankLoadResult(lines=(), provenance=provenance)
+
+
+class StreamingSpyAdapter:
+    adapter_id = "streaming_spy"
+    adapter_version = "1.0.0"
+
+    def __init__(self, consumed: list[str]) -> None:
+        self.consumed = consumed
+
+    def detect(self, headers: Sequence[str]) -> bool:
+        return headers == ["SpyHeader"]
+
+    def parse_rows(self, header, rows, *, source: str, header_end_line: int) -> BankLoadResult:
+        # If the dispatcher had materialized the source, both physical lines would already have
+        # been consumed before control reached the adapter.
+        assert self.consumed == ["SpyHeader\n"]
+        assert next(rows) == ["payload"]
+        assert self.consumed == ["SpyHeader\n", "payload\n"]
+        line = BankCreditLine(
+            key="k_streaming",
+            value_date=date(2026, 7, 1),
+            amount_paise=100,
+            narration="streaming",
+            bank_ref=None,
+            is_credit=True,
+        )
+        provenance = BankInputProvenance(self.adapter_id, self.adapter_version, source)
+        return BankLoadResult(lines=(line,), provenance=provenance)
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +208,55 @@ def test_detection_does_not_inspect_narration_or_values():
     assert adapter.detect(headers) is False
     with pytest.raises(InputError):
         parse_bank_statement(io.StringIO(csv_data))
+
+
+def test_csv_error_during_header_detection_is_normalized():
+    """A lazy csv.reader failure before the header must honor the InputError contract."""
+    original_limit = csv.field_size_limit()
+    try:
+        csv.field_size_limit(16)
+        csv_data = "x" * 17 + "\nDate,Narration,Credit,Debit\n01/07/2026,ACME,100,\n"
+        with pytest.raises(InputError, match="CSV parsing error") as exc_info:
+            parse_bank_statement(io.StringIO(csv_data), source="uploaded bank statement")
+    finally:
+        csv.field_size_limit(original_limit)
+
+    assert isinstance(exc_info.value.__cause__, csv.Error)
+    assert "uploaded bank statement" in str(exc_info.value)
+
+
+def test_csv_error_during_data_iteration_is_normalized():
+    """A lazy csv.reader failure after a valid header must also become InputError."""
+    original_limit = csv.field_size_limit()
+    try:
+        csv.field_size_limit(32)
+        csv_data = "Date,Narration,Credit,Debit\n01/07/2026," + "x" * 33 + ",100,\n"
+        with pytest.raises(InputError, match="CSV parsing error") as exc_info:
+            parse_bank_statement(io.StringIO(csv_data), source="uploaded bank statement")
+    finally:
+        csv.field_size_limit(original_limit)
+
+    assert isinstance(exc_info.value.__cause__, csv.Error)
+    assert "uploaded bank statement" in str(exc_info.value)
+
+
+def test_dispatcher_hands_live_reader_to_adapter_without_materializing_source():
+    """The adapter begins parsing before the source's remaining physical lines are consumed."""
+    consumed: list[str] = []
+
+    def source():
+        for line in ("SpyHeader\n", "payload\n"):
+            consumed.append(line)
+            yield line
+
+    result = parse_bank_statement(
+        source(),
+        source="streaming source",
+        adapters=(StreamingSpyAdapter(consumed),),
+    )
+
+    assert result.provenance.adapter_id == "streaming_spy"
+    assert len(result.lines) == 1
 
 
 # ---------------------------------------------------------------------------
