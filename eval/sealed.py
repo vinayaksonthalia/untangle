@@ -435,7 +435,7 @@ def run_sealed_holdout_comparison(seed: int = DEFAULT_SEALED_SEED, sealed_dir: s
     print("      - Safe abstention: The engine says UNKNOWN instead of guessing on decayed or ambiguous strings.")
     print("      - Mathematical conservation: Exact paise balance and 100% traceable fee-GST input tax credit.")
     print("  • What it does NOT establish:")
-    print("      - Universal bank parsing: Validated on 4 primary Indian core-banking formats (HDFC, ICICI, SBI, Axis).")
+    print("      - Bank ingestion scope: validated on Untangle's generic CSV schema and adversarial synthetic format variations. Named-bank native export compatibility requires separately evidenced adapters and is not established by this benchmark.")
     print("      - Does not claim universal parsing for unconfigured bank formats without human-approved rules.")
 
     return 0
