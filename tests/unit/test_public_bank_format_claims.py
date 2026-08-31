@@ -76,7 +76,7 @@ def test_eval_harness_output_disclaims_named_bank_validation():
     assert "Validated against 4 primary" not in output
     assert "Validated on 4 primary" not in output
     assert "Bank ingestion scope: validated on Untangle's generic CSV schema" in output
-    assert "Named-bank native export compatibility requires separately evidenced adapters" not in output or True
+    assert "Named-bank native export compatibility requires separately evidenced adapters" in output
 
 
 def test_default_registry_has_only_generic_csv_adapter():
@@ -98,14 +98,19 @@ def test_bank_format_evidence_matrix_status():
     assert "generic_csv" in text
     assert "Generic Untangle CSV" in text
 
-    # Named banks must be Level 2 (Narration represented), NOT Level 5 or 6
+    # Named banks must be Level 2 (Narration represented), with no registered adapter.
     named_banks = ["HDFC Bank", "ICICI Bank", "State Bank of India (SBI)", "Axis Bank", "Kotak Mahindra Bank", "RBL Bank"]
+    matrix_rows = {
+        cells[0].removeprefix("**").removesuffix("**"): cells
+        for line in text.splitlines()
+        if line.startswith("|")
+        if len(cells := [cell.strip() for cell in line.strip("|").split("|")]) >= 4
+    }
     for bank in named_banks:
-        assert bank in text, f"{bank} must be present in evidence matrix"
-
-    # Must explicitly state that named-bank native adapters are not yet registered
-    assert "Level 2: Narration represented" in text
-    assert "Level 5: Dedicated adapter validated" not in text or "Level 5" in text  # taxonomy definition only
+        assert bank in matrix_rows, f"{bank} must be present in evidence matrix"
+        row = matrix_rows[bank]
+        assert row[2] == "**Level 2: Narration represented**", f"{bank} support level is overstated"
+        assert row[3] == "None", f"{bank} must not claim a registered adapter"
 
 
 def test_docs_do_not_claim_unsupported_bank_adapters():
