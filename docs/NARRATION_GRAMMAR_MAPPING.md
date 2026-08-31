@@ -5,8 +5,12 @@
 > **Evaluation Protocol Guarantee (E2):**
 > This grammar model is **transcribed from 6 real banking sources**, never invented probabilistically.
 > Every template, delimiter style, truncation boundary, and decoy corresponds to documented real-world Indian banking behavior.
+>
+> **Important Scope Boundary:**
+> This table specifies **narration string patterns and token decays** within transaction descriptions. It demonstrates evidence-based attribution on synthetic statement rows. It does **not** establish native bank file export ingestion (e.g. proprietary CSV/XLS headers or multi-row metadata layouts), which requires dedicated adapters. See [BANK_FORMAT_EVIDENCE.md](BANK_FORMAT_EVIDENCE.md) for the bank file format support matrix.
 
 ---
+
 
 ## 1. Banking Source Specimens & Clearing Network Grammar
 

@@ -52,7 +52,7 @@ Priority = (impact on winning ÷ effort). Owner: **C**=Claude (design/correctnes
 | **P0** | **Deploy public URL** (Render; established, not antideploy) | No demo URL = capped score. Judges must click it. | U | **pending** |
 | **P0** | **Reframe pitch/README** around §1 (5%-eats-80%, 78%-tax abstention, GST ROI, journal deliverable) + official Track-4 language (§6c) | Two research rounds; kills the overclaim a judge would attack. | C | **todo (verify current README)** |
 | **P1** | **Docs pass** (usage for web/CLI/MCP/API, one-glance quickstart) | The Lethe lesson: dedicated docs won it. | C | **todo** |
-| P1 | **Real bank-statement / real Razorpay-export ingestion** (HDFC/ICICI/SBI/Axis/Kotak/RBL headers + UTR regex already captured §6b) — BYOD real-data adapters | Closes "toy/synthetic?"; near-free (schema already mirrors real). | A (spec by C) | todo |
+| P1 | **Real bank-statement / real Razorpay-export ingestion** (HDFC/ICICI/SBI/Axis/Kotak/RBL headers + UTR regex in research notes §6b) — BYOD real-data adapters | Planned work; requires authentic fixtures and dedicated adapters (see [BANK_FORMAT_EVIDENCE.md](BANK_FORMAT_EVIDENCE.md)). | A (spec by C) | todo |
 | P2 | **One real statement in the demo** (e.g. Razorpay's published sample) | Closes the "synthetic/toy?" gap. | U/C | todo |
 | P3 | 5-min demo video (fake-UTR refusal + forge-cert-live + the "2 AM bug") | Submission requirement. | U | todo |
 | P-later | **TDS / statutory-correctness layer** (194-O TDS, ITC-vs-GSTR-2B) — neutralizes the peer's edge (§6d) | Makes untangle strictly broader; not P0. | A/C | optional |
@@ -97,9 +97,9 @@ the demo. **CA-firm multi-client distribution** = go-to-market, post-buildathon.
   data/. The journal export now DETECTS the convention per settlement (`_tax_inside_fee`) so MDR-ex-GST
   is correct for BOTH — real uploads reconcile correctly. (Open question for later: align the generator
   to the real tax-separate convention for max fidelity — bigger change, touches pinned tests.)
-- **Real bank-statement CSV headers captured** for HDFC/ICICI/SBI/Axis/Kotak/RBL (value date, narration,
+- **Bank-statement header and grammar notes compiled** for HDFC/ICICI/SBI/Axis/Kotak/RBL (value date, narration,
   ref, debit, credit, balance) + UTR-in-narration regex patterns per bank + metadata-row quirks (HDFC
-  ~5 header rows; RBL/Kotak truncation 50–100 chars). Use to make BYOD accept real bank exports.
+  ~5 header rows; RBL/Kotak truncation 50–100 chars). Documented as reference for planned BYOD dedicated adapters (see [BANK_FORMAT_EVIDENCE.md](BANK_FORMAT_EVIDENCE.md)).
 - **Razorpay GST invoice**: SAC `997159`, monthly e-invoice with IRN/QR, flows to GSTR-2B Table 4 (ITC).
 - **Journal-entry export shipped** (Tally XML + JSON, balanced, convention-agnostic). **MCP server** is
   shipped (stdio + streamable HTTP, read-only; see [MCP.md](MCP.md)).
