@@ -12,11 +12,13 @@ Run locally after generating the fixtures:
 ```sh
 python -m generator.generate --seed 42 --scale 1.0 --out data
 python -m eval.sealed
+python -m eval.multimonth
 python -m engine.cli run --bank data/bank_statement.csv \
   --recon data/recon_report.json --ledger data/order_ledger.csv \
   --out out/ --no-ai --seed 42
 make coverage
 ```
+
 
 Mutation testing is deliberately scoped to reconciliation logic because that
 module contains the core matching invariant and has fixture-independent unit

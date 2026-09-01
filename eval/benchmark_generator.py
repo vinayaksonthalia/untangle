@@ -35,6 +35,12 @@ PROFILES: dict[str, dict[str, Any]] = {
         "scale": 1.75,
         "description": "High-volume ~21.7k recon rows (~14.7 MiB JSON), exercises near the 15 MiB per-file limit (~8s).",
     },
+    "multimonth-90d": {
+        "scale": 0.15,
+        "base_epoch": 1_775_001_600,  # 2026-04-01 00:00:00 UTC
+        "n_days": 91,  # April (30d), May (31d), June (30d)
+        "description": "Deterministic 90-day multi-month evaluation dataset spanning 3 calendar months.",
+    },
 }
 
 MAX_FILE_BYTES = 15 * 1024 * 1024  # 15 MiB
@@ -143,27 +149,32 @@ def generate_benchmark_dataset(
     *,
     seed: int = 42,
     scale: float | None = None,
-    base_epoch: int = C.Config.base_epoch,
-    n_days: int = C.Config.n_days,
+    base_epoch: int | None = None,
+    n_days: int | None = None,
 ) -> BenchmarkDataset:
     """Generate an in-memory benchmark dataset deterministically.
 
     Args:
-        profile: Preset name ('ci-safe', 'moderate', 'near-limit').
+        profile: Preset name ('ci-safe', 'moderate', 'near-limit', 'multimonth-90d').
         seed: Fixed random seed.
         scale: Optional explicit scale multiplier (overrides profile preset).
-        base_epoch: Fixed base epoch in UTC seconds.
-        n_days: Date range in days.
+        base_epoch: Optional fixed base epoch in UTC seconds.
+        n_days: Optional date range in days.
 
     Returns:
         BenchmarkDataset with immutable bank, recon, and ledger byte buffers.
     """
+    if profile not in PROFILES:
+        raise ValueError(
+            f"Unknown benchmark profile: {profile!r}. Choose from: {sorted(PROFILES.keys())}"
+        )
+    prof = PROFILES[profile]
     if scale is None:
-        if profile not in PROFILES:
-            raise ValueError(
-                f"Unknown benchmark profile: {profile!r}. Choose from: {sorted(PROFILES.keys())}"
-            )
-        scale = PROFILES[profile]["scale"]
+        scale = prof["scale"]
+    if base_epoch is None:
+        base_epoch = prof.get("base_epoch", C.Config.base_epoch)
+    if n_days is None:
+        n_days = prof.get("n_days", C.Config.n_days)
 
     cfg = C.Config(
         seed=seed,
@@ -192,6 +203,25 @@ def generate_benchmark_dataset(
         "ground_truth_labels": len(truth),
     }
 
+    type_counts: dict[str, int] = {}
+    for r in built["recon_rows"]:
+        type_counts[r["type"]] = type_counts.get(r["type"], 0) + 1
+
+    rail_counts: dict[str, int] = {}
+    for t in truth:
+        rail_counts[t["rail"]] = rail_counts.get(t["rail"], 0) + 1
+
+    hard_counts = dict(built.get("_hard_counts", {}))
+    hard_counts.update({
+        "on_hold_rows": len(built.get("on_hold_ids", [])),
+        "dispute_rows": len(built.get("dispute_ids", [])),
+        "fee_variance_rows": len(built.get("fee_variance_ids", [])),
+        "cross_cycle_refunds": len(built.get("cross_cycle_refund_ids", [])),
+        "route_transfers": type_counts.get("transfer", 0),
+        "adjustments": type_counts.get("adjustment", 0),
+        **{f"ledger_{k}": v for k, v in ledger_counts.items()},
+    })
+
     byte_sizes = {
         "recon_report.json": len(recon_bytes),
         "order_ledger.csv": len(ledger_bytes),
@@ -204,6 +234,8 @@ def generate_benchmark_dataset(
         "profile": profile,
         "config": cfg.summary(),
         "row_counts": row_counts,
+        "per_rail_counts": rail_counts,
+        "per_hard_case_counts": hard_counts,
         "byte_sizes": byte_sizes,
         "total_bytes": total_bytes,
         "selfcheck": check,
@@ -256,3 +288,20 @@ def create_oversized_aggregate_dataset(
     needed = target_total - current_total
     padded_recon = ds.recon_bytes + (b" " * needed)
     return ds.bank_bytes, padded_recon, ds.ledger_bytes
+
+
+def generate_multimonth_dataset(
+    *,
+    seed: int = 42,
+    scale: float = 0.15,
+    base_epoch: int = 1_775_001_600,
+    n_days: int = 91,
+) -> BenchmarkDataset:
+    """Generate a deterministic 90-day multi-month evaluation dataset (3 calendar months)."""
+    return generate_benchmark_dataset(
+        profile="multimonth-90d",
+        seed=seed,
+        scale=scale,
+        base_epoch=base_epoch,
+        n_days=n_days,
+    )

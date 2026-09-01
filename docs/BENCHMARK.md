@@ -153,3 +153,62 @@ Untangle's web reconciliation endpoints (`/reconcile` and `/api/reconcile`) are 
 - **Exact Slot Retention**: A worker thread that times out from the caller's perspective continues holding its concurrency slot until background execution truly finishes, preventing worker queue explosion.
 - **No Application Upload Files**: Admitted uploads become bounded immutable byte snapshots; the application creates no upload pathname that can race a timed-out worker.
 - **Snapshot Isolation**: Admitted workers execute over immutable in-memory byte buffers (`reconcile_bytes`), ensuring concurrent requests operate with zero state or pathname contamination.
+
+---
+
+## 10. Extended 90-Day and Multi-Month Evaluation (Phase 1, Task 6)
+
+Untangle's pipeline is evaluated across rolling 90-day accounting periods spanning 3 calendar months (April 1, 2026 to June 30, 2026, 91 days) via `eval/multimonth.py` and `tests/integration/test_multimonth_evaluation.py`.
+
+### Execution Command
+```bash
+python -m eval.multimonth
+python -m eval.multimonth --json
+```
+
+### Dataset Parameters
+- **Base Epoch**: `1,775,001,600` (2026-04-01 00:00:00 UTC)
+- **Duration**: `91` days (April 30d, May 31d, June 30d)
+- **Seed / Scale**: Seed `42`, Scale `0.15` (CI-safe volume: 826 bank lines, 1,988 recon rows, 1,676 order ledger rows)
+
+### Observed Results (macOS Apple Silicon arm64, Python 3.14.7)
+
+```text
+==================================================================================
+  UNTANGLE MULTI-MONTH & 90-DAY EVALUATION (Phase 1, Task 6)
+==================================================================================
+  Date Window         : 2026-04-02 to 2026-06-30 (3 calendar months)
+  Covered Months      : 2026-04, 2026-05, 2026-06
+  Seed / Scale        : 42 / 0.15
+  Platform / Python   : macOS-26.6.2-arm64-arm-64bit-Mach-O (Python 3.14.7)
+  Duration / Peak Heap: 1.2529 s / 6.94 MiB (Python heap)
+----------------------------------------------------------------------------------
+  PER-MONTH RECONCILIATION BREAKDOWN:
+  Month    Lines  Attributed  Abstained  Razorpay  Reconciled Credits  Recoverable ITC   Total Credited
+  ------------------------------------------------------------------------------
+  2026-04    268         250         18        93          86 (₹1,266,824.90)  ₹ 2,253.49  ₹6,786,386.59
+  2026-05    297         269         28        96          83 (₹1,524,893.40)  ₹ 1,986.63  ₹7,227,578.12
+  2026-06    261         245         16        86          76 (₹1,512,680.17)  ₹ 2,321.83  ₹6,892,989.60
+  ------------------------------------------------------------------------------
+  TOTAL      826         764         62       275         245 (₹4,304,398.47)  ₹ 6,561.95  ₹20,906,954.31
+----------------------------------------------------------------------------------
+  CROSS-MONTH INVARIANT AUDIT:
+    - 1:1 Line Verdict & Conservation : PASS
+    - Exact Paise Conservation         : PASS
+    - Zero Double-Covered Recon Rows   : PASS
+    - Balanced Double-Entry Journal    : PASS
+    - Recovery & Debit Isolation       : PASS
+    - Period Close Certificate Valid   : PASS
+    - Deterministic Replay Identity    : PASS
+    - Monthly Sums Reconcile to Total  : PASS
+----------------------------------------------------------------------------------
+  OVERALL RESULT: [PASS] All multi-month invariants held without error.
+==================================================================================
+```
+
+### Invariants Proven Across Months
+1. **1:1 Line Verdicts & Attribution Conservation**: Every bank statement line receives exactly one attribution verdict; line keys are unique and conserved ($\sum \text{Attributed} + \text{Abstained} = \text{Total Bank Lines}$).
+2. **Mathematical Metric Reconciliation**: Monthly metric sums for bank lines, credited paise, reconciled count, reconciled paise, and recoverable ITC reconcile exactly to the aggregate 90-day totals.
+3. **Zero Double-Covered Rows**: No settlement row is claimed by multiple reconciliations across accounting periods.
+4. **Balanced Journal Entries**: Every voucher balances to zero ($\sum \text{Debit} = \sum \text{Credit}$). Posting dates are driven by the earliest covered settlement date (`settled_at`) or capture date (`created_at`).
+5. **Deterministic Recovery & Debit Isolation**: Recovery plans are deterministic on replay, and debit exposures are strictly separated from recoverable cash.
