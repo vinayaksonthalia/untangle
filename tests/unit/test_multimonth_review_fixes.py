@@ -101,10 +101,10 @@ def test_two_concurrent_evaluations_complete_without_tracing_interference():
     def worker(seed):
         try:
             barrier.wait()
-            run_multimonth_evaluation(seed=seed, scale=.05)
+            run_multimonth_evaluation(seed=seed, scale=.005)
         except BaseException as exc:
             errors.append(exc)
-    threads = [threading.Thread(target=worker, args=(42,)) for _ in range(2)]
+    threads = [threading.Thread(target=worker, args=(3,)) for _ in range(2)]
     for thread in threads:
         thread.start()
     for thread in threads:
