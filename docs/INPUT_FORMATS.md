@@ -15,3 +15,4 @@ normalization, day-first dates, accounting markers in separate credit/debit
 columns, and parsing of unfamiliar narration vocabulary. A combined Amount
 column with an embedded direction is not supported. Real bank compatibility
 requires a sanitized export and a provider-specific regression suite.
+See [BANK_FORMAT_EVIDENCE.md](BANK_FORMAT_EVIDENCE.md) for the complete bank-format support matrix.
