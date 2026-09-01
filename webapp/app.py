@@ -125,6 +125,7 @@ _BODY_LIMITS = {
     "/api/reconcile": _MAX_AGGREGATE_BYTES,
     "/api/verify": _MAX_VERIFY_BYTES,
 }
+_BODY_INGEST_TIMEOUT_SECONDS = 30.0
 
 
 class BodySizeLimitMiddleware:
@@ -160,8 +161,17 @@ class BodySizeLimitMiddleware:
 
         buffered: list[dict] = []
         received = 0
+        deadline = time.monotonic() + _BODY_INGEST_TIMEOUT_SECONDS
         while True:
-            message = await receive()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                await self._reject_timeout(send)
+                return
+            try:
+                message = await asyncio.wait_for(receive(), timeout=remaining)
+            except TimeoutError:
+                await self._reject_timeout(send)
+                return
             if message["type"] != "http.request":
                 buffered.append(message)  # e.g. http.disconnect — hand it through unchanged
                 break
@@ -194,6 +204,25 @@ class BodySizeLimitMiddleware:
                 "headers": [
                     (b"content-type", b"application/json"),
                     (b"content-length", str(len(body)).encode()),
+                    (b"x-request-id", uuid.uuid4().hex.encode()),
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"x-frame-options", b"DENY"),
+                    (b"referrer-policy", b"no-referrer"),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+    async def _reject_timeout(self, send) -> None:
+        body = b'{"detail":"Request body upload timed out."}'
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 408,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                    (b"connection", b"close"),
                     (b"x-request-id", uuid.uuid4().hex.encode()),
                     (b"x-content-type-options", b"nosniff"),
                     (b"x-frame-options", b"DENY"),
@@ -263,6 +292,17 @@ async def safety_middleware(request: Request, call_next):
             _RATE_BUCKETS[client] = recent
     slot = None
     if request.url.path in {"/reconcile", "/api/reconcile"}:
+        # Validate the cheap declared length before admission.  Otherwise an oversized request can
+        # occupy a worker slot until BodySizeLimitMiddleware rejects it with 413.
+        declared_length = request.headers.get("content-length")
+        limit = _BODY_LIMITS[request.url.path]
+        if declared_length is not None:
+            try:
+                declared = int(declared_length)
+            except ValueError:
+                declared = -1
+            if declared < 0 or declared > limit:
+                return finish(JSONResponse({"detail": "Request body is too large."}, status_code=413))
         # This middleware is outermost, so admission happens before BodySizeLimitMiddleware reads
         # the body and before FastAPI parses/spools multipart UploadFile values.
         if not _RECONCILE_SEMAPHORE.acquire(timeout=0):

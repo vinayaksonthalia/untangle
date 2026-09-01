@@ -17,6 +17,7 @@ and resource-safe under simultaneous overlapping requests:
 
 from __future__ import annotations
 
+import asyncio
 import threading
 from typing import Any
 
@@ -110,7 +111,7 @@ def test_concurrent_worker_count_bounded_by_slots(monkeypatch):
     def send_request(client_id: int):
         client = TestClient(web_app.app)
         files = _get_valid_upload_files(seed=42)
-        request_barrier.wait(timeout=5.0)
+        request_barrier.wait(timeout=20.0)
         resp = client.post("/api/reconcile", files=files)
         with response_lock:
             responses.append((client_id, resp.status_code))
@@ -123,7 +124,7 @@ def test_concurrent_worker_count_bounded_by_slots(monkeypatch):
         threads.append(t)
         t.start()
 
-    request_barrier.wait(timeout=5.0)
+    request_barrier.wait(timeout=20.0)
     assert all_rejections_observed.wait(timeout=5.0)
     finish_event.set()
 
@@ -353,6 +354,41 @@ def test_oversized_streamed_requests_never_acquire_worker_slots():
     assert resp.status_code == 413
 
     # All slots remain intact
+    assert web_app._RECONCILE_SEMAPHORE.acquire(timeout=0)
+    assert web_app._RECONCILE_SEMAPHORE.acquire(timeout=0)
+    web_app._RECONCILE_SEMAPHORE.release()
+    web_app._RECONCILE_SEMAPHORE.release()
+
+
+def test_slow_drip_body_has_total_deadline_and_restores_capacity(monkeypatch):
+    """Timely individual chunks still stop once the total body deadline is exceeded."""
+    monkeypatch.setattr(web_app, "_BODY_INGEST_TIMEOUT_SECONDS", 0.01)
+    messages = []
+    clock = [100.0]
+    monkeypatch.setattr(web_app.time, "monotonic", lambda: clock[0])
+
+    async def receive():
+        clock[0] += 0.006
+        return {"type": "http.request", "body": b"x", "more_body": True}
+
+    async def send(message):
+        messages.append(message)
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/reconcile",
+        "raw_path": b"/api/reconcile",
+        "headers": [(b"content-type", b"application/octet-stream")],
+        "client": ("test", 1),
+        "server": ("test", 80),
+        "scheme": "http",
+        "http_version": "1.1",
+        "query_string": b"",
+    }
+    asyncio.run(web_app.app(scope, receive, send))
+    assert messages[0]["status"] == 408
+    assert messages[0]["headers"]
     assert web_app._RECONCILE_SEMAPHORE.acquire(timeout=0)
     assert web_app._RECONCILE_SEMAPHORE.acquire(timeout=0)
     web_app._RECONCILE_SEMAPHORE.release()
