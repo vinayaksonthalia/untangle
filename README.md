@@ -239,11 +239,11 @@ adversarial challenger that tries to disprove each verdict before accepting it.
 ```
 engine/       attribution, proof-gate, reconciliation, split reconstruction, ledger, proof packets
 generator/    seeded multi-rail synthetic data + blind ground-truth labels (no matcher logic)
-eval/         evaluation harness, sealed holdout runner, calibration
+eval/         evaluation harness, sealed holdout runner, 15 MiB stress benchmark, calibration
 webapp/       FastAPI app — landing, upload, live reconcile, JSON API
 ui/           the dashboard renderer
 specs/        spec-driven development trail (constitution → spec → plan → tasks per feature)
-docs/         ARCHITECTURE, DEPLOY, EXCEPTION_TAXONOMY, EXPLAINED, and more
+docs/         ARCHITECTURE, BENCHMARK, DEPLOY, EXCEPTION_TAXONOMY, EXPLAINED, and more
 INCIDENTS.md  real failures during the build, and what changed
 ```
 
