@@ -20,6 +20,7 @@ and recovery pipeline functions correctly across rolling multi-month accounting 
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 import pytest
 
@@ -64,6 +65,31 @@ def test_cross_month_cases_present_in_ground_truth():
     assert hard_counts.get("dispute_rows", 0) > 0, "Dispute rows must be present"
     assert hard_counts.get("rounding_drift", 0) > 0, "Rounding drift must be present"
     assert hard_counts.get("mangled_utr", 0) > 0, "Mangled UTRs must be present"
+
+    # Validate the labels against concrete rows and engine output, not just counters.
+    raw = json.loads(ds.recon_bytes)
+    bank = load_bank_bytes(ds.bank_bytes)
+    report = reconcile_bytes(ds.bank_bytes, ds.recon_bytes, ds.ledger_bytes, no_ai=True, seed=42)
+    refunds = [r for r in raw if r["type"] == "refund" and r.get("created_at") and r.get("settled_at")]
+    def month(ts):
+        value = datetime.fromtimestamp(ts, tz=UTC)
+        return value.year, value.month
+    assert any(month(r["settled_at"]) != month(r["created_at"]) for r in refunds)
+    payments = {}
+    for row in raw:
+        if row.get("payment_id"):
+            payments.setdefault(row["payment_id"], []).append(row)
+    split_payment_ids = {pid for pid, rows in payments.items() if len(rows) > 1}
+    assert split_payment_ids
+    covered_entities = {
+        tuple(entity) for rec in report["reconciliations"] for entity in rec.get("covered_entity_ids", [])
+    }
+    assert any(tuple((row["type"], row["entity_id"])) in covered_entities
+               for rows in payments.values() if len(rows) > 1 for row in rows)
+    # Carry-forward rows are represented by bank credits whose linked settlement evidence
+    # is dated in an earlier calendar month; ensure those rows remain in terminal output.
+    assert len({line.value_date.strftime("%Y-%m") for line in bank}) >= 3
+    assert len(report["attributions"]) == len(bank)
 
 
 def test_single_verdict_and_line_key_conservation(eval_result):

@@ -17,6 +17,7 @@ import argparse
 import json
 import platform
 import sys
+import threading
 import time
 import tracemalloc
 from collections import defaultdict
@@ -29,6 +30,8 @@ from engine.covered import rows_by_canonical_id
 from engine.ingest import load_bank_bytes, load_recon_bytes
 from engine.service import reconcile_bytes
 from eval.benchmark_generator import BenchmarkDataset, generate_multimonth_dataset
+
+_TRACEMALLOC_LOCK = threading.Lock()
 
 MULTIMONTH_EVAL_VERSION = "1.0.0"
 
@@ -93,7 +96,7 @@ class MultiMonthEvaluationResult:
     n_days: int
     date_window: dict[str, str]
     duration_seconds: float
-    peak_python_heap_bytes: int
+    peak_python_heap_bytes: int | None
     current_python_heap_bytes: int
     input_metrics: dict[str, Any]
     monthly_metrics: dict[str, MonthlyMetrics]
@@ -112,7 +115,11 @@ class MultiMonthEvaluationResult:
             "date_window": self.date_window,
             "duration_seconds": round(self.duration_seconds, 4),
             "peak_python_heap_bytes": self.peak_python_heap_bytes,
-            "peak_python_heap_mb": round(self.peak_python_heap_bytes / (1024 * 1024), 2),
+            "peak_python_heap_mb": (
+                round(self.peak_python_heap_bytes / (1024 * 1024), 2)
+                if self.peak_python_heap_bytes is not None
+                else None
+            ),
             "current_python_heap_bytes": self.current_python_heap_bytes,
             "input_metrics": self.input_metrics,
             "monthly_metrics": {m: metrics.to_dict() for m, metrics in self.monthly_metrics.items()},
@@ -198,14 +205,13 @@ def _compute_monthly_metrics(
             monthly_data[m]["exception_count"] += 1
 
     # Recovery actions item-level partition
-    for act in report.get("recovery_actions", []):
-        for item in act.get("items", []):
-            lk = item.get("line_key")
+    recovery = report.get("recovery_plan") or {}
+    lines_by_key = {ln.key: ln for ln in bank_lines}
+    for act in recovery.get("actions", []):
+        for lk in act.get("resolves", []):
             if lk and lk in months_by_key:
                 m = months_by_key[lk]
-                monthly_data[m]["recovery_exposure_paise"] += int(
-                    round(item.get("recoverable_inr", 0.0) * 100)
-                )
+                monthly_data[m]["recovery_exposure_paise"] += max(0, lines_by_key[lk].amount_paise)
 
     metrics_by_month: dict[str, MonthlyMetrics] = {}
     for m in months:
@@ -335,12 +341,45 @@ def _audit_multimonth_invariants(
 
     # 5. Recovery determinism & debit exposure isolation
     recovery_ok = True
-    for act in report.get("recovery_actions", []):
-        # Debit exposure must never be added to recoverable cash
-        desc = act.get("description", "")
-        if "debit exposure" in desc.lower() and "not recoverable cash" not in desc.lower():
+    raw_plan = report.get("recovery_plan")
+    recovery_actions = raw_plan.get("actions", []) if isinstance(raw_plan, dict) else []
+    plan = raw_plan if isinstance(raw_plan, dict) else {}
+    if raw_plan is not None and not isinstance(raw_plan, dict):
+        recovery_ok = False
+        failures.append("Malformed recovery plan: expected mapping")
+    if not isinstance(recovery_actions, list):
+        recovery_ok = False
+        failures.append("Malformed recovery plan actions: expected list")
+        recovery_actions = []
+    resolved: list[str] = []
+    line_amounts = {line.key: line.amount_paise for line in bank_lines}
+    for act in recovery_actions:
+        if not isinstance(act, dict):
             recovery_ok = False
-            failures.append(f"Debit exposure mislabeled in recovery action: {desc}")
+            failures.append(f"Malformed recovery action: {act!r}")
+            continue
+        keys = act.get("resolves", [])
+        recoverable = act.get("recoverable_paise", -1)
+        debit = act.get("debit_exposure_paise", -1)
+        valid_keys = (isinstance(keys, list) and bool(keys)
+                      and all(isinstance(key, str) and bool(key) for key in keys))
+        if (not valid_keys or type(recoverable) is not int
+                or type(debit) is not int or recoverable < 0 or debit < 0
+                or any(key not in line_amounts for key in keys)
+                or len(keys) != len(set(keys))
+                or recoverable != sum(max(0, line_amounts[key]) for key in keys)
+                or debit != sum(max(0, -line_amounts[key]) for key in keys)):
+            recovery_ok = False
+            failures.append(f"Invalid recovery action arithmetic: {act}")
+        if valid_keys:
+            resolved.extend(keys)
+    if len(resolved) != len(set(resolved)):
+        recovery_ok = False
+        failures.append("Recovery actions resolve the same line more than once")
+    distinct_recoverable = sum(max(0, line_amounts[key]) for key in set(resolved) if key in line_amounts)
+    if type(plan.get("recoverable_if_actioned_paise")) is not int or plan.get("recoverable_if_actioned_paise") != distinct_recoverable:
+        recovery_ok = False
+        failures.append("Recovery plan aggregate does not match distinct resolved credits")
 
     # 6. Certificate validity
     cert_valid = cert_verify.get("ok", False) and cert_verify.get("hash_matches", False)
@@ -356,7 +395,7 @@ def _audit_multimonth_invariants(
         and len(report.get("exceptions", [])) == len(report_rerun.get("exceptions", []))
         and len(report.get("investigations", [])) == len(report_rerun.get("investigations", []))
         and len(report.get("journal", [])) == len(report_rerun.get("journal", []))
-        and len(report.get("recovery_actions", [])) == len(report_rerun.get("recovery_actions", []))
+        and report == report_rerun
     )
     if not determinism_ok:
         failures.append("Canonical rerun mismatch: output reports differed across identical seeded runs")
@@ -444,18 +483,31 @@ def run_multimonth_evaluation(
     }
 
     # Run 1: Measure execution time and heap
-    tracemalloc.start()
-    t0 = time.perf_counter()
-    report = reconcile_bytes(
-        dataset.bank_bytes,
-        dataset.recon_bytes,
-        dataset.ledger_bytes,
-        no_ai=True,
-        seed=dataset.seed,
-    )
-    t1 = time.perf_counter()
-    current_heap, peak_heap = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
+    _TRACEMALLOC_LOCK.acquire()
+    try:
+        caller_tracing = tracemalloc.is_tracing()
+        if not caller_tracing:
+            tracemalloc.start()
+        baseline_current = tracemalloc.get_traced_memory()[0]
+    except BaseException:
+        _TRACEMALLOC_LOCK.release()
+        raise
+    try:
+        t0 = time.perf_counter()
+        report = reconcile_bytes(
+            dataset.bank_bytes, dataset.recon_bytes, dataset.ledger_bytes,
+            no_ai=True, seed=dataset.seed,
+        )
+        t1 = time.perf_counter()
+        current_raw, peak_raw = tracemalloc.get_traced_memory()
+        # Attribute only growth during this evaluation.  Do not reset_peak(), since that
+        # mutates a caller-owned tracing session and destroys its historical measurement.
+        current_heap = max(0, current_raw - baseline_current)
+        peak_heap = None if caller_tracing else peak_raw
+    finally:
+        if not caller_tracing:
+            tracemalloc.stop()
+        _TRACEMALLOC_LOCK.release()
 
     duration = t1 - t0
 
@@ -470,7 +522,7 @@ def run_multimonth_evaluation(
 
     # Certificate issuance and verification
     cert = issue_certificate(report)
-    cert_verify = verify_certificate(cert)
+    cert_verify = verify_certificate({**cert, "report": report})
 
     # Compute monthly metrics
     monthly_metrics, aggregate_metrics = _compute_monthly_metrics(report, bank_lines, recon_rows)
@@ -504,8 +556,8 @@ def run_multimonth_evaluation(
         version=MULTIMONTH_EVAL_VERSION,
         seed=dataset.seed,
         scale=dataset.scale,
-        base_epoch=base_epoch,
-        n_days=n_days,
+        base_epoch=dataset.manifest.get("config", {}).get("base_epoch", base_epoch),
+        n_days=dataset.manifest.get("config", {}).get("n_days", n_days),
         date_window=date_window,
         duration_seconds=duration,
         peak_python_heap_bytes=peak_heap,
@@ -531,7 +583,10 @@ def format_multimonth_terminal_table(result: MultiMonthEvaluationResult) -> str:
         f"  Covered Months      : {', '.join(result.date_window['covered_months'])}",
         f"  Seed / Scale        : {result.seed} / {result.scale}",
         f"  Platform / Python   : {result.environment['platform']} (Python {result.environment['python_version']})",
-        f"  Duration / Peak Heap: {result.duration_seconds:.4f} s / {result.peak_python_heap_bytes / (1024 * 1024):.2f} MiB (Python heap)",
+        f"  Duration / Peak Heap: {result.duration_seconds:.4f} s / "
+        f"{result.peak_python_heap_bytes / (1024 * 1024):.2f} MiB (Python heap)"
+        if result.peak_python_heap_bytes is not None else
+        f"  Duration / Peak Heap: {result.duration_seconds:.4f} s / unavailable (caller tracing active)",
         "-" * 82,
         "  PER-MONTH RECONCILIATION BREAKDOWN:",
         "  Month    Lines  Attributed  Abstained  Razorpay  Reconciled Credits  Recoverable ITC   Total Credited",
