@@ -2,9 +2,9 @@
 
 Run:  .venv/bin/uvicorn webapp.app:app --port 8080   (or: python -m webapp.app)
 
-Privacy by construction: uploaded files are written to a per-request temp directory, the
-engine runs, and the directory is deleted immediately — nothing is persisted to disk or a
-database, ever. Read-only toward money. The deterministic (--no-ai) path is the default.
+Privacy by construction: admitted uploads are converted to bounded immutable byte snapshots and
+are never persisted to an application database. Read-only toward money. The deterministic
+(--no-ai) path is the default.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import shutil
-import tempfile
 import threading
 import time
 import uuid
@@ -25,7 +24,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 
 from engine.certificate import issue_certificate, verify_certificate
-from engine.ingest import InputError, load_bank
+from engine.ingest import InputError, load_bank, load_bank_bytes
 from engine.service import reconcile, reconcile_bytes
 from ui.dashboard import render as render_dashboard
 from webapp.pages import landing_page, upload_page, verify_page
@@ -188,18 +187,20 @@ class BodySizeLimitMiddleware:
         # Stamp the baseline security headers and a request id directly, so the 413 carries them even
         # if this layer's ordering changes; safety_middleware also applies them via setdefault.
         body = b'{"detail":"Request body is too large."}'
-        await send({
-            "type": "http.response.start",
-            "status": 413,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(body)).encode()),
-                (b"x-request-id", uuid.uuid4().hex.encode()),
-                (b"x-content-type-options", b"nosniff"),
-                (b"x-frame-options", b"DENY"),
-                (b"referrer-policy", b"no-referrer"),
-            ],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                    (b"x-request-id", uuid.uuid4().hex.encode()),
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"x-frame-options", b"DENY"),
+                    (b"referrer-policy", b"no-referrer"),
+                ],
+            }
+        )
         await send({"type": "http.response.body", "body": body})
 
 
@@ -223,10 +224,19 @@ async def safety_middleware(request: Request, call_next):
         response.headers.setdefault("x-content-type-options", "nosniff")
         response.headers.setdefault("x-frame-options", "DENY")
         response.headers.setdefault("referrer-policy", "no-referrer")
-        response.headers.setdefault("content-security-policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'")
-        _LOG.info("request_id=%s method=%s status=%s latency_ms=%.1f", request_id, request.method,
-                  response.status_code, (time.perf_counter() - started) * 1000)
+        response.headers.setdefault(
+            "content-security-policy",
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'",
+        )
+        _LOG.info(
+            "request_id=%s method=%s status=%s latency_ms=%.1f",
+            request_id,
+            request.method,
+            response.status_code,
+            (time.perf_counter() - started) * 1000,
+        )
         return response
+
     if request.url.path in {"/reconcile", "/api/reconcile", "/api/verify"}:
         client = request.client.host if request.client else "unknown"
         now = time.monotonic()
@@ -236,28 +246,48 @@ async def safety_middleware(request: Request, call_next):
                 oldest = min(_RATE_BUCKETS, key=lambda key: _RATE_BUCKETS[key][-1])
                 del _RATE_BUCKETS[oldest]
             if len(_RATE_BUCKETS) > 4096:
-                _RATE_BUCKETS = {key: values for key, values in _RATE_BUCKETS.items()
-                                 if values and now - values[-1] < _RATE_WINDOW_SECONDS}
+                _RATE_BUCKETS = {
+                    key: values
+                    for key, values in _RATE_BUCKETS.items()
+                    if values and now - values[-1] < _RATE_WINDOW_SECONDS
+                }
             recent = [t for t in _RATE_BUCKETS.get(client, []) if now - t < _RATE_WINDOW_SECONDS]
             if len(recent) >= _RATE_LIMIT:
                 _RATE_BUCKETS[client] = recent
-                response = JSONResponse({"detail": "Too many requests; try again shortly."}, status_code=429)
+                response = JSONResponse(
+                    {"detail": "Too many requests; try again shortly."}, status_code=429
+                )
                 response.headers["retry-after"] = "60"
                 return finish(response)
             recent.append(now)
             _RATE_BUCKETS[client] = recent
-    response = await call_next(request)
-    # Keep the policy compatible with the deliberately self-contained demo pages (which use a
-    # small inline script), while still preventing framing and unexpected base-URL changes.
-    # The existing demo pages intentionally use tiny inline scripts/styles.  Keep this explicit and
-    # scoped; a future production UI should replace unsafe-inline with nonces or hashes.
-    return finish(response)
+    slot = None
+    if request.url.path in {"/reconcile", "/api/reconcile"}:
+        # This middleware is outermost, so admission happens before BodySizeLimitMiddleware reads
+        # the body and before FastAPI parses/spools multipart UploadFile values.
+        if not _RECONCILE_SEMAPHORE.acquire(timeout=0):
+            return finish(
+                JSONResponse(
+                    {"detail": "Reconciliation capacity is busy; please try again shortly."},
+                    status_code=503,
+                )
+            )
+        slot = _ReconciliationSlot()
+        request.state.reconciliation_slot = slot
+    try:
+        response = await call_next(request)
+        # Keep the policy compatible with the deliberately self-contained demo pages.
+        return finish(response)
+    finally:
+        if slot is not None:
+            slot.release_if_held()
 
 
 @app.get("/healthz")
 def healthz() -> JSONResponse:
     """Small readiness endpoint; no filesystem, customer data, or internal paths are exposed."""
     return JSONResponse({"status": "ok", "version": os.environ.get("UNTANGLE_VERSION", "dev")})
+
 
 if _MCP_AVAILABLE:
     # Align CORS with the MCP transport-security origin allowlist so a browser origin that clears the
@@ -280,7 +310,13 @@ if _MCP_AVAILABLE:
         allow_origin_regex=_origin_regex,
         allow_credentials=False,
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-        allow_headers=["content-type", "accept", "mcp-session-id", "mcp-protocol-version", "last-event-id"],
+        allow_headers=[
+            "content-type",
+            "accept",
+            "mcp-session-id",
+            "mcp-protocol-version",
+            "last-event-id",
+        ],
         expose_headers=["mcp-session-id"],
     )
     app.mount("/mcp", mcp_subapp)
@@ -302,15 +338,18 @@ def _months_by_key(bank_path: str) -> dict[str, str]:
 
 
 # The engine's own messages already name the file kind; we just strip the server path.
-_SLOT_LABEL = {"bank_statement.csv": "file", "recon_report.json": "file",
-               "order_ledger.csv": "file"}
+_SLOT_LABEL = {
+    "bank_statement.csv": "file",
+    "recon_report.json": "file",
+    "order_ledger.csv": "file",
+}
 
 
 def _kind_error(exc: Exception, *tmp_roots: str) -> HTTPException:
     """Turn any ingest/parse/IO failure into a human message that never leaks server paths.
 
-    Every temporary directory involved (the handler's upload dir and the worker's own dir) is
-    scrubbed, so a message from a read, a temp-file write, or reconciliation is equally safe.
+    Legacy path-based callers may supply temporary roots to scrub. Upload endpoints use immutable
+    byte snapshots and therefore have no application-owned upload path to expose.
     """
     msg = str(exc)
     for root in tmp_roots:
@@ -326,8 +365,11 @@ def _kind_error(exc: Exception, *tmp_roots: str) -> HTTPException:
             "order ledger must be CSV text files, and the settlement report must be the JSON "
             "export from the Razorpay dashboard. Please re-export and try again.",
         )
-    return HTTPException(500, "Something went wrong on our side processing the files. "
-                              "Nothing was stored. Please try again.")
+    return HTTPException(
+        500,
+        "Something went wrong on our side processing the files. "
+        "Nothing was stored. Please try again.",
+    )
 
 
 class _ReconciliationSlot:
@@ -356,7 +398,43 @@ class _ReconciliationSlot:
 
     def release_from_worker(self) -> None:
         """Called in worker finally block."""
-        _RECONCILE_SEMAPHORE.release()
+        with self.lock:
+            if self.state != "running":
+                raise RuntimeError(f"invalid reconciliation slot release from state {self.state!r}")
+            self.state = "freed"
+            _RECONCILE_SEMAPHORE.release()
+
+
+async def _run_safely_bytes_async(
+    bank_bytes: bytes,
+    recon_bytes: bytes,
+    ledger_bytes: bytes,
+    *,
+    slot: _ReconciliationSlot,
+) -> dict:
+    """Run the engine on request-owned immutable snapshots under an already-admitted slot."""
+
+    def worker() -> dict:
+        if not slot.mark_running():
+            return {}
+        try:
+            try:
+                return reconcile_bytes(bank_bytes, recon_bytes, ledger_bytes)
+            except HTTPException:
+                raise
+            except Exception as exc:  # noqa: BLE001 — sanitize every parse/engine failure
+                raise _kind_error(exc) from exc
+        finally:
+            slot.release_from_worker()
+
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(worker), timeout=_RECONCILE_TIMEOUT_SECONDS)
+    except TimeoutError as exc:
+        slot.release_if_held()
+        raise HTTPException(504, "Reconciliation timed out; no result was committed.") from exc
+    except asyncio.CancelledError:
+        slot.release_if_held()
+        raise
 
 
 async def _run_safely_async(
@@ -427,6 +505,16 @@ async def _save(tmp: str, name: str, up: UploadFile | None) -> str:
     return path
 
 
+async def _read_upload(name: str, up: UploadFile | None) -> bytes:
+    """Read one admitted upload into a bounded immutable snapshot."""
+    if up is None:
+        raise HTTPException(422, f"Missing file: {name}")
+    data = await up.read(_MAX_BYTES + 1)
+    if len(data) > _MAX_BYTES:
+        raise HTTPException(413, f"{name} is larger than 15 MB.")
+    return bytes(data)
+
+
 _SAMPLE_MARKER = "bank_statement.csv"
 _SAMPLE_LOCK = threading.Lock()
 
@@ -455,8 +543,20 @@ def _ensure_sample() -> None:
         try:
             # Multi-month sample (Apr–Jun 2026) so the dashboard's month filter has real content.
             # base-epoch 1775001600 = 2026-04-01 UTC; 91 days spans three calendar months.
-            gen(["--seed", "42", "--scale", "0.15", "--base-epoch", "1775001600",
-                 "--days", "91", "--out", staging])
+            gen(
+                [
+                    "--seed",
+                    "42",
+                    "--scale",
+                    "0.15",
+                    "--base-epoch",
+                    "1775001600",
+                    "--days",
+                    "91",
+                    "--out",
+                    staging,
+                ]
+            )
             # publish non-marker files first, the marker last (True sorts after False)
             for name in sorted(os.listdir(staging), key=lambda n: n == _SAMPLE_MARKER):
                 os.replace(os.path.join(staging, name), os.path.join(_SAMPLE, name))
@@ -488,44 +588,34 @@ def try_sample() -> str:
 
 @app.post("/reconcile", response_class=HTMLResponse)
 async def reconcile_upload(
+    request: Request,
     bank: UploadFile = File(...),
     recon: UploadFile = File(...),
     ledger: UploadFile = File(...),
 ) -> str:
-    if not _RECONCILE_SEMAPHORE.acquire(timeout=0):
-        raise HTTPException(503, "Reconciliation capacity is busy; please try again shortly.")
-    slot = _ReconciliationSlot()
-    try:
-        with tempfile.TemporaryDirectory(prefix="untangle_") as tmp:
-            b = await _save(tmp, "bank_statement.csv", bank)
-            r = await _save(tmp, "recon_report.json", recon)
-            ln = await _save(tmp, "order_ledger.csv", ledger)
-            report = await _run_safely_async(tmp, b, r, ln, slot=slot)
-            return render_dashboard(report, _months_by_key(b))
-    finally:
-        slot.release_if_held()
-    # temp dir (and every uploaded byte) is deleted here — nothing is kept.
+    slot = request.state.reconciliation_slot
+    b = await _read_upload("bank_statement.csv", bank)
+    r = await _read_upload("recon_report.json", recon)
+    ln = await _read_upload("order_ledger.csv", ledger)
+    report = await _run_safely_bytes_async(b, r, ln, slot=slot)
+    months = {line.key: line.value_date.strftime("%Y-%m") for line in load_bank_bytes(b)}
+    return render_dashboard(report, months)
 
 
 @app.post("/api/reconcile")
 async def api_reconcile(
+    request: Request,
     bank: UploadFile = File(...),
     recon: UploadFile = File(...),
     ledger: UploadFile = File(...),
 ) -> JSONResponse:
     """Developer API: three files in → the full report JSON out. Nothing stored."""
-    if not _RECONCILE_SEMAPHORE.acquire(timeout=0):
-        raise HTTPException(503, "Reconciliation capacity is busy; please try again shortly.")
-    slot = _ReconciliationSlot()
-    try:
-        with tempfile.TemporaryDirectory(prefix="untangle_api_") as tmp:
-            b = await _save(tmp, "bank_statement.csv", bank)
-            r = await _save(tmp, "recon_report.json", recon)
-            ln = await _save(tmp, "order_ledger.csv", ledger)
-            report = await _run_safely_async(tmp, b, r, ln, slot=slot)
-            return JSONResponse(report)
-    finally:
-        slot.release_if_held()
+    slot = request.state.reconciliation_slot
+    b = await _read_upload("bank_statement.csv", bank)
+    r = await _read_upload("recon_report.json", recon)
+    ln = await _read_upload("order_ledger.csv", ledger)
+    report = await _run_safely_bytes_async(b, r, ln, slot=slot)
+    return JSONResponse(report)
 
 
 @app.get("/api/certificate/sample")
@@ -546,6 +636,7 @@ def api_journal_tally() -> Response:
     """The reconciled Razorpay slice as a Tally Prime voucher-import XML — download and import via
     Gateway of Tally > Import > Vouchers. Balanced to the paise. Nothing stored."""
     from engine.journal import journal_json_to_tally_xml
+
     _ensure_sample()
     report = reconcile(
         os.path.join(_SAMPLE, "bank_statement.csv"),
@@ -554,7 +645,8 @@ def api_journal_tally() -> Response:
     )
     xml = journal_json_to_tally_xml(report.get("journal") or [], company="Your Company Name")
     return Response(
-        content=xml, media_type="application/xml",
+        content=xml,
+        media_type="application/xml",
         headers={"Content-Disposition": 'attachment; filename="untangle_tally_vouchers.xml"'},
     )
 
@@ -586,4 +678,5 @@ def verify() -> str:
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="127.0.0.1", port=8080)

@@ -149,7 +149,7 @@ Every benchmark execution audits 7 non-negotiable invariants:
 Untangle's web reconciliation endpoints (`/reconcile` and `/api/reconcile`) are verified against concurrent saturation via `tests/integration/test_concurrent_saturation.py`:
 
 - **Bounded Worker Pool**: Concurrency is hard-capped at 2 simultaneous reconciliation workers (`_RECONCILE_SLOTS = 2`). Excess concurrent requests receive HTTP 503 without entering worker functions.
-- **Early Admission**: Requests exceeding capacity are turned away before creating temporary directories or writing uploaded files to disk.
+- **Early Admission**: Requests exceeding capacity are turned away before request-body buffering, multipart parsing, upload reads, or worker execution.
 - **Exact Slot Retention**: A worker thread that times out from the caller's perspective continues holding its concurrency slot until background execution truly finishes, preventing worker queue explosion.
-- **Immediate Resource Deletion**: Temporary directories and uploaded files are deleted across all terminal outcomes (success, 413, 422, 500, 503, 504).
+- **No Application Upload Files**: Admitted uploads become bounded immutable byte snapshots; the application creates no upload pathname that can race a timed-out worker.
 - **Snapshot Isolation**: Admitted workers execute over immutable in-memory byte buffers (`reconcile_bytes`), ensuring concurrent requests operate with zero state or pathname contamination.
