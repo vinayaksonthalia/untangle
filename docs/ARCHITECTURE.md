@@ -54,6 +54,7 @@ enforces both — this is what makes the reported numbers trustworthy.
 | `engine/cli.py` | The `run` command → report + console | The product's interface |
 | `eval/metrics.py` + `eval/harness.py` | Score vs blind ground truth: per-rail + per-hard-case P/R, decoy FP, conservation | The only component allowed to see the answer key |
 | `eval/benchmark.py` | Complete-pipeline 15 MiB stress & resource benchmark | See [BENCHMARK.md](BENCHMARK.md) |
+| `eval/multimonth.py` | Extended 90-day & multi-month evaluation across 3 calendar months | See [BENCHMARK.md](BENCHMARK.md) |
 
 ## Bank statement adapter boundary
 
