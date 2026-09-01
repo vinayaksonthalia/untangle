@@ -213,7 +213,10 @@ _HERO_SVG = """<svg class="svgwrap" viewBox="0 0 440 300" role="img"
 
 
 def landing_page() -> str:
-    return _HEAD.format(title="untangle — know exactly what every bank credit is") + _LANDING_CSS + """
+    return (
+        _HEAD.format(title="untangle — know exactly what every bank credit is")
+        + _LANDING_CSS
+        + """
 <div class="wrap">
   <div class="hero">
     <div class="hero-copy">
@@ -233,7 +236,9 @@ def landing_page() -> str:
     </div>
     <div class="fig">
       <div class="fig-h"><span>one current account</span><span>five rails + review</span></div>
-      """ + _HERO_SVG + """
+      """
+        + _HERO_SVG
+        + """
       <p class="fig-cap">Two credits carry a settlement UTR that ties back to the recon report → <b>Razorpay</b>.
       One looks like Razorpay but has no hard tie → <b>abstained</b>, not guessed.</p>
     </div>
@@ -259,8 +264,8 @@ def landing_page() -> str:
       <p class="eyebrow">Run it on your own books</p>
       <h2 class="section-h" style="margin:0">Three exports in. A reconciled verdict out.</h2>
       <p class="section-s">No account, no integration, no signup. Export three files you already have and
-      drop them in — untangle reads them in a per-request temporary directory, shows you the answer, and
-      deletes them the moment the report renders. Nothing is persisted.</p>
+      drop them in — untangle processes bounded, immutable byte snapshots and shows you the answer.
+      Nothing is persisted by the application.</p>
     </div>
     <div class="bring-grid">
       <div class="bfile">
@@ -654,8 +659,8 @@ def landing_page() -> str:
       them plus calibrated abstention — not matching within one rail.</p></details>
     <details><summary>Do you store my bank statement?</summary>
       <p>No. Files are reconciled and discarded — no database, no <b>persistent</b> storage, no analytics on your
-      financials, no signup. (A request writes its uploads to a private temporary file only for the duration of
-      the run, then deletes it.) It's open source, so you can read the exact code that touches your file, or run
+      financials, no signup. The app processes bounded byte snapshots without creating its own upload files.
+      It's open source, so you can read the exact code that touches your file, or run
       it on your own machine where nothing leaves it at all.</p></details>
     <details><summary>Is the precision claim real or marketing?</summary>
       <p>It's measured on a sealed, generator-blind benchmark and reported with its scope. The engine never
@@ -678,11 +683,15 @@ def landing_page() -> str:
       <a class="cta ghost" href="/app">Reconcile my own files</a>
     </div>
   </div>
-</div>""" + _FOOT
+</div>"""
+        + _FOOT
+    )
 
 
 def upload_page() -> str:
-    return _HEAD.format(title="untangle — reconcile your statement") + """
+    return (
+        _HEAD.format(title="untangle — reconcile your statement")
+        + """
 <div class="wrap" style="padding-top:48px">
   <p class="eyebrow">Reconcile</p>
   <h1 style="font-size:34px">Drop your three files.</h1>
@@ -767,7 +776,9 @@ def upload_page() -> str:
     });
   });
 })();
-</script>""" + _FOOT
+</script>"""
+        + _FOOT
+    )
 
 
 _VERIFY_CSS = """<style>
@@ -792,7 +803,10 @@ _VERIFY_CSS = """<style>
 
 
 def verify_page() -> str:
-    return _HEAD.format(title="untangle — verify a close certificate") + _VERIFY_CSS + """
+    return (
+        _HEAD.format(title="untangle — verify a close certificate")
+        + _VERIFY_CSS
+        + """
 <div class="wrap" style="padding-top:48px;max-width:820px">
   <p class="eyebrow">Independent verification</p>
   <h1 style="font-size:38px">Verify a close certificate.</h1>
@@ -850,4 +864,6 @@ async function loadSample(){
     document.getElementById('certin').value=JSON.stringify(cert,null,2); doVerify(); }
   catch(e){ show({error:'Could not load the sample certificate.'}); }
 }
-</script>""" + _FOOT
+</script>"""
+        + _FOOT
+    )

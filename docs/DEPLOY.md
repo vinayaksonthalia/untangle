@@ -1,9 +1,9 @@
 # Deploy untangle
 
 untangle is a single FastAPI app with **zero third-party runtime dependencies** beyond
-`fastapi`/`uvicorn` (everything else is stdlib). Each upload is written to a **per-request
-temporary directory that is deleted the moment the report is rendered** — nothing is persisted to
-disk or a database, and no secret is required. Any container host works.
+`fastapi`/`uvicorn` (everything else is stdlib). Admitted uploads become bounded, immutable byte
+snapshots; the app does not persist them to its filesystem or a database, and no secret is required.
+Any container host works.
 
 ## Fastest path — Render (free tier)
 
@@ -19,9 +19,8 @@ seconds on the free tier — that is Render cold-start, not the app.
 
 `/healthz` provides a non-sensitive readiness/version response. The app adds request IDs, latency-only
 structured logs, security headers, per-file upload limits, and bounded JSON verification payloads.
-Per-file limits are enforced while reading multipart parts; aggregate multipart size is rejected early
-only when a valid `Content-Length` is supplied. Chunked requests rely on per-file limits and should be
-capped at the reverse proxy in production.
+Per-file limits are enforced while reading multipart parts; aggregate multipart size is enforced by
+counting ASGI body bytes, including chunked or missing-`Content-Length` requests.
 Reconciliation is limited to two worker slots and returns `503` when saturated; a wait beyond 90 seconds
 returns `504`. A timed-out Python thread may finish in the background, so its slot remains occupied until
 it returns and no cancellation is claimed.

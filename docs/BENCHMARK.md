@@ -141,3 +141,15 @@ Every benchmark execution audits 7 non-negotiable invariants:
 
 - **Synthetic Load Benchmark**: This benchmark validates memory boundedness, algorithmic scaling, and mathematical correctness under high-volume synthetic load. It does not establish universal real-world bank format compatibility (see [BANK_FORMAT_EVIDENCE.md](BANK_FORMAT_EVIDENCE.md)).
 - **Hardware Variation**: Execution runtimes vary across CPU architectures and memory bandwidth; CI tests use invariant checks and allocation ceilings rather than fragile wall-clock assertions.
+
+---
+
+## 9. Concurrent Saturation & Resource Cleanup
+
+Untangle's web reconciliation endpoints (`/reconcile` and `/api/reconcile`) are verified against concurrent saturation via `tests/integration/test_concurrent_saturation.py`:
+
+- **Bounded Worker Pool**: Concurrency is hard-capped at 2 simultaneous reconciliation workers (`_RECONCILE_SLOTS = 2`). Excess concurrent requests receive HTTP 503 without entering worker functions.
+- **Early Admission**: Requests exceeding capacity are turned away before request-body buffering, multipart parsing, upload reads, or worker execution.
+- **Exact Slot Retention**: A worker thread that times out from the caller's perspective continues holding its concurrency slot until background execution truly finishes, preventing worker queue explosion.
+- **No Application Upload Files**: Admitted uploads become bounded immutable byte snapshots; the application creates no upload pathname that can race a timed-out worker.
+- **Snapshot Isolation**: Admitted workers execute over immutable in-memory byte buffers (`reconcile_bytes`), ensuring concurrent requests operate with zero state or pathname contamination.
