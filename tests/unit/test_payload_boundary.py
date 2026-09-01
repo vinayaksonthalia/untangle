@@ -11,6 +11,7 @@ Verifies:
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 import pytest
@@ -22,6 +23,7 @@ from webapp.app import (
     _BODY_LIMITS,
     _RECONCILE_SEMAPHORE,
     _RECONCILE_SLOTS,
+    BodySizeLimitMiddleware,
     app,
 )
 
@@ -57,17 +59,38 @@ def test_service_snapshot_exceeded_limit_rejected_lazy(tmp_path):
     assert f"{MAX_INPUT_BYTES:,} bytes" in str(exc_info.value)
 
 
-def test_service_snapshot_stops_reading_early(tmp_path):
+def test_service_snapshot_stops_reading_early(tmp_path, monkeypatch):
     """Snapshot reader must not read past MAX_INPUT_BYTES + 1 before aborting."""
     # Create a 20 MiB file
     oversized_size = 20 * 1024 * 1024
     path = _make_temp_file_with_size(str(tmp_path), "oversized_20mb.csv", oversized_size)
+    real_fdopen = os.fdopen
+    observed = {"bytes": 0, "largest_request": 0}
+
+    class TrackingReader:
+        def __init__(self, wrapped):
+            self.wrapped = wrapped
+
+        def __enter__(self):
+            self.wrapped.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.wrapped.__exit__(*args)
+
+        def read(self, size=-1):
+            observed["largest_request"] = max(observed["largest_request"], size)
+            data = self.wrapped.read(size)
+            observed["bytes"] += len(data)
+            return data
+
+    monkeypatch.setattr(os, "fdopen", lambda fd, mode: TrackingReader(real_fdopen(fd, mode)))
     with pytest.raises(InputError) as exc_info:
         read_input_snapshot(path, label="Recon report", option="--recon")
     msg = str(exc_info.value)
     assert "Recon report is too large" in msg
-    # The bytes read count in the error message should be bounded right around MAX_INPUT_BYTES + 1
-    assert "too large" in msg
+    assert observed["bytes"] == MAX_INPUT_BYTES + 1
+    assert observed["largest_request"] <= 64 * 1024
 
 
 def test_web_upload_single_file_over_15mb_rejected():
@@ -107,6 +130,36 @@ def test_web_aggregate_limit_middleware_rejection():
     )
     assert resp.status_code == 413
     assert "Request body is too large." in resp.json().get("detail", "")
+
+
+def test_web_aggregate_limit_counts_streamed_chunks_without_content_length():
+    """The ASGI byte counter rejects an actually streamed body crossing the limit."""
+    limit = 10
+    inner_called = False
+    sent = []
+    messages = iter(
+        [
+            {"type": "http.request", "body": b"123456", "more_body": True},
+            {"type": "http.request", "body": b"78901", "more_body": False},
+        ]
+    )
+
+    async def inner(scope, receive, send):
+        nonlocal inner_called
+        inner_called = True
+
+    async def receive():
+        return next(messages)
+
+    async def send(message):
+        sent.append(message)
+
+    middleware = BodySizeLimitMiddleware(inner, limits={"/api/reconcile": limit})
+    scope = {"type": "http", "path": "/api/reconcile", "headers": []}
+    asyncio.run(middleware(scope, receive, send))
+
+    assert inner_called is False
+    assert sent[0]["status"] == 413
 
 
 def test_semaphore_capacity_released_after_failure():
