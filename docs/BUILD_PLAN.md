@@ -24,7 +24,7 @@ Deadline: **5 Sep 2026**. Track 4 — AI Finance Controller.
 - **U (Vinayak)** — runs the research prompts (GPT + Gemini), deploys (Render), records the demo video,
   provides/sources one real statement, final product judgment.
 
-## 2. Current state (updated 2 Sep 2026)
+## 2. Current state (updated 1 Sep 2026 UTC)
 
 **Merged to main, reviewed** — Evidence Courtroom · honest 4-label taxonomy · journal
 export (Tally XML + JSON, convention-agnostic) · independent verifier + close certificate + /verify ·

@@ -1,6 +1,6 @@
 # Phase 1 Exit Review
 
-Review date: **2 Sep 2026**  
+Review date: **1 Sep 2026 (UTC)**
 Reviewed base: `c7e0158` (`main`, through Phase 1 Task 6 / PR #55)  
 Gate result: **CONDITIONAL PASS**
 
