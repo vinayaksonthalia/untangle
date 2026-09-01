@@ -24,7 +24,7 @@ Deadline: **5 Sep 2026**. Track 4 — AI Finance Controller.
 - **U (Vinayak)** — runs the research prompts (GPT + Gemini), deploys (Render), records the demo video,
   provides/sources one real statement, final product judgment.
 
-## 2. Current state (updated 30 Aug 2026)
+## 2. Current state (updated 1 Sep 2026 UTC)
 
 **Merged to main, reviewed** — Evidence Courtroom · honest 4-label taxonomy · journal
 export (Tally XML + JSON, convention-agnostic) · independent verifier + close certificate + /verify ·
@@ -39,6 +39,11 @@ FastAPI app** — that's the next big C task.
 Our interpretation of the Track-4 requirements is now well covered. The remaining work is about **competitive differentiation,
 polish, shipping (deploy), and the demo** — informed by a competitor review (Agent-Audit, Track 01) and
 our own research (see §4a competitive learnings).
+
+**Phase 1 exit review: CONDITIONAL PASS.** Tasks 4–6 are merged and the executable exit gates pass;
+see [PHASE1_EXIT_REVIEW.md](PHASE1_EXIT_REVIEW.md). The dedicated SBI adapter remains blocked on a
+sanitized authentic SBI export fixture. Synthetic narration coverage must not be presented as native
+SBI-format validation.
 
 ## 3. The master backlog — sequenced by (impact on winning ÷ effort)
 
