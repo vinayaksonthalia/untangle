@@ -206,7 +206,7 @@ def run_benchmark(
     owns_tracing = not tracemalloc.is_tracing()
     if owns_tracing:
         tracemalloc.start()
-    baseline_current, baseline_peak = tracemalloc.get_traced_memory()
+    baseline_current = tracemalloc.get_traced_memory()[0]
     t0 = time.perf_counter()
     try:
         report = reconcile_bytes(
@@ -223,7 +223,10 @@ def run_benchmark(
         duration = time.perf_counter() - t0
         current_raw, peak_raw = tracemalloc.get_traced_memory()
         current_heap = max(0, current_raw - baseline_current)
-        peak_heap = max(0, peak_raw - baseline_peak) if not owns_tracing else peak_raw
+        # A caller-owned tracing session may already have a historical peak. Python exposes no way
+        # to reset and later restore that peak, so report the absolute observed peak. This is a
+        # conservative upper bound (it can over-report) and can never make the memory gate vacuous.
+        peak_heap = peak_raw
     finally:
         if owns_tracing:
             tracemalloc.stop()
