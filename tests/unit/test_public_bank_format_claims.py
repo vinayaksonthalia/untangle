@@ -19,11 +19,11 @@ from eval.harness import _print_report
 from eval.sealed import run_sealed_holdout_comparison
 
 
-def test_eval_sealed_output_disclaims_named_bank_validation():
+def test_eval_sealed_output_disclaims_named_bank_validation(tmp_path):
     """`eval.sealed` must NOT claim four-bank validation and must state generic/synthetic scope."""
     buf = io.StringIO()
     with redirect_stdout(buf):
-        exit_code = run_sealed_holdout_comparison(seed=1337, sealed_dir="data/sealed")
+        exit_code = run_sealed_holdout_comparison(seed=1337, sealed_dir=str(tmp_path / "sealed"))
     assert exit_code == 0
     output = buf.getvalue()
 
