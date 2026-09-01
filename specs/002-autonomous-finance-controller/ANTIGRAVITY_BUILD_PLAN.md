@@ -13,6 +13,16 @@ improvise.
 If any instruction here conflicts with the spec, the spec wins — surface the conflict to the
 human instead of guessing.
 
+**External brief used for scope:** [Razorpay AI Buildathon — Track 04: AI Finance
+Controller](https://razorpay.com/buildathon/) (verified 2026-09-01). The submission bar is one
+finance-operations loop over a batch of at least 50 synthetic records, with throughput, measured
+accuracy, and an honest exception list. The larger product roadmap in §10 is not a prerequisite
+for submission.
+
+**Numbering rule:** `S1`–`S5` below are Track 04 submission gates. `P1`–`P11` in §10 are long-term
+product phases. PR sequence numbers are recorded separately as `W1`, `W2`, ... . Never rename a
+product phase to match the order in which a PR happened to land.
+
 ---
 
 ## 0. Mission (one sentence — memorize it)
@@ -21,8 +31,8 @@ human instead of guessing.
 > belongs to Razorpay**. A false match is worse than no match.
 
 The entire edge is the **attribution module**: assigning each commingled bank credit to its true
-source rail, and **abstaining** when it cannot prove the answer. 261 competing repos exist; 0 do
-this. Everything else in the build exists to make that edge real and impossible to dismiss.
+source rail, and **abstaining** when it cannot prove the answer. Everything else in the build
+exists to make that edge real, measurable, and easy for reviewers to verify.
 
 ---
 
@@ -47,11 +57,13 @@ These are hard rails. Do not "improve," relax, or work around them.
 - **G5 — Rules are proposed, never self-applied.** A human resolving an exception may *propose* a
   versioned rule; it does nothing until a human approves it. Never let the system modify its own
   deterministic logic.
-- **G6 — Zero-storage by default.** Uploaded files live in memory/temp and are deleted after the
-  run. Never write a raw bank statement to disk or a database. Optional saved history stores
-  derived metadata only, and is out of scope for the submission build (roadmap). **Audit traces and
-  the FAILURE_LOG MUST store derived evidence (identifiers, subset ids, scores) — never verbatim raw
-  statement rows or narration strings** (those are the sensitive content).
+- **G6 — No deliberate persistence of raw uploads.** Application code operates on bounded byte
+  snapshots and never saves a raw bank statement to a database or durable application storage.
+  Framework-managed multipart handling may use ephemeral temporary storage; it must remain bounded
+  and be cleaned up on every terminal path. Optional saved history stores derived metadata only and
+  is out of scope for the submission build (roadmap). **Audit traces and the FAILURE_LOG MUST store
+  derived evidence (identifiers, subset ids, scores) — never verbatim raw statement rows or
+  narration strings** (those are the sensitive content).
 - **G7 — The engine never reads ground truth.** `engine/` MUST NOT import from `generator/` and
   MUST NOT read any `ground_truth*` file. Only `eval/` may read ground truth. Keep this isolation.
 - **G8 — Report precision-at-coverage + abstention curve. Never a single bare "match rate."**
@@ -64,12 +76,12 @@ the situation the guardrail exists for. STOP and ask the human.
 
 ---
 
-## 2. BUILD ORDER (phased; each phase has an acceptance GATE — do not start the next phase until the gate passes)
+## 2. SUBMISSION BUILD ORDER (S1–S5; each stage has an acceptance GATE)
 
 Build strictly in this order. Do not scaffold later phases early. Do not build breadth before the
 attribution edge is deep and proven.
 
-### Phase 1 — Attribution module, 20 rows end-to-end (THE EDGE)
+### S1 — Attribution module, 20 rows end-to-end (THE EDGE)
 - **Goal:** attribute a 20-row commingled sample to rails with calibrated confidence + evidence
   trace + abstention. Nothing else gets written until this works.
 - **Pinned sample composition (the gate is only real if these are present):** the 20 rows MUST
@@ -86,7 +98,7 @@ attribution edge is deep and proven.
   - Reproducible with a fixed seed.
 - **FORBIDDEN this phase:** UI work, reconciliation, ITC, exports, extra rails polish. Attribution only.
 
-### Phase 2 — The two killer analyses (this is what survives the panel)
+### S2 — The two killer analyses (this is what survives the panel)
 - **Goal:** prove the two subtle failure modes are handled, with a curve for each.
 - **Deliverables:**
   1. **Set-sum false-match curve:** false-match rate vs candidate-set size. Show that as the pool
@@ -98,14 +110,14 @@ attribution edge is deep and proven.
   picks across candidate-set sizes up to N=200**; both curves generated from the engine's own output
   (not hand-drawn).
 
-### Phase 3 — Close one loop to the paise (reconciliation + ITC), proven slice only
+### S3 — Close one loop to the paise (reconciliation + ITC), proven slice only
 - **Goal:** reconcile the credits proven Razorpay's, to the paise, and surface recoverable ITC.
 - **Deliverables:** settlement_id-keyed reconciliation; net/fee/GST-on-fee split; recoverable ITC
   = summed GST-on-fee, each rupee traceable; abstained credits excluded.
 - **GATE:** proven slice balances to the paise; ITC traceable; no abstained credit included;
   unbalanced sets surface a residual instead of forcing a balancing entry.
 
-### Phase 4 — Exception queue + honest reporting + human-proposed rules
+### S4 — Exception queue + honest reporting + human-proposed rules
 - **Goal:** the abstention story, made legible and safe.
 - **Deliverables:** exception queue (reason + evidence per item); **precision-at-coverage report +
   abstention curve** (G8); human resolution → *proposed* versioned rule (G5), applied only after
@@ -113,10 +125,11 @@ attribution edge is deep and proven.
 - **GATE:** report shows precision at multiple coverage points + abstention curve (never one
   number); a proposed rule does nothing until approved; approved rule never lowers precision.
 
-### Phase 5 — Evaluation hardening (see §3) + product wrapper (see §4)
-- Only after Phases 1–4 pass their gates.
+### S5 — Evaluation hardening (see §3) + product wrapper (see §4)
+- Only after S1–S4 pass their gates.
 
-Do not merge a phase whose gate has not passed. If a gate fails, fix it before proceeding.
+Do not merge a submission stage whose gate has not passed. If a gate fails, fix it before
+proceeding.
 
 ---
 
@@ -192,22 +205,26 @@ attacks. Build them in Phase 2 and keep them in the report.
 
 ---
 
-## 7. OUT OF SCOPE (build NONE of these — slides only)
+## 7. OUT OF SCOPE FOR THE SUBMISSION CRITICAL PATH
 
-- Cash forecasting; settlement Q&A agent; Tally/Zoho journal-entry export → roadmap slides only.
+- Cash forecasting and a settlement Q&A agent are separate product directions, not requirements
+  for this reconciliation loop.
+- Do not expand the existing Tally/JSON/CSV export surface unless a submission-blocking defect is
+  demonstrated.
 - GST **filing** / GSTR integration → surfacing recoverable ITC is in; filing is out.
 - Self-modifying rules → forbidden (G5).
 - "Every bank" universal parsing → validate 2–3 formats only.
 - Any second track. This is Track 04 only.
 
-If you think one of these would help, it does not. It is how strong builders lose (breadth is what
-an AI agent produces cheaply; depth on the edge is what wins).
+These may be legitimate post-submission product ideas, but they do not outrank depth, evidence,
+and a reliable five-minute judge journey. Breadth generated cheaply by an agent is not evidence of
+engineering judgment.
 
 ---
 
 ## 8. DEFINITION OF DONE
 
-- Phases 1–4 gates all pass; Phase 5 evaluation (E1–E4) done and reported.
+- S1–S4 gates all pass; S5 evaluation (E1–E4) is done and reported.
 - Attribution precision reported as precision-at-coverage on the **sealed** set, with abstention +
   calibration curves; zero forced set-sum picks; zero coincidental-amount Razorpay verdicts.
 - Reconciled slice balances to the paise; ITC traceable; abstained credits excluded.
@@ -231,3 +248,256 @@ an AI agent produces cheaply; depth on the edge is what wins).
 - Any scope addition not explicitly listed as in-scope.
 
 Do not resolve these yourself. Surface them.
+
+---
+
+## 10. AUTHORITATIVE PRODUCT ROADMAP (P1–P11)
+
+This is the complete product direction. It is deliberately larger than the Buildathon brief.
+Only items marked **submission-critical** may displace work on the S1–S5 gates or the five-minute
+demo. The remainder is sequenced for continued engineering after submission or after a panel asks
+for deeper productionization.
+
+### Priority definitions
+
+- **Now — submission-critical:** directly proves the Track 04 bar or removes a credible blocker
+  from the judge journey.
+- **Next — panel-strengthening:** valuable if the submission gate is already green and the change
+  is small, evidence-backed, and low-risk.
+- **Later — productization:** important for a real deployed financial system, but harmful if rushed
+  into the submission.
+- **Evidence-blocked:** no implementation until authentic documentation or a sanitized specimen is
+  supplied by the human.
+
+### P1 — Real-world bank ingestion
+
+**Purpose:** convert supported native bank exports into canonical `BankCreditLine` records without
+guessing.
+
+- Maintain the fail-closed adapter contract and deterministic detection.
+- Preserve the canonical model and record adapter/version/normalization provenance.
+- Handle verified variations in headers, amounts, dates, BOM/Unicode, multiline narration,
+  footers, empty rows, and contradictory values.
+- Add each named bank as its own evidence-backed PR with authentic sanitized fixtures.
+- Never infer a bank layout from memory, search snippets, or synthetic examples.
+
+**Status:** foundation merged in PR #51; public evidence claims aligned in PR #52. SBI and other
+named-bank adapters are **evidence-blocked** pending authentic native exports. Generic CSV remains
+the supported ingestion contract.
+
+**Priority:** Next when evidence exists; otherwise do not block submission.
+
+### P2 — Evidence robustness
+
+**Purpose:** keep attribution sound under narration drift and incomplete identifiers.
+
+- Version evidence/narration pattern packs.
+- Separate bank normalization from payment-rail evidence.
+- Test truncation, Unicode controls, case/separator drift, and damaged references.
+- Add explicit `unsupported_format` and `insufficient_evidence` outcomes.
+- Measure precision, recall, coverage, and abstention by evidenced input cohort.
+- Keep LLM output advisory and proof-gated.
+
+**Status:** core evidence tiers, abstention, calibration, adversarial generation, and sealed
+evaluation exist. Per-bank real-format corpora and versioned pattern packs remain.
+
+**Priority:** Next, but only for evidence-backed cases.
+
+### P3 — Real scale and reliability evidence
+
+**Purpose:** prove the complete loop remains bounded, deterministic, and honest as load grows.
+
+- Report full-pipeline runtime, input rows/bytes, candidate density, result counts, report/journal
+  time, and memory with the measurement scope named correctly.
+- Maintain 1×, 5×, 10×, 25×, and maximum-supported-payload curves where CI/runtime permits.
+- Test saturation, 503 admission, total upload deadlines, timeouts, cancellation, exact slot
+  ownership, malformed large inputs, and repeated runs.
+- Measure process RSS separately from Python `tracemalloc`; never conflate them.
+
+**Status:** maximum-payload suite merged in PR #53. Concurrent saturation, early admission,
+immutable snapshots, slow-upload deadline, and slot ownership merged in PR #54. Broader scale
+curves, RSS evidence, client cancellation, and repeated-request behaviour remain.
+
+**Priority:** Now only for remaining claims shown in the submission; otherwise Next.
+
+### P4 — Provider portability
+
+**Purpose:** separate the reconciliation model from Razorpay-specific settlement exports.
+
+- Define canonical settlement transactions, batches, fees/taxes, refunds, disputes, reversals,
+  adjustments, provider identifiers, validation, and provenance.
+- Move current Razorpay parsing behind a `RazorpaySettlementAdapter` without changing results.
+- Add a second provider only from authentic documentation or a sanitized export.
+- Keep rail classification distinct from transaction-level reconciliation.
+
+**Status:** not started as a formal provider-neutral boundary; Razorpay is the proven deep slice.
+
+**Priority:** Later. A second provider does not improve the Track 04 submission enough to justify
+risk without authentic evidence.
+
+### P5 — Multi-period financial correctness
+
+**Purpose:** preserve exact accounting meaning across closes rather than treating every upload as
+an isolated batch.
+
+- Specify opening/closing state and the accounting date policy before implementation.
+- Cover cross-cycle refunds, delayed settlements, rolling reserves, holds/releases, disputes,
+  reversals after close, and carry-forward exceptions.
+- Add idempotent reruns, period locking/reopening, corrective journals, and relationships between
+  original and amended close certificates.
+- Require exact-paise fixtures and double-entry invariants.
+
+**Status:** existing generators cover several cross-cycle cases. `W6`, the 90-day/multi-month
+evaluation, is the evaluation foundation only; it does not complete period state, locking,
+reopening, or amended closes.
+
+**Priority:** Next as a bounded evaluation; stateful close management is Later.
+
+### P6 — Operational workflow
+
+**Purpose:** support real teams reviewing and resolving exceptions over time.
+
+- Run history; exception ownership/status/comments; approval/rejection; attachments; resolution
+  history; search/filtering; run comparison; exportable audit trail.
+- Explicit input/result retention policies, tenant isolation, authentication, and role-based
+  permissions.
+
+**Status:** exception and investigation outputs exist, but durable collaborative workflow does not.
+
+**Priority:** Later. Persistence changes the privacy, security, and tenancy model and must not be
+rushed into the submission.
+
+### P7 — Durable job execution
+
+**Purpose:** move long-running reconciliation from request lifetime to recoverable jobs.
+
+- Job IDs, progress/state transitions, cancellation, retries, idempotency keys, result retrieval,
+  expiry, cleanup, worker crash recovery, and queue saturation.
+- Prove retries cannot duplicate journals or certificates.
+
+**Status:** bounded `asyncio.to_thread` execution exists; it is intentionally not presented as a
+durable queue.
+
+**Priority:** Later.
+
+### P8 — UI completion
+
+**Purpose:** make the proof legible in the exact journey a judge or finance reviewer follows.
+
+- Upload or run demo data; show input validation/adapters; reconcile; show scoped metrics; inspect
+  proof packets and honest exceptions; investigate one exception; show corrective entries; export;
+  verify a certificate; demonstrate one controlled failure.
+- Test accessibility, responsiveness, keyboard use, empty states, and error states.
+- Keep attribution, abstention, and precision-at-coverage above the proven-slice reconciliation
+  results.
+
+**Status:** landing page, demo path, dashboard, exceptions, exports, and certificate flows exist.
+The final five-minute judge journey and accessibility/error-state audit remain.
+
+**Priority:** Now after the evaluation gate is stable. Presentation quality directly affects
+whether reviewers understand the technical edge.
+
+### P9 — Security and operations
+
+**Purpose:** make production-readiness claims only when operational evidence supports them.
+
+- Threat model; authentication/authorization; CSRF/CORS/CSP; upload validation; parser/decompression
+  bomb defences as formats expand; SSRF/DNS rebinding regression tests; PII-safe logs; metrics;
+  SBOM/dependency scanning; secrets, retention/deletion, backup/recovery, deployment, and rollback.
+
+**Status:** request limits, rate/capacity controls, security headers, sandboxing, DNS-rebinding
+defences, readiness, SAST, and leak-free errors exist. Identity, persistence-related controls,
+runbooks, and full threat modelling remain.
+
+**Priority:** Next for a concise threat model and truthful deployment checklist; Later for controls
+that require persistence or tenancy.
+
+### P10 — Evaluation and scientific credibility
+
+**Purpose:** ensure every public metric is reproducible and resistant to benchmark gaming.
+
+- Preserve the sealed holdout; add real-format/OOD cohorts when evidence exists; compare transparent
+  baselines; report uncertainty; add mutation/metamorphic tests; keep experiments separate from
+  end-to-end claims; publish composition and limitations; prevent generator leakage.
+- Reproduce every public metric through one documented command.
+
+**Status:** sealed generator-blind holdout, calibration, candidate-set analysis, uncertainty work,
+and explicit limitations exist. Real-format OOD evidence, broader mutation testing, and a single
+public reproduction command remain.
+
+**Priority:** Now. This phase maps directly to measured accuracy and honest reporting in Track 04.
+
+### P11 — Final communication
+
+**Purpose:** let reviewers understand, run, question, and verify the system quickly.
+
+- Accurate README; architecture/data-flow/privacy diagrams; threat model; adapter guide; API/MCP
+  reference; benchmark methodology; claims/evidence table; deployment runbook; clean-machine
+  quickstart; three-minute fallback demo; five-minute primary pitch; longer technical walkthrough.
+- Prepare the application answer for “what broke, and how you got out” from the real `FAILURE_LOG`.
+
+**Status:** substantial technical documentation and failure history exist. Final claims sweep,
+clean-machine rehearsal, and recorded submission material remain.
+
+**Priority:** Now after the code/evaluation freeze. The application explicitly evaluates the work,
+the architecture, and failure recovery—not feature count.
+
+---
+
+## 11. CURRENT EXECUTION LEDGER
+
+This ledger records implementation order without redefining product phases.
+
+| Work item | Product phase | Deliverable | State | Evidence |
+|---|---|---|---|---|
+| W1 | P1 | Fail-closed bank adapter boundary | Merged | PR #51 |
+| W2 | P1/P10 | Public bank-format claims aligned with evidence | Merged | PR #52 |
+| W3 | P1 | SBI native adapter | Evidence-blocked | Authentic sanitized SBI export required |
+| W4 | P3/P10 | Maximum-payload pipeline stress suite | Merged | PR #53 |
+| W5 | P3/P9 | Concurrent saturation and resource ownership | Merged | PR #54 |
+| W6 | P5/P10 | 90-day and multi-month evaluation foundation | In progress | Fresh branch from `origin/main` |
+| W7 | Cross-phase | Submission exit audit: claims, tests, benchmark, demo, docs | Pending | Starts only after W6 review |
+
+Update this table in the same PR that changes a work item's state. A branch existing locally is not
+completion; only reviewed evidence merged into `main` counts as merged.
+
+---
+
+## 12. SCOPE DECISION FOR TRACK 04
+
+The complete P1–P11 roadmap is good product thinking, but implementing all of it before submission
+would be overbuilding. Track 04 asks whether one finance-operations loop works across a meaningful
+batch and reports throughput, measured accuracy, and unresolved exceptions honestly. Untangle
+already closes that loop: bank-credit attribution → proven Razorpay reconciliation → fee/GST →
+exceptions/investigation → balanced outputs and audit evidence.
+
+### Must be true before submission
+
+- The full demo runs from a clean checkout on 50+ records.
+- Public numbers come from a reproducible labelled evaluation and name their scope.
+- Precision, recall/coverage, abstention, throughput, and honest exceptions are visible.
+- The proven Razorpay slice balances to the paise.
+- One controlled failure is shown and recovered from safely.
+- The five-minute story is clear enough that a reviewer sees the attribution/abstention edge in the
+  first minute.
+- Claims about bank/provider support never exceed fixture evidence.
+
+### Do not delay submission for
+
+- Five native bank adapters without authentic specimens.
+- A second settlement provider without authentic documentation.
+- Databases, multi-tenancy, RBAC, durable queues, or enterprise workflow.
+- Universal bank parsing, cash forecasting, or an additional Buildathon track.
+- Refactors that do not improve a measured submission gate.
+
+### Decision rule for every proposed task
+
+Start it before submission only if all answers are **yes**:
+
+1. Does it strengthen the Track 04 bar or remove a demonstrated judge-journey defect?
+2. Can it be tested with evidence already available?
+3. Can it land as one reviewable PR without weakening existing claims or invariants?
+4. Is its value greater than spending the same time on the pitch, clean-machine rehearsal, or
+   failure-recovery story?
+
+If any answer is no, record it under the relevant P-phase and defer it.
