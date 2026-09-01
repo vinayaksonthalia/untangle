@@ -21,11 +21,31 @@ from engine.ingest import InputError
 from engine.service import MAX_INPUT_BYTES, read_input_snapshot
 from webapp.app import (
     _BODY_LIMITS,
+    _RATE_BUCKETS,
+    _RATE_LOCK,
     _RECONCILE_SEMAPHORE,
     _RECONCILE_SLOTS,
     BodySizeLimitMiddleware,
     app,
 )
+
+
+@pytest.fixture(autouse=True)
+def ensure_clean_state():
+    """Ensure semaphore and rate buckets are reset for boundary tests."""
+    while _RECONCILE_SEMAPHORE.acquire(timeout=0):
+        pass
+    for _ in range(_RECONCILE_SLOTS):
+        _RECONCILE_SEMAPHORE.release()
+    with _RATE_LOCK:
+        _RATE_BUCKETS.clear()
+    yield
+    while _RECONCILE_SEMAPHORE.acquire(timeout=0):
+        pass
+    for _ in range(_RECONCILE_SLOTS):
+        _RECONCILE_SEMAPHORE.release()
+    with _RATE_LOCK:
+        _RATE_BUCKETS.clear()
 
 
 def _make_temp_file_with_size(tmp_dir: str, name: str, size: int) -> str:
