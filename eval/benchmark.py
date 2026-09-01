@@ -26,9 +26,11 @@ import time
 import tracemalloc
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from engine.certificate import issue_certificate, verify_certificate
+from engine.ingest import load_bank_bytes
 from engine.journal import journal_json_to_tally_xml
 from engine.service import reconcile_bytes
 from eval.benchmark_generator import BenchmarkDataset, generate_benchmark_dataset
@@ -76,22 +78,29 @@ def _audit_invariants(
     report: dict[str, Any],
     report_rerun: dict[str, Any],
     cert_verify: dict[str, Any],
-    n_bank_lines: int,
+    expected_line_keys: list[str],
+    certificate: dict[str, Any],
+    certificate_rerun: dict[str, Any],
 ) -> InvariantResults:
     """Audit all mathematical, conservation, and determinism invariants."""
     failures: list[str] = []
 
     # 1. Single verdict per line & attribution conservation
+    n_bank_lines = len(expected_line_keys)
     attributions = report.get("attributions", [])
-    single_verdict = len(attributions) == n_bank_lines
+    actual_line_keys = [a.get("line_key") for a in attributions]
+    single_verdict = (
+        len(actual_line_keys) == n_bank_lines
+        and len(set(actual_line_keys)) == len(actual_line_keys)
+        and set(actual_line_keys) == set(expected_line_keys)
+    )
     if not single_verdict:
         failures.append(
             f"Line count mismatch: expected {n_bank_lines} attributions, got {len(attributions)}"
         )
 
-    by_rail_count = report.get("totals", {}).get("by_rail_count", {})
-    unknown_count = report.get("totals", {}).get("unknown_count", 0)
-    total_attributed_or_abstained = sum(by_rail_count.values()) + unknown_count
+    totals = report.get("totals", {})
+    total_attributed_or_abstained = totals.get("attributed", 0) + totals.get("abstained", 0)
     attribution_conserved = total_attributed_or_abstained == n_bank_lines
     if not attribution_conserved:
         failures.append(
@@ -104,25 +113,28 @@ def _audit_invariants(
     # residual drift check: residual must be <= drift tolerance (100 paise)
     paise_conserved = True
     for rec in reconciliations:
-        if rec.get("status") == "reconciled":
-            if abs(rec.get("residual_paise", 0)) > 100:
-                paise_conserved = False
-                failures.append(
-                    f"Reconciled credit {rec.get('line_key')} exceeded drift tolerance: "
-                    f"{rec.get('residual_paise')} paise"
-                )
+        if not rec.get("balanced", False) or abs(rec.get("residual_paise", 0)) > 100:
+            paise_conserved = False
+            failures.append(
+                f"Reconciled credit {rec.get('line_key')} failed balance/drift tolerance: "
+                f"{rec.get('residual_paise')} paise"
+            )
 
     # 3. Journal double-entry balance in paise
     journal = report.get("journal", [])
     journal_balanced = True
     for voucher in journal:
-        total_dr = sum(entry.get("debit_paise", 0) for entry in voucher.get("entries", []))
-        total_cr = sum(entry.get("credit_paise", 0) for entry in voucher.get("entries", []))
-        if total_dr != total_cr:
+        try:
+            lines = voucher["lines"]
+            total_dr = sum(Decimal(entry["debit_inr"]) for entry in lines)
+            total_cr = sum(Decimal(entry["credit_inr"]) for entry in lines)
+        except (KeyError, TypeError, InvalidOperation):
+            total_dr, total_cr = Decimal(1), Decimal(0)
+        if not voucher.get("balanced", False) or total_dr != total_cr:
             journal_balanced = False
             failures.append(
                 f"Unbalanced journal voucher {voucher.get('voucher_id')}: "
-                f"debit={total_dr} paise, credit={total_cr} paise"
+                f"debit={total_dr} INR, credit={total_cr} INR"
             )
 
     # 4. No duplicate covered row consumed twice across reconciled credits
@@ -136,18 +148,24 @@ def _audit_invariants(
             seen_rows.add(cid)
 
     # 5. Certificate validity
-    cert_valid = bool(cert_verify.get("ok")) and bool(
-        cert_verify.get("hash_matches")
-    ) and bool(cert_verify.get("report_binding_valid"))
+    cert_valid = (
+        bool(cert_verify.get("ok"))
+        and bool(cert_verify.get("hash_matches"))
+        and bool(cert_verify.get("report_binding_valid"))
+    )
     if not cert_valid:
         failures.append(f"Period close certificate verification failed: {cert_verify}")
 
     # 6. Determinism (byte-identical second run)
     root1 = report.get("audit_root")
     root2 = report_rerun.get("audit_root")
-    deterministic = bool(root1 and root1 == root2)
+    deterministic = report == report_rerun and certificate.get(
+        "content_sha256"
+    ) == certificate_rerun.get("content_sha256")
     if not deterministic:
-        failures.append(f"Non-deterministic rerun: audit_root '{root1}' != '{root2}'")
+        failures.append(
+            f"Non-deterministic report/certificate rerun: audit_root '{root1}' / '{root2}'"
+        )
 
     all_passed = (
         single_verdict
@@ -184,25 +202,31 @@ def run_benchmark(
     if dataset is None:
         dataset = generate_benchmark_dataset(profile=profile, seed=seed, scale=scale)
 
-    # First pass with memory tracing and timing
-    tracemalloc.start()
+    # First pass with memory tracing and timing. Never stop tracing owned by a caller.
+    owns_tracing = not tracemalloc.is_tracing()
+    if owns_tracing:
+        tracemalloc.start()
+    baseline_current, baseline_peak = tracemalloc.get_traced_memory()
     t0 = time.perf_counter()
-
-    report = reconcile_bytes(
-        dataset.bank_bytes,
-        dataset.recon_bytes,
-        dataset.ledger_bytes,
-        no_ai=True,
-        seed=dataset.seed,
-        global_solver=global_solver,
-    )
-    cert = issue_certificate(report)
-    cert_verify = verify_certificate({**cert, "report": report})
-    _tally_xml = journal_json_to_tally_xml(report.get("journal", []))
-
-    duration = time.perf_counter() - t0
-    current_heap, peak_heap = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
+    try:
+        report = reconcile_bytes(
+            dataset.bank_bytes,
+            dataset.recon_bytes,
+            dataset.ledger_bytes,
+            no_ai=True,
+            seed=dataset.seed,
+            global_solver=global_solver,
+        )
+        cert = issue_certificate(report)
+        cert_verify = verify_certificate({**cert, "report": report})
+        _tally_xml = journal_json_to_tally_xml(report.get("journal", []))
+        duration = time.perf_counter() - t0
+        current_raw, peak_raw = tracemalloc.get_traced_memory()
+        current_heap = max(0, current_raw - baseline_current)
+        peak_heap = max(0, peak_raw - baseline_peak) if not owns_tracing else peak_raw
+    finally:
+        if owns_tracing:
+            tracemalloc.stop()
 
     # Second pass for determinism verification (re-run on identical bytes)
     report_rerun = reconcile_bytes(
@@ -213,12 +237,17 @@ def run_benchmark(
         seed=dataset.seed,
         global_solver=global_solver,
     )
+    cert_rerun = issue_certificate(report_rerun)
+
+    expected_line_keys = [line.key for line in load_bank_bytes(dataset.bank_bytes)]
 
     invariants = _audit_invariants(
         report,
         report_rerun,
         cert_verify,
-        dataset.row_counts["bank_statement_lines"],
+        expected_line_keys,
+        cert,
+        cert_rerun,
     )
 
     totals = report.get("totals", {})
@@ -231,7 +260,7 @@ def run_benchmark(
     output_metrics = {
         "n_attributions": len(report.get("attributions", [])),
         "by_rail_count": totals.get("by_rail_count", {}),
-        "unknown_count": totals.get("unknown_count", 0),
+        "unknown_count": totals.get("abstained", 0),
         "reconciled_credits": totals.get("reconciled_count", 0),
         "reconciled_paise": totals.get("reconciled_paise", 0),
         "unresolved_rzp_count": totals.get("unresolved_rzp_count", 0),
@@ -275,26 +304,44 @@ def print_benchmark_summary(result: BenchmarkResult) -> None:
     print(f"  UNTANGLE PIPELINE STRESS BENCHMARK — Profile: {result.profile.upper()}")
     print("=" * 78)
     print(f"  Timestamp (UTC)     : {result.environment['timestamp_utc']}")
-    print(f"  Platform / Python   : {result.environment['platform']} (Python {result.environment['python_version']})")
+    print(
+        f"  Platform / Python   : {result.environment['platform']} (Python {result.environment['python_version']})"
+    )
     print(f"  Scale / Seed        : {result.scale:.2f} / {result.seed}")
-    print(f"  Global Solver       : {'ENABLED (ON)' if result.global_solver else 'DISABLED (OFF - Baseline)'}")
+    print(
+        f"  Global Solver       : {'ENABLED (ON)' if result.global_solver else 'DISABLED (OFF - Baseline)'}"
+    )
     print("-" * 78)
     print("  INPUT METRICS:")
-    print(f"    - Recon Report JSON : {in_m['byte_sizes']['recon_report.json']:,} bytes ({in_m['byte_sizes']['recon_report.json']/(1024*1024):.2f} MiB) · {in_m['row_counts']['recon_rows']:,} rows")
-    print(f"    - Order Ledger CSV  : {in_m['byte_sizes']['order_ledger.csv']:,} bytes ({in_m['byte_sizes']['order_ledger.csv']/(1024*1024):.2f} MiB) · {in_m['row_counts']['order_ledger_rows']:,} rows")
-    print(f"    - Bank Statement CSV: {in_m['byte_sizes']['bank_statement.csv']:,} bytes ({in_m['byte_sizes']['bank_statement.csv']/(1024*1024):.2f} MiB) · {in_m['row_counts']['bank_statement_lines']:,} lines")
+    print(
+        f"    - Recon Report JSON : {in_m['byte_sizes']['recon_report.json']:,} bytes ({in_m['byte_sizes']['recon_report.json'] / (1024 * 1024):.2f} MiB) · {in_m['row_counts']['recon_rows']:,} rows"
+    )
+    print(
+        f"    - Order Ledger CSV  : {in_m['byte_sizes']['order_ledger.csv']:,} bytes ({in_m['byte_sizes']['order_ledger.csv'] / (1024 * 1024):.2f} MiB) · {in_m['row_counts']['order_ledger_rows']:,} rows"
+    )
+    print(
+        f"    - Bank Statement CSV: {in_m['byte_sizes']['bank_statement.csv']:,} bytes ({in_m['byte_sizes']['bank_statement.csv'] / (1024 * 1024):.2f} MiB) · {in_m['row_counts']['bank_statement_lines']:,} lines"
+    )
     print(f"    - Total Payload     : {in_m['total_bytes']:,} bytes ({in_m['total_mb']:.2f} MiB)")
     print("-" * 78)
     print("  RESOURCE & PERFORMANCE MEASUREMENTS:")
     print(f"    - Wall-clock Time   : {result.duration_seconds:.4f} s")
-    print(f"    - Peak Python Heap  : {res_dict['peak_python_heap_mb']:.2f} MiB ({result.peak_python_heap_bytes:,} bytes)")
-    print("      (Note: Measured with tracemalloc; represents Python heap allocations, not total process RSS)")
+    print(
+        f"    - Peak Python Heap  : {res_dict['peak_python_heap_mb']:.2f} MiB ({result.peak_python_heap_bytes:,} bytes)"
+    )
+    print(
+        "      (Note: Measured with tracemalloc; represents Python heap allocations, not total process RSS)"
+    )
     print("-" * 78)
     print("  RECONCILIATION OUTPUT SUMMARY:")
-    print(f"    - Total Attributed  : {out_m['n_attributions']} lines (Razorpay: {out_m['by_rail_count'].get('razorpay_settlement', 0)}, Unknown: {out_m['unknown_count']})")
-    print(f"    - Reconciled Credits: {out_m['reconciled_credits']} credits (₹{out_m['reconciled_paise']/100:,.2f})")
+    print(
+        f"    - Total Attributed  : {out_m['n_attributions']} lines (Razorpay: {out_m['by_rail_count'].get('razorpay_settlement', 0)}, Unknown: {out_m['unknown_count']})"
+    )
+    print(
+        f"    - Reconciled Credits: {out_m['reconciled_credits']} credits (₹{out_m['reconciled_paise'] / 100:,.2f})"
+    )
     print(f"    - Unresolved Slice  : {out_m['unresolved_rzp_count']} credits")
-    print(f"    - Recoverable ITC   : ₹{out_m['fee_gst_recoverable_paise']/100:,.2f}")
+    print(f"    - Recoverable ITC   : ₹{out_m['fee_gst_recoverable_paise'] / 100:,.2f}")
     print(f"    - Exceptions / Inv. : {out_m['exceptions_count']} items")
     print(f"    - Journal Vouchers  : {out_m['journal_vouchers_count']} double-entry vouchers")
     print(f"    - Audit Root Hash   : {out_m['audit_root']}")
@@ -304,7 +351,9 @@ def print_benchmark_summary(result: BenchmarkResult) -> None:
     print(f"    - Attribution Conservation  : {'PASS' if inv.attribution_conservation else 'FAIL'}")
     print(f"    - Exact Paise Conservation  : {'PASS' if inv.paise_conservation else 'FAIL'}")
     print(f"    - Double-entry Journal Bal. : {'PASS' if inv.journal_balanced else 'FAIL'}")
-    print(f"    - Zero Double-Covered Rows  : {'PASS' if inv.no_duplicate_covered_rows else 'FAIL'}")
+    print(
+        f"    - Zero Double-Covered Rows  : {'PASS' if inv.no_duplicate_covered_rows else 'FAIL'}"
+    )
     print(f"    - Close Certificate Valid   : {'PASS' if inv.certificate_valid else 'FAIL'}")
     print(f"    - Determinism on Rerun      : {'PASS' if inv.determinism_verified else 'FAIL'}")
     print("-" * 78)
@@ -353,9 +402,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    profiles_to_run = (
-        ["ci-safe", "near-limit"] if args.profile == "both" else [args.profile]
-    )
+    profiles_to_run = ["ci-safe", "near-limit"] if args.profile == "both" else [args.profile]
 
     results: list[BenchmarkResult] = []
     exit_code = 0

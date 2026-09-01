@@ -19,7 +19,10 @@ from __future__ import annotations
 
 import io
 import json
+import tracemalloc
 from contextlib import redirect_stdout
+
+import pytest
 
 from eval.benchmark import main, run_benchmark
 from eval.benchmark_generator import generate_benchmark_dataset
@@ -62,8 +65,28 @@ def test_benchmark_determinism_and_reproducibility():
 def test_benchmark_abstention_on_ambiguity():
     """Ambiguous credits in benchmark datasets must be abstained, never force-matched."""
     res = run_benchmark(profile="ci-safe", seed=42)
-    # Totals should reflect honest abstentions/unresolved exceptions where applicable
-    assert res.output_metrics["n_attributions"] == res.input_metrics["row_counts"]["bank_statement_lines"]
+    assert res.output_metrics["unknown_count"] > 0
+    assert res.output_metrics["by_rail_count"]["UNKNOWN"] == res.output_metrics["unknown_count"]
+
+
+def test_benchmark_preserves_caller_tracemalloc_state():
+    tracemalloc.start()
+    try:
+        run_benchmark(profile="ci-safe", seed=42)
+        assert tracemalloc.is_tracing()
+    finally:
+        tracemalloc.stop()
+
+
+def test_benchmark_stops_owned_tracing_on_pipeline_error(monkeypatch):
+    monkeypatch.setattr(
+        "eval.benchmark.reconcile_bytes",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("boom")),
+    )
+    assert not tracemalloc.is_tracing()
+    with pytest.raises(ValueError, match="boom"):
+        run_benchmark(profile="ci-safe", seed=42)
+    assert not tracemalloc.is_tracing()
 
 
 def test_benchmark_cli_json_output():
