@@ -69,6 +69,8 @@ that normalizes recognized statements into canonical `BankCreditLine` records:
 - **Registration Order Independence**: Detection and resolution behavior is invariant to adapter registration order.
 - **Production Scope**: Currently, only the existing generic CSV adapter (`GenericCsvBankAdapter`, version 1.0.0)
   is registered. Bank-specific adapters will be introduced separately with evidence-backed fixtures.
+  See [BANK_FORMAT_EVIDENCE.md](BANK_FORMAT_EVIDENCE.md) for the current support matrix and evidence tiers.
+
 
 
 ## The three attribution tiers (the heart of it)

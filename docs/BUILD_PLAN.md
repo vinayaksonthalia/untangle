@@ -62,7 +62,7 @@ branch → PR → `/review` → fix all bot findings → **manual** merge (never
 | 6 | **`SAFETY.md` + public checkbox roadmap in README** — articulate our guarantees (read-only, no money movement, abstain-not-guess, every verdict proof-backed, independently verifiable) and a ✅/☐ roadmap (Agent-Audit honesty pattern) | **C** | LOW | SAFETY.md exists; README has a done/pending checklist; "safer by design (read-only)" stated. |
 | 7 | **₹-at-risk / ₹-recoverable headline model** — one clear business-value number up front (Agent-Audit's Revenue-at-Risk pattern), from unresolved cash + recoverable GST-ITC we already compute | **C** | LOW | Landing + dashboard surface a single ₹ headline with honest "up to / if confirmed" framing. |
 | 8 | **Docs pass** — web/CLI/MCP/API usage, 60-sec quickstart | **C** | LOW | A judge can run every surface from the docs alone (Lethe lesson). |
-| 9 | **Real bank-statement / Razorpay-export ingestion** — HDFC/ICICI/SBI/Axis/Kotak/RBL adapters (headers + UTR regex in STRATEGY §6b) | **A** (spec by C) | MED | A real bank CSV + a real Razorpay settlement export ingest and reconcile. |
+| 9 | **Real bank-statement / Razorpay-export ingestion** — planned HDFC/ICICI/SBI/Axis/Kotak/RBL dedicated adapters against authentic fixtures (see [BANK_FORMAT_EVIDENCE.md](BANK_FORMAT_EVIDENCE.md)) | **A** (spec by C) | MED | Authentic bank export fixtures + dedicated adapters ingest and reconcile. |
 | 10 | **One real statement in the demo** (Razorpay's published sample) | **U/C** | — | Runs end-to-end; closes the "toy?" question. |
 
 ### LATER — only if time
@@ -74,7 +74,7 @@ branch → PR → `/review` → fix all bot findings → **manual** merge (never
 
 ### What Antigravity builds next (C writes the spec, C reviews adversarially)
 - **#2 Remote streamable-HTTP MCP** (well-bounded; untangle is read-only so low blast radius).
-- **#9 Real bank/Razorpay-export ingestion adapters** (well-bounded, schema already mirrors real).
+- **#9 Real bank/Razorpay-export ingestion adapters** (well-bounded; planned per-provider dedicated adapters against authentic fixtures).
 - NOT #1 (UI wiring), #3 (CIs), or #5 (duplicate-key fix) — those are correctness/integration-sensitive
   and **C keeps** them (higher risk; do not delegate).
 
