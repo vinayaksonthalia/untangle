@@ -73,6 +73,17 @@ that normalizes recognized statements into canonical `BankCreditLine` records:
   See [BANK_FORMAT_EVIDENCE.md](BANK_FORMAT_EVIDENCE.md) for the current support matrix and evidence tiers.
 
 
+## Web concurrency and admission boundary
+
+Untangle's web layer (`webapp/app.py`) isolates synchronous reconciliation execution from the async ASGI event loop under a strict, fail-closed concurrency contract:
+
+- **Early Admission Control**: Capacity is guarded by a process-local bounded semaphore (`_RECONCILE_SEMAPHORE` with `_RECONCILE_SLOTS = 2`). Excess requests are turned away immediately with HTTP 503 *before* creating per-request temporary directories or saving uploaded files to disk.
+- **Worker Slot Ownership**: Concurrency slots are managed through `_ReconciliationSlot`. When a request is admitted, the worker thread retains exclusive ownership of its slot until execution truly terminates (including on timeouts and async task cancellations). This guarantees that no more than 2 worker threads can execute simultaneously at any point in time.
+- **Immediate Resource Cleanup**: Temporary directories and uploaded file streams are cleaned up and deleted immediately upon request completion, client rejection (413/422/503), timeout (504), or internal error (500).
+- **Immutable Byte Snapshots**: Worker threads read and own immutable in-memory byte snapshots (`reconcile_bytes`), ensuring concurrent requests operate in total isolation without cross-contamination.
+
+
+
 
 ## The three attribution tiers (the heart of it)
 
