@@ -78,6 +78,18 @@ def test_benchmark_preserves_caller_tracemalloc_state():
         tracemalloc.stop()
 
 
+def test_benchmark_nested_tracing_never_hides_historical_peak():
+    tracemalloc.start()
+    try:
+        allocation = bytearray(2 * 1024 * 1024)
+        del allocation
+        historical_peak = tracemalloc.get_traced_memory()[1]
+        result = run_benchmark(profile="ci-safe", seed=42)
+        assert result.peak_python_heap_bytes >= historical_peak
+    finally:
+        tracemalloc.stop()
+
+
 def test_benchmark_stops_owned_tracing_on_pipeline_error(monkeypatch):
     monkeypatch.setattr(
         "eval.benchmark.reconcile_bytes",
