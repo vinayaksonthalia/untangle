@@ -34,7 +34,10 @@ def test_eval_sealed_output_disclaims_named_bank_validation():
 
     # Must contain the accurate scope limitation
     assert "Bank ingestion scope: validated on Untangle's generic CSV schema" in output
-    assert "Named-bank native export compatibility requires separately evidenced adapters" in output
+    assert (
+        "Named-bank native export compatibility requires separately evidenced adapters "
+        "and is not established by this benchmark."
+    ) in output
 
 
 def test_eval_harness_output_disclaims_named_bank_validation():
@@ -100,15 +103,18 @@ def test_bank_format_evidence_matrix_status():
 
     # Named banks must be Level 2 (Narration represented), with no registered adapter.
     named_banks = ["HDFC Bank", "ICICI Bank", "State Bank of India (SBI)", "Axis Bank", "Kotak Mahindra Bank", "RBL Bank"]
-    matrix_rows = {
-        cells[0].removeprefix("**").removesuffix("**"): cells
+    matrix_rows = [
+        cells
         for line in text.splitlines()
         if line.startswith("|")
         if len(cells := [cell.strip() for cell in line.strip("|").split("|")]) >= 4
-    }
+    ]
     for bank in named_banks:
-        assert bank in matrix_rows, f"{bank} must be present in evidence matrix"
-        row = matrix_rows[bank]
+        matching_rows = [
+            row for row in matrix_rows if row[0].removeprefix("**").removesuffix("**") == bank
+        ]
+        assert len(matching_rows) == 1, f"{bank} must have exactly one authoritative evidence row"
+        row = matching_rows[0]
         assert row[2] == "**Level 2: Narration represented**", f"{bank} support level is overstated"
         assert row[3] == "None", f"{bank} must not claim a registered adapter"
 
