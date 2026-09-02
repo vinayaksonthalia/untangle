@@ -35,6 +35,7 @@ echo "==> inlining icons in verify.html (idempotent)"
 python3 tools/tailwind/inline_icons.py webapp/templates/verify.html
 python3 tools/tailwind/inline_icons.py webapp/templates/dashboard.html
 python3 tools/tailwind/inline_icons.py webapp/templates/upload.html
+python3 tools/tailwind/inline_icons.py webapp/templates/investigate.html
 
 # Compile every stylesheet to a STAGED file first; publish to webapp/static only
 # after all of them succeed, so a failed second compile can't leave the committed
@@ -52,12 +53,14 @@ build_css tools/tailwind/tailwind.config.js tools/tailwind/_stage_landing.css
 build_css tools/tailwind/verify.config.js  tools/tailwind/_stage_verify.css
 build_css tools/tailwind/dashboard.config.js tools/tailwind/_stage_dashboard.css
 build_css tools/tailwind/upload.config.js    tools/tailwind/_stage_upload.css
+build_css tools/tailwind/investigate.config.js tools/tailwind/_stage_investigate.css
 
 echo "==> publishing stylesheets (all compiled OK)"
 mv tools/tailwind/_stage_landing.css webapp/static/landing.css
 mv tools/tailwind/_stage_verify.css  webapp/static/verify.css
 mv tools/tailwind/_stage_dashboard.css webapp/static/dashboard.css
 mv tools/tailwind/_stage_upload.css    webapp/static/upload.css
+mv tools/tailwind/_stage_investigate.css webapp/static/investigate.css
 
 echo "==> done"
-wc -c webapp/static/landing.css webapp/static/verify.css webapp/static/dashboard.css webapp/static/upload.css
+wc -c webapp/static/landing.css webapp/static/verify.css webapp/static/dashboard.css webapp/static/upload.css webapp/static/investigate.css

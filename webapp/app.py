@@ -32,7 +32,13 @@ from engine.certificate import issue_certificate, verify_certificate
 from engine.ingest import InputError, load_bank, load_bank_bytes
 from engine.service import reconcile, reconcile_bytes
 from ui.dashboard import render as render_dashboard
-from webapp.pages import dashboard_page, landing_page, upload_page, verify_page
+from webapp.pages import (
+    dashboard_page,
+    investigate_page,
+    landing_page,
+    upload_page,
+    verify_page,
+)
 
 # The public /mcp endpoint must be sandboxed so an unauthenticated remote caller cannot open arbitrary
 # server files. FAIL CLOSED: force the flag on (never `setdefault`, which would leave an inherited `0`
@@ -840,6 +846,108 @@ def api_evaluation_sealed() -> JSONResponse:
             status_code=503,
         )
     return JSONResponse(eval_payload)
+
+
+_INVESTIGATIONS_CACHE: dict | None = None
+_INVESTIGATIONS_LOCK = threading.Lock()
+
+# Root-cause labels + the accounting family each belongs to. Kept server-side so the UI renders
+# a human label and a colour family without re-deriving finance semantics in the browser.
+_ROOT_CAUSE_LABELS = {
+    "mdr_fee_drift": "MDR fee drift",
+    "cross_cycle_refund_lag": "Cross-cycle refund lag",
+    "on_hold_release": "On-hold release",
+    "dispute_deduction": "Dispute deduction",
+    "partial_capture": "Partial capture",
+    "rolling_reserve": "Rolling reserve",
+    "bank_charge_or_rounding": "Bank charge / rounding",
+    "unexplained": "Unexplained",
+}
+
+
+def _build_investigations_payload() -> dict:
+    """Run the deterministic investigation benchmark once and shape a read-only UI payload.
+
+    Uses the seed-42 investigation benchmark (one settlement per root cause + one genuinely
+    ambiguous control that the engine abstains on). Everything here is derived, synthetic and
+    safe to expose; nothing is persisted. The heavy generate+reconcile runs once and is cached.
+    """
+    import tempfile
+
+    from generator.config import Config
+    from generator.investigation_cases import write_investigation_benchmark
+
+    work = tempfile.mkdtemp(prefix="untangle_inv_")
+    try:
+        write_investigation_benchmark(work, Config())
+        base = os.path.join(work, "investigation")
+        with open(os.path.join(base, "bank_statement.csv"), "rb") as fh:
+            bank = fh.read()
+        with open(os.path.join(base, "recon_report.json"), "rb") as fh:
+            recon = fh.read()
+        with open(os.path.join(base, "order_ledger.csv"), "rb") as fh:
+            ledger = fh.read()
+        report = reconcile_bytes(bank, recon, ledger)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+    cases = []
+    for inv in report.get("investigations") or []:
+        rc = inv.get("root_cause", "unexplained")
+        cases.append(
+            {
+                "line_key": inv.get("line_key"),
+                "root_cause": rc,
+                "root_cause_label": _ROOT_CAUSE_LABELS.get(rc, rc),
+                "resolved": rc != "unexplained",
+                "confidence": inv.get("confidence", 0.0),
+                "variance_paise": inv.get("variance_paise", 0),
+                "variance_inr": inv.get("variance_inr", "0.00"),
+                "reasoning_trace": inv.get("reasoning_trace") or [],
+                "candidates_tried": inv.get("candidates_tried") or [],
+                "corrective_entry": inv.get("corrective_entry"),
+            }
+        )
+    resolved = sum(1 for c in cases if c["resolved"])
+    return {
+        "run_identity": report.get("run_identity") or {},
+        "summary": {
+            "total": len(cases),
+            "resolved": resolved,
+            "abstained": len(cases) - resolved,
+        },
+        "cases": cases,
+    }
+
+
+def _get_cached_investigations() -> dict:
+    global _INVESTIGATIONS_CACHE
+    if _INVESTIGATIONS_CACHE is not None:
+        return _INVESTIGATIONS_CACHE
+    with _INVESTIGATIONS_LOCK:
+        if _INVESTIGATIONS_CACHE is not None:
+            return _INVESTIGATIONS_CACHE
+        _INVESTIGATIONS_CACHE = _build_investigations_payload()
+        return _INVESTIGATIONS_CACHE
+
+
+@app.get("/api/investigations/sample")
+def api_investigations_sample() -> JSONResponse:
+    """Read-only root-cause investigations for the bundled benchmark. Deterministic; nothing stored."""
+    try:
+        payload = _get_cached_investigations()
+    except Exception as exc:  # pragma: no cover - defensive; benchmark is deterministic
+        _LOG.warning("Investigations benchmark unavailable: %s", exc)
+        return JSONResponse(
+            {"status": "unavailable", "detail": "Investigations benchmark unavailable."},
+            status_code=503,
+        )
+    return JSONResponse(payload)
+
+
+@app.get("/investigate", response_class=HTMLResponse)
+def investigate() -> str:
+    return investigate_page()
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
