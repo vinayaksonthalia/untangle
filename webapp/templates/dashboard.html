@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Reconciliation dashboard — untangle</title>
+<meta name="description" content="untangle reconciliation dashboard: attribution coverage, unresolved value, recoverable GST, the evidence case file behind each verdict, and a balanced journal ready for Tally."/>
+<link rel="stylesheet" href="/static/dashboard.css"/>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { overscroll-behavior: none; }
+  ::-webkit-scrollbar { display: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes fadeRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-rise { animation: fadeRise 0.5s cubic-bezier(0.16,1,0.3,1) forwards; opacity: 0; }
+  }
+  :focus-visible { outline: 2px solid #0f172a; outline-offset: 2px; }
+</style>
+</head>
+<body class="bg-background font-body-md text-on-background tabular-nums">
+<header class="sticky top-0 z-50 w-full bg-surface-container-lowest/90 backdrop-blur-xl border-b border-outline-variant">
+<div class="max-w-[1400px] mx-auto px-container-padding h-16 flex items-center justify-between gap-4">
+<a href="/" class="font-headline-md text-headline-md tracking-tight" aria-label="untangle — home"><span class="text-audit-blue">un</span><span class="text-on-surface">tangle</span></a>
+<nav aria-label="Primary" class="hidden md:flex items-center gap-8 font-body-md text-on-surface-variant">
+<a class="text-on-surface font-semibold" aria-current="page" href="/dashboard">Dashboard</a>
+<a class="hover:text-on-surface transition-colors" href="/app">Upload</a>
+<a class="hover:text-on-surface transition-colors" href="/verify">Verify</a>
+<a class="hover:text-on-surface transition-colors" href="/#how">How it works</a>
+</nav>
+<div class="flex items-center gap-3">
+<span class="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-surface-container-low rounded-full border border-outline-variant">
+<span class="w-2 h-2 rounded-full bg-secondary-fixed-dim"></span>
+<span class="font-label-caps text-label-caps text-on-surface" id="run-scope">Example run</span>
+</span>
+<a href="/try-sample" class="inline-flex h-10 items-center px-4 bg-primary text-on-primary font-data-tabular text-data-tabular rounded hover:bg-audit-blue transition-colors shadow-sm">Run sample</a>
+</div>
+</div>
+</header>
+
+<main class="relative">
+<div class="max-w-[1400px] mx-auto px-container-padding py-8 flex flex-col gap-gutter">
+
+<div class="flex items-baseline justify-between flex-wrap gap-2">
+<h1 class="font-display-lg text-display-lg text-on-surface">Reconciliation dashboard</h1>
+<p class="font-body-sm text-on-surface-variant" id="run-identity">Loading live figures…</p>
+</div>
+
+<!-- Top metrics (real: summary.*) -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-gutter animate-fade-rise">
+<div class="bg-surface p-6 rounded-xl border border-outline-variant flex flex-col justify-between">
+<div class="flex justify-between items-start mb-4">
+<span class="font-label-caps text-on-surface-variant text-label-caps">ATTRIBUTION COVERAGE</span>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-secondary-fixed-dim"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
+</div>
+<div>
+<span class="font-display-lg text-on-surface text-display-lg" id="m-coverage">—</span>
+<p class="font-body-sm text-on-surface-variant mt-1" id="m-coverage-sub">&nbsp;</p>
+</div>
+<div class="mt-4 w-full bg-surface-container h-2 rounded-full overflow-hidden">
+<div class="bg-secondary-fixed-dim h-full" id="m-coverage-bar" style="width:0%"></div>
+</div>
+</div>
+<div class="bg-surface p-6 rounded-xl border border-outline-variant flex flex-col justify-between">
+<div class="flex justify-between items-start mb-4">
+<span class="font-label-caps text-on-surface-variant text-label-caps">UNRESOLVED VALUE</span>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-error"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg>
+</div>
+<div>
+<span class="font-display-lg text-error text-display-lg" id="m-unresolved">—</span>
+<p class="font-body-sm text-on-surface-variant mt-1" id="m-unresolved-sub">&nbsp;</p>
+</div>
+</div>
+<div class="bg-surface p-6 rounded-xl border border-outline-variant flex flex-col justify-between relative overflow-hidden">
+<div class="absolute right-0 top-0 w-32 h-32 bg-secondary-container rounded-full blur-3xl opacity-20 transform translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+<div class="flex justify-between items-start mb-4 relative z-10">
+<span class="font-label-caps text-on-surface-variant text-label-caps">GST ON FEES</span>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-secondary"><path d="M200-280v-280h80v280h-80Zm240 0v-280h80v280h-80ZM80-120v-80h800v80H80Zm600-160v-280h80v280h-80ZM80-640v-80l400-200 400 200v80H80Zm178-80h444-444Zm0 0h444L480-830 258-720Z"/></svg>
+</div>
+<div class="relative z-10">
+<span class="font-display-lg text-secondary text-display-lg" id="m-gst">—</span>
+<p class="font-body-sm text-on-surface-variant mt-1">recoverable on reconciled Razorpay fees — review eligibility</p>
+</div>
+</div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+<div class="lg:col-span-8 flex flex-col gap-gutter">
+<!-- Classification (real: rails + summary) -->
+<div class="bg-surface p-6 rounded-xl border border-outline-variant animate-fade-rise">
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-title-sm text-on-surface">Where the money came from</h3>
+<span class="font-label-caps text-label-caps text-on-surface-variant" id="c-total">&nbsp;</span>
+</div>
+<div class="flex h-4 rounded-full overflow-hidden mb-4 bg-surface-container" id="c-bar"></div>
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center" id="c-legend"></div>
+</div>
+
+<!-- Exceptions (real: exceptions_summary) -->
+<div class="bg-surface flex-1 rounded-xl border border-outline-variant overflow-hidden flex flex-col animate-fade-rise">
+<div class="p-6 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+<h3 class="font-title-sm text-on-surface flex items-center gap-2">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-error"><path d="M348.5-291.5Q360-303 360-320t-11.5-28.5Q337-360 320-360t-28.5 11.5Q280-337 280-320t11.5 28.5Q303-280 320-280t28.5-11.5Zm0-160Q360-463 360-480t-11.5-28.5Q337-520 320-520t-28.5 11.5Q280-497 280-480t11.5 28.5Q303-440 320-440t28.5-11.5Zm0-160Q360-623 360-640t-11.5-28.5Q337-680 320-680t-28.5 11.5Q280-657 280-640t11.5 28.5Q303-600 320-600t28.5-11.5ZM440-280h240v-80H440v80Zm0-160h240v-80H440v80Zm0-160h240v-80H440v80ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg> Exception taxonomy
+</h3>
+<span class="bg-surface-container text-on-surface-variant px-3 py-1 rounded-full font-label-caps text-[10px]" id="exc-count">—</span>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-outline-variant bg-surface-bright">
+<th class="font-label-caps text-on-surface-variant py-3 px-6 font-semibold">REASON CODE</th>
+<th class="font-label-caps text-on-surface-variant py-3 px-6 font-semibold">WHAT IT MEANS</th>
+<th class="font-label-caps text-on-surface-variant py-3 px-6 font-semibold text-right">TRANSACTIONS</th>
+</tr>
+</thead>
+<tbody class="font-data-tabular text-sm" id="exc-body"></tbody>
+</table>
+</div>
+</div>
+</div>
+
+<div class="lg:col-span-4 flex flex-col gap-gutter">
+<!-- Evidence case file (real: a proven line_verdict) -->
+<div class="bg-surface rounded-xl border border-outline-variant overflow-hidden flex flex-col animate-fade-rise">
+<div class="bg-primary text-on-primary p-4 flex justify-between items-center">
+<h3 class="font-title-sm flex items-center gap-2"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 85-29 163.5T688-214L560-342q-18 11-38.5 16.5T480-320q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 22-5.5 42.5T618-398l60 60q20-41 31-86t11-92v-189l-240-90-240 90v189q0 121 68 220t172 132q26-8 49.5-20.5T576-214l56 56q-33 27-71.5 47T480-80Zm56.5-343.5Q560-447 560-480t-23.5-56.5Q513-560 480-560t-56.5 23.5Q400-513 400-480t23.5 56.5Q447-400 480-400t56.5-23.5ZM488-477Z"/></svg> Evidence case file</h3>
+<span class="font-label-caps bg-on-primary/20 px-2 py-1 rounded" id="ev-id">—</span>
+</div>
+<div class="p-5 flex flex-col gap-4">
+<div class="relative pl-4 border-l-2 border-secondary">
+<span class="absolute -left-2.5 top-0 w-4 h-4 rounded-full bg-secondary border-2 border-surface"></span>
+<h4 class="font-label-caps text-secondary font-bold mb-2">WINNING EXPLANATION</h4>
+<p class="font-body-sm text-on-surface mb-2" id="ev-explanation">—</p>
+<div class="flex items-center gap-2 mt-2">
+<span class="font-data-tabular text-on-surface font-semibold" id="ev-confidence">—</span>
+<span class="bg-secondary/10 text-secondary px-2 py-0.5 rounded font-label-caps text-[10px]" id="ev-tier">—</span>
+</div>
+</div>
+<div class="relative pl-4 border-l-2 border-outline-variant">
+<span class="absolute -left-2.5 top-0 w-4 h-4 rounded-full bg-surface-tint border-2 border-surface"></span>
+<h4 class="font-label-caps text-on-surface-variant mb-2">EVIDENCE SIGNALS</h4>
+<div class="flex flex-wrap gap-2" id="ev-signals"></div>
+</div>
+<p class="font-body-sm text-on-surface-variant text-xs">Deterministic verdict; the LLM only narrates, it never decides.</p>
+</div>
+</div>
+
+<!-- Ready to post (real: reconciled totals + Tally export) -->
+<div class="bg-surface rounded-xl border border-outline-variant p-6 flex flex-col animate-fade-rise">
+<div class="flex justify-between items-center mb-4">
+<h3 class="font-title-sm text-on-surface flex items-center gap-2"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-primary"><path d="M240-80q-50 0-85-35t-35-85v-120h120v-560l60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60v680q0 50-35 85t-85 35H240Zm480-80q17 0 28.5-11.5T760-200v-560H320v440h360v120q0 17 11.5 28.5T720-160ZM360-600v-80h240v80H360Zm0 120v-80h240v80H360Zm320-120q-17 0-28.5-11.5T640-640q0-17 11.5-28.5T680-680q17 0 28.5 11.5T720-640q0 17-11.5 28.5T680-600Zm0 120q-17 0-28.5-11.5T640-520q0-17 11.5-28.5T680-560q17 0 28.5 11.5T720-520q0 17-11.5 28.5T680-480ZM240-160h360v-80H200v40q0 17 11.5 28.5T240-160Zm-40 0v-80 80Z"/></svg> Ready to post</h3>
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+</div>
+<div class="bg-surface-bright rounded-lg border border-outline-variant p-4 font-data-tabular text-sm mb-4">
+<div class="flex justify-between mb-2"><span class="text-on-surface-variant">Reconciled credits</span><span class="text-on-surface font-semibold" id="j-reconciled-count">—</span></div>
+<div class="flex justify-between mb-2"><span class="text-on-surface-variant">Reconciled value</span><span class="text-on-surface font-semibold" id="j-reconciled-value">—</span></div>
+<div class="flex justify-between mb-2"><span class="text-on-surface-variant">GST on fees</span><span class="text-on-surface" id="j-gst">—</span></div>
+<div class="flex justify-between border-t border-outline-variant pt-2 mt-2"><span class="text-on-surface-variant">Close certificate</span><span class="text-secondary font-semibold" id="j-cert">—</span></div>
+</div>
+<div class="flex flex-col gap-2">
+<a href="/api/journal/sample.tally.xml" class="w-full bg-primary text-on-primary h-row-height-standard rounded-lg font-label-caps flex items-center justify-center gap-2 hover:bg-audit-blue transition-colors">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]"><path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg> Download Tally XML
+</a>
+<a href="/verify" class="w-full border border-outline-variant text-on-surface h-row-height-standard rounded-lg font-label-caps flex items-center justify-center gap-2 hover:bg-surface-container-low transition-colors">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]"><path d="m438-338 226-226-57-57-169 169-84-84-57 57 141 141Zm42 258q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z"/></svg> Verify the certificate
+</a>
+</div>
+</div>
+</div>
+</div>
+
+<p class="font-body-sm text-on-surface-variant text-center" id="dash-error" hidden></p>
+</div>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const inr = (paise) => '₹' + (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pct = (n) => (n * 100).toFixed(1) + '%';
+
+  // buckets for "where the money came from" — mapped from real rails + summary
+  const RAIL_LABEL = {
+    razorpay_settlement: 'Proven Razorpay',
+    other_gateway: 'Other gateway',
+    direct_upi: 'Direct UPI',
+    cod_remittance: 'COD remittance',
+    unrelated: 'Unrelated',
+  };
+  const BUCKET_COLOR = ['bg-secondary-fixed-dim', 'bg-surface-tint', 'bg-tertiary-fixed-dim', 'bg-primary-fixed-dim', 'bg-error'];
+
+  async function load() {
+    let p;
+    try {
+      const r = await fetch('/api/presentation/sample');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      p = await r.json();
+    } catch (e) {
+      const el = $('dash-error'); el.hidden = false;
+      el.textContent = 'Could not load reconciliation figures (' + e.message + ').';
+      return;
+    }
+    const s = p.summary || {};
+    $('run-identity').textContent =
+      'engine ' + (p.run_identity?.engine_version || '?') + ' · audit ' +
+      (p.run_identity?.audit_root || '').slice(0, 12) + '… · seed ' + (p.methodology?.seed ?? '?');
+
+    // metric cards
+    const coverage = s.n_bank_lines ? s.attributed_count / s.n_bank_lines : 0;
+    $('m-coverage').textContent = pct(coverage);
+    $('m-coverage-bar').style.width = (coverage * 100).toFixed(1) + '%';
+    $('m-coverage-sub').textContent = s.attributed_count + ' of ' + s.n_bank_lines + ' credits attributed';
+    $('m-unresolved').textContent = inr(s.unresolved_paise || 0);
+    $('m-unresolved-sub').textContent = 'across ' + (s.unresolved_count || 0) + ' transactions';
+    $('m-gst').textContent = inr(s.fee_gst_recoverable_paise || 0);
+
+    // classification bar + legend (real rail counts + abstained)
+    const rails = p.rails || [];
+    const railBy = Object.fromEntries(rails.map((r) => [r.rail, r]));
+    const total = s.n_bank_lines || 1;
+    const buckets = [
+      { key: 'razorpay_settlement', label: 'Proven Razorpay', count: railBy.razorpay_settlement?.count || 0 },
+      {
+        key: 'other', label: 'Other rails',
+        count: (railBy.other_gateway?.count || 0) + (railBy.direct_upi?.count || 0) + (railBy.cod_remittance?.count || 0),
+      },
+      { key: 'abstained', label: 'Abstained', count: s.abstained_count || 0 },
+      { key: 'unrelated', label: 'Unrelated', count: railBy.unrelated?.count || 0 },
+    ];
+    $('c-total').textContent = s.n_bank_lines + ' bank credits';
+    $('c-bar').innerHTML = '';
+    $('c-legend').innerHTML = '';
+    buckets.forEach((b, i) => {
+      const share = b.count / total;
+      const seg = document.createElement('div');
+      seg.className = BUCKET_COLOR[i] + (i === 1 ? ' opacity-80' : '');
+      seg.style.width = (share * 100).toFixed(2) + '%';
+      seg.title = b.label + ' (' + pct(share) + ')';
+      $('c-bar').appendChild(seg);
+      const leg = document.createElement('div');
+      leg.className = 'flex flex-col items-center';
+      leg.innerHTML =
+        '<div class="w-3 h-3 rounded-full ' + BUCKET_COLOR[i] + ' mb-2"></div>' +
+        '<span class="font-label-caps text-on-surface-variant">' + b.label + '</span>' +
+        '<span class="font-data-tabular text-on-surface">' + b.count + ' · ' + pct(share) + '</span>';
+      $('c-legend').appendChild(leg);
+    });
+
+    // exception taxonomy (real: exceptions_summary)
+    $('exc-count').textContent = (s.exception_count || 0) + ' EXCEPTIONS';
+    const body = $('exc-body'); body.innerHTML = '';
+    (p.exceptions_summary || []).forEach((ex, i) => {
+      const tr = document.createElement('tr');
+      tr.className = 'border-b border-outline-variant' + (i % 2 ? ' bg-surface-bright/50' : '');
+      tr.innerHTML =
+        '<td class="py-3 px-6 text-on-surface">' + ex.reason_code + '</td>' +
+        '<td class="py-3 px-6 text-on-surface-variant">' + ex.label + '</td>' +
+        '<td class="py-3 px-6 text-on-surface text-right font-medium">' + ex.count + '</td>';
+      body.appendChild(tr);
+    });
+
+    // evidence case file: a real proven Razorpay line, else best attributed line
+    const items = (p.line_verdicts?.items) || [];
+    const proven = items.filter((it) => !it.abstained && it.reconciled && it.rail === 'razorpay_settlement');
+    const pick = (proven.sort((a, b) => b.confidence - a.confidence)[0]) ||
+                 items.filter((it) => !it.abstained).sort((a, b) => b.confidence - a.confidence)[0];
+    if (pick) {
+      $('ev-id').textContent = pick.item_id;
+      $('ev-explanation').textContent =
+        'Attributed to ' + (RAIL_LABEL[pick.rail] || pick.rail) +
+        (pick.reconciled ? ' and reconciled to the settlement report.' : '.');
+      $('ev-confidence').textContent = 'confidence ' + pick.confidence.toFixed(2);
+      $('ev-tier').textContent = 'TIER ' + String(pick.tier).toUpperCase();
+      $('ev-signals').innerHTML = (pick.signals || []).map((sig) =>
+        '<span class="px-2 py-1 bg-surface-container rounded text-[10px] font-data-tabular border border-outline-variant/40">' + sig + '</span>'
+      ).join('') || '<span class="text-on-surface-variant text-xs">no discrete signals</span>';
+    }
+
+    // ready to post (real reconciled totals + certificate status)
+    $('j-reconciled-count').textContent = (s.reconciled_count || 0) + ' credits';
+    $('j-reconciled-value').textContent = inr(s.reconciled_paise || 0);
+    $('j-gst').textContent = inr(s.fee_gst_recoverable_paise || 0);
+    const cs = p.certificate_status || {};
+    $('j-cert').textContent = (cs.status || 'unknown') + (cs.authenticated ? ' · signed' : ' · unsigned');
+  }
+  load();
+</script>
+
+<div hidden aria-hidden="true"></div>
+</body>
+</html>
