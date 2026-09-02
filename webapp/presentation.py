@@ -11,12 +11,13 @@ Guarantees:
 4. No client-supplied evaluation: operational runs always have `evaluation: null`. Sealed
    benchmarks are server-authenticated only.
 5. Strict schema validation & fail-closed error handling.
-6. Deterministic, bounded pagination.
+6. Deterministic, bounded pagination with global ordinal item IDs.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from typing import Any
 
@@ -92,8 +93,34 @@ def _validate_report_structure(report: dict[str, Any]) -> tuple[bool, str]:
         "fee_gst_recoverable_paise",
     )
     for field in required_totals:
-        if field not in totals or not isinstance(totals[field], int):
-            raise PresentationSchemaError(f"Report totals missing or non-integer field: {field}")
+        if field not in totals:
+            raise PresentationSchemaError(f"Report totals missing required field: {field}")
+        v = totals[field]
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise PresentationSchemaError(
+                f"Report totals field {field!r} is not an integer (got {type(v).__name__}: {v!r})"
+            )
+        if v < 0:
+            raise PresentationSchemaError(f"Report totals field {field!r} cannot be negative ({v})")
+
+    # Validate by_rail maps if present
+    if "by_rail_count" in totals:
+        if not isinstance(totals["by_rail_count"], dict):
+            raise PresentationSchemaError("Report totals 'by_rail_count' must be a dictionary")
+        for rk, rv in totals["by_rail_count"].items():
+            if isinstance(rv, bool) or not isinstance(rv, int) or rv < 0:
+                raise PresentationSchemaError(
+                    f"Report totals by_rail_count[{rk!r}] must be a non-negative integer"
+                )
+
+    if "by_rail_paise" in totals:
+        if not isinstance(totals["by_rail_paise"], dict):
+            raise PresentationSchemaError("Report totals 'by_rail_paise' must be a dictionary")
+        for rk, rv in totals["by_rail_paise"].items():
+            if isinstance(rv, bool) or not isinstance(rv, int) or rv < 0:
+                raise PresentationSchemaError(
+                    f"Report totals by_rail_paise[{rk!r}] must be a non-negative integer"
+                )
 
     config = report.get("config")
     if isinstance(config, dict) and "report_schema_version" in config:
@@ -234,16 +261,24 @@ def build_presentation_payload(
 
     # 1. Run Identity
     run_identity = {
-      "report_schema_version": report_schema_ver,
-      "engine_version": str(config.get("engine_version", "unknown")),
-      "audit_root": str(report.get("audit_root", "")),
-      "legacy": is_legacy,
+        "report_schema_version": report_schema_ver,
+        "engine_version": str(config.get("engine_version", "unknown")),
+        "audit_root": str(report.get("audit_root", "")),
+        "creator": "untangle.presentation",
+        "legacy": is_legacy,
     }
 
     # 2. Evidence Pack
     evidence_pack = _validate_evidence_pack(config, is_legacy)
 
-    # 3. Summary (exact integer paise from report totals)
+    # 3. Summary (exact integer paise from report totals; None if map is absent)
+    by_rail_paise = totals.get("by_rail_paise")
+    by_rail_count = totals.get("by_rail_count")
+
+    unresolved_paise: int | None = None
+    if isinstance(by_rail_paise, dict) and "razorpay_settlement" in by_rail_paise:
+        unresolved_paise = max(0, by_rail_paise["razorpay_settlement"] - totals["reconciled_paise"])
+
     summary = {
         "n_bank_lines": totals["n_bank_lines"],
         "total_credit_paise": total_credit_paise,
@@ -252,20 +287,23 @@ def build_presentation_payload(
         "reconciled_count": totals["reconciled_count"],
         "reconciled_paise": totals["reconciled_paise"],
         "unresolved_count": totals.get("unresolved_rzp_count", 0),
-        "unresolved_paise": max(0, totals.get("by_rail_paise", {}).get("razorpay_settlement", 0) - totals["reconciled_paise"]),
+        "unresolved_paise": unresolved_paise,
         "fee_gst_recoverable_paise": totals["fee_gst_recoverable_paise"],
         "exception_count": totals.get("exception_count", 0),
     }
 
     # 4. Rails breakdown (deterministic order: razorpay, other_gateway, direct_upi, cod, unrelated, UNKNOWN)
     rail_order = ("razorpay_settlement", "other_gateway", "direct_upi", "cod_remittance", "unrelated", "UNKNOWN")
-    by_rail_count = totals.get("by_rail_count", {})
-    by_rail_paise = totals.get("by_rail_paise", {})
     rails_list = []
     for r in rail_order:
-        cnt = by_rail_count.get(r, 0)
-        amt = by_rail_paise.get(r, 0)
-        bps = round((amt * 10000) / total_credit_paise) if total_credit_paise > 0 else 0
+        cnt = by_rail_count.get(r) if isinstance(by_rail_count, dict) else None
+        amt = by_rail_paise.get(r) if isinstance(by_rail_paise, dict) else None
+        bps: int | None = None
+        if amt is not None and total_credit_paise > 0:
+            bps = (amt * 10000 + total_credit_paise // 2) // total_credit_paise
+        elif amt is not None and total_credit_paise == 0:
+            bps = 0
+
         rails_list.append({
             "rail": r,
             "label": _rail_label(r),
@@ -281,18 +319,18 @@ def build_presentation_payload(
         for code, count in sorted(exc_by_reason.items(), key=lambda kv: (-kv[1], kv[0]))
     ]
 
-    # 6. Actionable Recovery Plan
+    # 6. Actionable Recovery Plan (mapped from true RecoveryAction.to_dict keys)
     rp = report.get("recovery_plan") or {}
     recovery_actions = []
     if isinstance(rp.get("actions"), list):
-        for act in sorted(rp["actions"], key=lambda a: (-a.get("amount_paise", 0), a.get("action_id", ""))):
+        for act in sorted(rp["actions"], key=lambda a: (-a.get("recoverable_paise", 0), a.get("action_type", ""))):
             recovery_actions.append({
-                "action_id": act.get("action_id", ""),
-                "title": act.get("title") or act.get("action_id", "").replace("_", " ").title(),
-                "amount_paise": act.get("amount_paise", 0),
-                "entity_count": act.get("entity_count", 0),
-                "severity": act.get("severity", "medium"),
-                "action_type": act.get("action_type", "action"),
+                "action_type": act.get("action_type", ""),
+                "description": act.get("description", ""),
+                "recoverable_paise": act.get("recoverable_paise", 0),
+                "debit_exposure_paise": act.get("debit_exposure_paise", 0),
+                "resolves_count": len(act.get("resolves", [])) if isinstance(act.get("resolves"), list) else 0,
+                "gain_per_cost": round(float(act.get("gain_per_cost", 0.0)), 4),
             })
 
     recovery = {
@@ -309,7 +347,6 @@ def build_presentation_payload(
         if isinstance(rec, dict) and rec.get("balanced", False)
     }
 
-    # Build internal list sorted deterministically by (amount_paise, rail, line_key)
     sorted_attributions = sorted(
         report.get("attributions", []),
         key=lambda a: (a.get("rail", ""), a.get("confidence", 0.0), a.get("line_key", "")),
@@ -370,24 +407,47 @@ def build_presentation_payload(
     }
 
 
-def build_sealed_evaluation_presentation(sealed_dir: str = "data/sealed") -> dict[str, Any]:
+def build_sealed_evaluation_presentation(
+    sealed_dir: str = "data/sealed",
+    *,
+    allow_compute_if_absent: bool = False,
+) -> dict[str, Any]:
     """Load and format the server-authenticated sealed holdout benchmark presentation.
 
     Fails closed if the sealed dataset or manifest is missing, corrupt, or unverified.
+    Never exposes raw filesystem paths.
     """
     manifest_path = os.path.join(sealed_dir, "manifest.json")
     if not os.path.exists(manifest_path):
-        raise PresentationSchemaError(f"Sealed manifest not found: {manifest_path}. Run eval.sealed first.")
+        raise PresentationSchemaError("Sealed evaluation manifest not found")
 
     # Authenticate manifest file
-    with open(manifest_path, "rb") as fh:
-        manifest_bytes = fh.read()
-    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+    try:
+        with open(manifest_path, "rb") as fh:
+            manifest_bytes = fh.read()
+        manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+        manifest_data = json.loads(manifest_bytes)
+    except Exception as exc:
+        raise PresentationSchemaError("Sealed evaluation manifest is invalid or unreadable") from exc
 
-    # Evaluate sealed holdout with strict manifest authentication
-    from eval.sealed import evaluate_sealed
+    if not isinstance(manifest_data, dict) or not isinstance(manifest_data.get("files"), dict):
+        raise PresentationSchemaError("Sealed evaluation manifest structure is invalid")
 
-    sealed_res = evaluate_sealed(sealed_dir)
+    report_path = os.path.join(sealed_dir, "sealed_report.json")
+    out_path = "out/sealed_report.json"
+
+    if os.path.exists(report_path):
+        with open(report_path, encoding="utf-8") as fh:
+            sealed_res = json.load(fh)
+    elif os.path.exists(out_path):
+        with open(out_path, encoding="utf-8") as fh:
+            sealed_res = json.load(fh)
+    elif allow_compute_if_absent:
+        from eval.sealed import evaluate_sealed
+
+        sealed_res = evaluate_sealed(sealed_dir, out_report=report_path)
+    else:
+        raise PresentationSchemaError("Precomputed sealed evaluation report not found")
 
     metrics = sealed_res.get("metrics")
     if not isinstance(metrics, dict) or "per_rail" not in metrics:

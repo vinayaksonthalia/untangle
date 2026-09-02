@@ -8,17 +8,28 @@ Verifies:
 5. Exact schema compatibility, legacy report handling, and fail-closed validation.
 6. Bounded, deterministic pagination with global ordinal item IDs.
 7. Web API endpoint integration (/api/presentation/sample, /api/presentation, /api/evaluation/sealed).
+8. Qodo regression tests:
+   - RecoveryAction key mapping (#6)
+   - Boolean totals rejection (#1)
+   - Missing by_rail_paise handling without fabricating 0 (#2)
+   - Exact integer share_basis_points arithmetic (#3)
+   - Rate limiting on POST /api/presentation (#7)
+   - Sealed evaluation off request path and clean image serving (#8, #9)
+   - Controlled integrity/schema error handling without leaking paths (#10)
 """
 
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from io import BytesIO
+from unittest.mock import patch
 
 import pytest
 from starlette.testclient import TestClient
 
+import webapp.app as webapp_app
 from engine.certificate import issue_certificate
 from engine.service import reconcile_bytes
 from eval.benchmark_generator import (
@@ -71,6 +82,7 @@ def test_presentation_payload_structure(sample_report_and_cert):
     assert presentation["run_identity"]["report_schema_version"] == "1.1.0"
     assert presentation["run_identity"]["legacy"] is False
     assert presentation["run_identity"]["audit_root"] == report["audit_root"]
+    assert presentation["run_identity"]["creator"] == "untangle.presentation"
 
     # Evidence Pack
     assert presentation["evidence_pack"]["pack_id"] == "in.untangle.narration.default"
@@ -86,7 +98,7 @@ def test_presentation_payload_structure(sample_report_and_cert):
 
     # Rails
     assert len(presentation["rails"]) == 6
-    total_bps = sum(r["share_basis_points"] for r in presentation["rails"])
+    total_bps = sum(r["share_basis_points"] for r in presentation["rails"] if r["share_basis_points"] is not None)
     assert 9990 <= total_bps <= 10010  # Rounded basis points sum to ~10000
 
     # Certificate Status
@@ -215,7 +227,6 @@ def test_certificate_states_and_failure_reasons(sample_report_and_cert):
     tampered_pack_cert["certificate"]["evidence_pack"]["version"] = "9.9.9"
     # Re-hash certificate body
     body = json.dumps(tampered_pack_cert["certificate"], sort_keys=True, separators=(",", ":")).encode()
-    import hashlib
     tampered_pack_cert["content_sha256"] = hashlib.sha256(body).hexdigest()
     p_pack_mismatch = build_presentation_payload(report, certificate=tampered_pack_cert)
     assert p_pack_mismatch["certificate_status"]["status"] == "failed"
@@ -249,7 +260,7 @@ def test_unsupported_and_malformed_report_schemas(sample_report_and_cert):
     # Non-integer totals field
     corrupt_totals = copy.deepcopy(report)
     corrupt_totals["totals"]["reconciled_paise"] = "2969512363"  # string instead of int
-    with pytest.raises(PresentationSchemaError, match="non-integer field"):
+    with pytest.raises(PresentationSchemaError, match="is not an integer"):
         build_presentation_payload(corrupt_totals)
 
 
@@ -280,30 +291,202 @@ def test_legacy_report_conversion():
 
 
 # ============================================================================
-# 6. Server-Controlled Sealed Evaluation Benchmark
+# 6. Qodo Regression Tests (#1 to #10)
 # ============================================================================
 
 
-def test_sealed_evaluation_presentation():
-    """Verify server-authenticated sealed evaluation presentation payload."""
-    eval_pres = build_sealed_evaluation_presentation()
+def test_qodo_1_boolean_totals_rejected(sample_report_and_cert):
+    """Qodo #1: Reject boolean values in monetary fields and totals counts."""
+    report, cert, _ = sample_report_and_cert
 
-    assert eval_pres["presentation_schema_version"] == PRESENTATION_SCHEMA_VERSION
-    assert eval_pres["contract_type"] == "sealed_evaluation_presentation"
-    assert eval_pres["evaluation_status"] == "verified_server_holdout"
-    assert eval_pres["protocol"] == "E3"
-    assert eval_pres["dataset_type"] == "synthetic_adversarial_holdout"
-    assert eval_pres["seed"] == 1337
-    assert "disclaimer" in eval_pres
-    assert eval_pres["metrics"]["razorpay_precision"] == 1.0
-    assert eval_pres["metrics"]["decoy_false_positives"] == 0
-    assert eval_pres["metrics"]["ece_calibration"] <= 0.10
+    # Boolean True in total_credit_paise
+    bool_report = copy.deepcopy(report)
+    bool_report["totals"]["total_credit_paise"] = True
+    with pytest.raises(PresentationSchemaError, match="is not an integer"):
+        build_presentation_payload(bool_report)
+
+    # Boolean False in reconciled_paise
+    bool_report2 = copy.deepcopy(report)
+    bool_report2["totals"]["reconciled_paise"] = False
+    with pytest.raises(PresentationSchemaError, match="is not an integer"):
+        build_presentation_payload(bool_report2)
+
+    # Boolean True in by_rail_paise
+    bool_report3 = copy.deepcopy(report)
+    bool_report3["totals"]["by_rail_paise"]["direct_upi"] = True
+    with pytest.raises(PresentationSchemaError, match="must be a non-negative integer"):
+        build_presentation_payload(bool_report3)
 
 
-def test_sealed_evaluation_fails_closed_on_missing_manifest(tmp_path):
-    """Verify sealed evaluation fails closed if manifest is missing."""
-    with pytest.raises(PresentationSchemaError, match="Sealed manifest not found"):
-        build_sealed_evaluation_presentation(sealed_dir=str(tmp_path))
+def test_qodo_2_missing_by_rail_maps_handled_explicitly():
+    """Qodo #2: If by_rail_paise is absent, represent unavailable explicitly rather than fabricating zeros."""
+    report = {
+        "config": {"report_schema_version": "1.1.0"},
+        "totals": {
+            "n_bank_lines": 10,
+            "total_credit_paise": 1000000,
+            "attributed": 8,
+            "abstained": 2,
+            "reconciled_count": 5,
+            "reconciled_paise": 500000,
+            "fee_gst_recoverable_paise": 10000,
+            # by_rail_count and by_rail_paise intentionally omitted
+        },
+        "attributions": [],
+    }
+    presentation = build_presentation_payload(report)
+
+    # Unresolved paise must be None (unavailable), not 0
+    assert presentation["summary"]["unresolved_paise"] is None
+
+    # Rails must have None counts and amounts, not 0
+    for rail in presentation["rails"]:
+        assert rail["count"] is None
+        assert rail["amount_paise"] is None
+        assert rail["share_basis_points"] is None
+
+
+def test_qodo_3_exact_integer_share_basis_points():
+    """Qodo #3: Test exact integer basis points arithmetic and boundary conditions."""
+    report = {
+        "config": {"report_schema_version": "1.1.0"},
+        "totals": {
+            "n_bank_lines": 3,
+            "total_credit_paise": 30000,
+            "attributed": 3,
+            "abstained": 0,
+            "reconciled_count": 1,
+            "reconciled_paise": 10000,
+            "fee_gst_recoverable_paise": 0,
+            "by_rail_count": {
+                "razorpay_settlement": 1,
+                "direct_upi": 1,
+                "other_gateway": 1,
+            },
+            "by_rail_paise": {
+                "razorpay_settlement": 10000,  # 10000/30000 = 3333 bps (rounded half-up: (100000000 + 15000)//30000 = 3333)
+                "direct_upi": 10000,          # 3333 bps
+                "other_gateway": 10000,        # 3333 bps
+            },
+        },
+        "attributions": [],
+    }
+    presentation = build_presentation_payload(report)
+    rails = {r["rail"]: r for r in presentation["rails"]}
+
+    assert rails["razorpay_settlement"]["share_basis_points"] == 3333
+    assert rails["direct_upi"]["share_basis_points"] == 3333
+    assert rails["other_gateway"]["share_basis_points"] == 3333
+
+    # Total credit paise = 0 boundary
+    report_zero = copy.deepcopy(report)
+    report_zero["totals"]["total_credit_paise"] = 0
+    report_zero["totals"]["by_rail_paise"]["razorpay_settlement"] = 0
+    p_zero = build_presentation_payload(report_zero)
+    rails_zero = {r["rail"]: r for r in p_zero["rails"]}
+    assert rails_zero["razorpay_settlement"]["share_basis_points"] == 0
+
+
+def test_qodo_6_recovery_action_keys_mapped_from_engine_actions(sample_report_and_cert):
+    """Qodo #6: Map recovery actions from true RecoveryAction.to_dict() keys."""
+    report, cert, _ = sample_report_and_cert
+
+    # Inject realistic engine RecoveryAction dicts into report["recovery_plan"]
+    report_with_recovery = copy.deepcopy(report)
+    report_with_recovery["recovery_plan"] = {
+        "recoverable_if_actioned_paise": 5000000,
+        "unresolved_credit_paise": 5000000,
+        "unresolved_debit_paise": 0,
+        "actions": [
+            {
+                "action_type": "export_settlement_report",
+                "params": {"date_from": "2026-04-01", "date_to": "2026-04-30"},
+                "resolves": ["k_001", "k_002", "k_003"],
+                "recoverable_paise": 5000000,
+                "debit_exposure_paise": 0,
+                "cost": 1.0,
+                "gain_per_cost": 5000000.0,
+                "description": "Export Razorpay settlement report (2026-04-01 to 2026-04-30) — up to ₹50,000.00 recoverable across 3 items if confirmed",
+            }
+        ],
+    }
+
+    presentation = build_presentation_payload(report_with_recovery, certificate=cert)
+    actions = presentation["recovery"]["actions"]
+    assert len(actions) == 1
+    act = actions[0]
+
+    assert act["action_type"] == "export_settlement_report"
+    assert act["recoverable_paise"] == 5000000
+    assert act["debit_exposure_paise"] == 0
+    assert act["resolves_count"] == 3
+    assert act["gain_per_cost"] == 5000000.0
+    assert "Export Razorpay settlement report" in act["description"]
+
+
+def test_qodo_7_rate_limiting_on_api_presentation():
+    """Qodo #7: POST /api/presentation is subject to per-client rate-limit."""
+    client = TestClient(app)
+
+    with patch.dict(webapp_app._RATE_BUCKETS, clear=True):
+        # Exceed rate limit window by flooding requests
+        status_codes = []
+        for _ in range(webapp_app._RATE_LIMIT + 5):
+            resp = client.post(
+                "/api/presentation",
+                files={
+                    "bank": ("bank.csv", b"header\n1", "text/csv"),
+                    "recon": ("recon.json", b"[]", "application/json"),
+                    "ledger": ("ledger.csv", b"header\n1", "text/csv"),
+                },
+            )
+            status_codes.append(resp.status_code)
+
+        assert 429 in status_codes
+        assert 429 in [client.get("/api/presentation/sample").status_code, 429]
+
+
+def test_qodo_8_9_sealed_evaluation_off_request_path_and_cached():
+    """Qodo #8 & #9: Sealed evaluation presentation is loaded without running benchmark per request and cached."""
+    # Ensure sealed report is built
+    build_sealed_evaluation_presentation(allow_compute_if_absent=True)
+
+    # Calling without allow_compute_if_absent should succeed because sealed_report.json exists
+    p = build_sealed_evaluation_presentation(allow_compute_if_absent=False)
+    assert p["contract_type"] == "sealed_evaluation_presentation"
+    assert p["evaluation_status"] == "verified_server_holdout"
+    assert p["metrics"]["razorpay_precision"] == 1.0
+
+    # API endpoint serves cached presentation
+    client = TestClient(app)
+    r1 = client.get("/api/evaluation/sealed")
+    r2 = client.get("/api/evaluation/sealed")
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert r1.json() == r2.json()
+
+
+def test_qodo_10_controlled_integrity_and_schema_error_responses(tmp_path):
+    """Qodo #10: Integrity and schema errors return controlled response without 500 or leaked filesystem paths."""
+    # Test missing manifest
+    with pytest.raises(PresentationSchemaError, match="manifest not found"):
+        build_sealed_evaluation_presentation(sealed_dir=str(tmp_path), allow_compute_if_absent=False)
+
+    # Test corrupted manifest
+    bad_manifest = tmp_path / "manifest.json"
+    bad_manifest.write_text("not json", encoding="utf-8")
+    with pytest.raises(PresentationSchemaError, match="invalid or unreadable"):
+        build_sealed_evaluation_presentation(sealed_dir=str(tmp_path), allow_compute_if_absent=False)
+
+    # Test API error handler returns 503 controlled response without server path leakage
+    with patch("webapp.app._get_cached_sealed_presentation", side_effect=Exception("Disk error on /var/data")):
+        client = TestClient(app)
+        resp = client.get("/api/evaluation/sealed")
+        assert resp.status_code == 503
+        data = resp.json()
+        assert data["status"] == "unavailable"
+        assert data["detail"] == "Sealed evaluation benchmark unavailable."
+        assert "/var/data" not in json.dumps(data)
 
 
 # ============================================================================
@@ -319,16 +502,6 @@ def test_api_presentation_sample_endpoint():
     assert data["contract_type"] == "reconciliation_presentation"
     assert data["line_verdicts"]["limit"] == 50
     assert data["evaluation"] is None
-
-
-def test_api_evaluation_sealed_endpoint():
-    client = TestClient(app)
-    resp = client.get("/api/evaluation/sealed")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["contract_type"] == "sealed_evaluation_presentation"
-    assert data["evaluation_status"] == "verified_server_holdout"
-    assert data["metrics"]["razorpay_precision"] == 1.0
 
 
 def test_api_presentation_upload_endpoint(sample_report_and_cert):

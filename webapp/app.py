@@ -267,7 +267,7 @@ async def safety_middleware(request: Request, call_next):
         )
         return response
 
-    if request.url.path in {"/reconcile", "/api/reconcile", "/api/verify"}:
+    if request.url.path in {"/reconcile", "/api/reconcile", "/api/presentation", "/api/verify"}:
         client = request.client.host if request.client else "unknown"
         now = time.monotonic()
         with _RATE_LOCK:
@@ -756,15 +756,34 @@ async def api_presentation(
     return JSONResponse(presentation)
 
 
+_SEALED_CACHE: dict | None = None
+_SEALED_LOCK = threading.Lock()
+
+
+def _get_cached_sealed_presentation() -> dict:
+    global _SEALED_CACHE
+    if _SEALED_CACHE is not None:
+        return _SEALED_CACHE
+    with _SEALED_LOCK:
+        if _SEALED_CACHE is not None:
+            return _SEALED_CACHE
+        from webapp.presentation import build_sealed_evaluation_presentation
+
+        _SEALED_CACHE = build_sealed_evaluation_presentation(allow_compute_if_absent=True)
+        return _SEALED_CACHE
+
+
 @app.get("/api/evaluation/sealed")
 def api_evaluation_sealed() -> JSONResponse:
     """Server-authenticated sealed holdout benchmark presentation (read-only, E3 protocol)."""
-    from webapp.presentation import PresentationSchemaError, build_sealed_evaluation_presentation
-
     try:
-        eval_payload = build_sealed_evaluation_presentation()
-    except PresentationSchemaError as exc:
-        raise HTTPException(404, f"Sealed evaluation benchmark unavailable: {exc}") from exc
+        eval_payload = _get_cached_sealed_presentation()
+    except Exception as exc:
+        _LOG.warning("Sealed evaluation benchmark unavailable: %s", exc)
+        return JSONResponse(
+            {"status": "unavailable", "detail": "Sealed evaluation benchmark unavailable."},
+            status_code=503,
+        )
     return JSONResponse(eval_payload)
 
 
