@@ -43,3 +43,8 @@ def verify_page() -> str:
 def dashboard_page() -> str:
     """Return the pre-built dashboard (its JS fetches live figures from /api/presentation)."""
     return _load_template("dashboard.html")
+
+
+def investigate_page() -> str:
+    """Return the investigate screen (its JS fetches cases from /api/investigations/sample)."""
+    return _load_template("investigate.html")

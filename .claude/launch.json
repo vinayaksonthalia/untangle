@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "untangle-web",
+      "runtimeExecutable": ".venv-test/bin/uvicorn",
+      "runtimeArgs": ["webapp.app:app", "--port", "8011"],
+      "port": 8011
+    }
+  ]
+}
