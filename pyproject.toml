@@ -2,6 +2,7 @@
 name = "untangle"
 version = "0.1.0"
 description = "Multi-rail bank-credit attribution & Razorpay-slice reconciliation engine"
+license = {file = "LICENSE"}
 requires-python = ">=3.12"
 # stdlib-first. Runtime has NO third-party dependencies.
 # Test/dev tooling only:

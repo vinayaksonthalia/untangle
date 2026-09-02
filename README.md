@@ -17,7 +17,7 @@ proves every verdict, and hands you a balanced journal entry ready to post to Ta
 ![abstains](https://img.shields.io/badge/abstains-never_guesses-b4720a)
 ![python](https://img.shields.io/badge/python-3.12-3776ab)
 ![FastAPI](https://img.shields.io/badge/FastAPI-web_+_API-009688)
-![license](https://img.shields.io/badge/license-MIT-8957e5)
+![license](https://img.shields.io/badge/license-Apache--2.0-8957e5)
 
 </div>
 
@@ -259,4 +259,7 @@ python3 -m generator.generate --seed 42 --scale 1.0 --out data
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution.
+
+Contributions are welcome. Read the [contributing guide](CONTRIBUTING.md),
+[Code of Conduct](CODE_OF_CONDUCT.md), and [security policy](SECURITY.md) before participating.
