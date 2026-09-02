@@ -203,7 +203,11 @@ def resolve_pack_provenance(value: Any) -> NarrationEvidencePack:
         raise PackError("Invalid evidence-pack provenance shape")
     if not all(isinstance(value[k], str) for k in ("pack_id", "version", "schema_version", "description")):
         raise PackError("Evidence-pack provenance fields must be strings")
-    pack = get_pack(f"{value['pack_id']}@{value['version']}")
+    # Persisted identity is canonical data, not a user selector: do not strip, normalize,
+    # or otherwise reinterpret any field before registry lookup.
+    pack = PACK_REGISTRY.get((value["pack_id"], value["version"]))
+    if pack is None:
+        raise PackError("Unknown or non-canonical evidence-pack identity")
     if value["schema_version"] != pack.schema_version:
         raise PackError("Evidence-pack schema version does not match registry")
     if value["description"] != pack.description:
