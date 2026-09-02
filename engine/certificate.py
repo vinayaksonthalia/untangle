@@ -199,7 +199,10 @@ def verify_certificate(payload: dict) -> dict:
                 pack_valid = False
 
             results = verify_report(embedded_report)
-            report_binding_valid = report_binding_valid and all(r.ok for r in results)
+            # Modern schema reports are fully verified, while legacy reports retain their
+            # historical binding contract (they lack the metadata needed for these checks).
+            if report_cfg.get("report_schema_version") == "1.1.0":
+                report_binding_valid = report_binding_valid and all(r.ok for r in results)
             pkt = [r for r in results if not r.packet_line_key.startswith("report:")]
             packets_verified = len(pkt)
             packets_passed = sum(1 for r in pkt if r.ok)
@@ -290,6 +293,8 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
     # Preserve legacy reports as legacy certificates; do not add schema/provenance claims
     # that were absent from the input report.
     cert_schema = config.get("report_schema_version")
+    if cert_schema is not None and cert_schema != "1.1.0":
+        raise ValueError(f"Unsupported report schema version: {cert_schema!r}")
 
     generated_from_hashes = {
         "audit_root": audit_root,

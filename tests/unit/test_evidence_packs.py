@@ -298,6 +298,12 @@ def test_schema_1_1_report_and_certificate_provenance():
     assert v_cert["evidence_pack_valid"] is True
 
 
+def test_certificate_rejects_unknown_declared_report_schema():
+    """Certificate generation must not silently bless future/unsupported schemas."""
+    with pytest.raises(ValueError, match="Unsupported report schema version"):
+        build_close_certificate({"config": {"report_schema_version": "9.9.9"}, "totals": {}})
+
+
 def test_certificate_fails_on_evidence_pack_mismatch():
     """Verify certificate verification fails if attached report has mismatched evidence pack."""
     cfg = build_config(no_ai=True, provider=None, model=None, threshold=0.55, seed=42)
