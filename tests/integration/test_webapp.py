@@ -27,7 +27,7 @@ def _files(**over):
 
 
 def test_pages_render():
-    for path, marker in [("/", "what every bank credit is"), ("/app", "Drop your three files"),
+    for path, marker in [("/", "with proof, not guesses."), ("/app", "Drop your three files"),
                          ("/try-sample", "Exception queue")]:
         r = client.get(path)
         assert r.status_code == 200 and marker in r.text, path

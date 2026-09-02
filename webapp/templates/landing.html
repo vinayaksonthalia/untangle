@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>untangle — attribution-first Razorpay reconciliation</title>
+<meta name="description" content="untangle reconciles bank credits to Razorpay settlements to the paise, proves every verdict, abstains rather than guess, and hands you a balanced Tally-ready journal."/>
+<link rel="stylesheet" href="/static/landing.css"/>
+<style>
+    html, body { margin: 0; padding: 0; }
+    body { overscroll-behavior: none; }
+    main > :first-child { margin-top: 0 !important; }
+    ::-webkit-scrollbar { display: none; }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .animate-fade-rise { animation: fadeRise 0.8s cubic-bezier(0.22,1,0.36,1) forwards; opacity: 0; transform: translateY(12px); }
+      @keyframes fadeRise { to { opacity: 1; transform: translateY(0); } }
+      .delay-0{animation-delay:0ms}.delay-70{animation-delay:70ms}.delay-140{animation-delay:140ms}
+      .delay-210{animation-delay:210ms}.delay-280{animation-delay:280ms}.delay-350{animation-delay:350ms}
+      .delay-420{animation-delay:420ms}.delay-490{animation-delay:490ms}
+    }
+    .tooltip-trigger { position: relative; cursor: help; border-bottom: 1px dotted currentColor; }
+    .tooltip-trigger:hover::after { content: attr(data-tooltip); position: absolute; bottom: 100%; left: 50%;
+      transform: translateX(-50%) translateY(-8px); background:#0f172a; color:#fff; padding:6px 10px;
+      border-radius:4px; font-size:12px; white-space:nowrap; z-index:50; pointer-events:none; font-family:'Inter',sans-serif;
+      box-shadow:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -1px rgba(0,0,0,.06); }
+    .tooltip-trigger:hover::before { content:''; position:absolute; bottom:100%; left:50%;
+      transform:translateX(-50%) translateY(-2px); border-width:6px 6px 0; border-style:solid;
+      border-color:#0f172a transparent transparent transparent; z-index:50; }
+    .accordion-content { transition: max-height .4s ease-in-out, opacity .3s ease-in-out, padding .3s ease-in-out;
+      max-height:0; opacity:0; overflow:hidden; padding-top:0; padding-bottom:0; }
+    .accordion-content.open { max-height:800px; opacity:1; padding-top:1rem; padding-bottom:1.5rem; }
+    .accordion-icon { transition: transform .3s ease-in-out; }
+    .accordion-icon.open { transform: rotate(180deg); }
+    @keyframes dash { to { stroke-dashoffset:-100; } }
+    .animate-\[dash_20s_linear_infinite\]{animation:dash 20s linear infinite}
+    .animate-\[dash_15s_linear_infinite_reverse\]{animation:dash 15s linear infinite reverse}
+    .perspective-1000{perspective:1000px}
+    .rotate-y-\[-5deg\]{transform:rotateY(-5deg)}
+    .rotate-x-\[2deg\]{transform:rotateX(2deg)}
+    .hover\:rotate-y-0:hover{transform:rotateY(0) rotateX(0)}
+    :focus-visible { outline: 2px solid #0f172a; outline-offset: 2px; }
+</style>
+</head>
+<body class="bg-background font-body-md text-on-background">
+<header class="sticky top-0 z-50 w-full bg-surface-container-lowest/90 backdrop-blur-xl border-b border-outline-variant">
+<div class="max-w-[1400px] mx-auto px-container-padding h-16 flex items-center justify-between gap-4">
+<a href="/" class="font-headline-md text-headline-md tracking-tight" aria-label="untangle — home"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></a>
+<nav aria-label="Primary" class="hidden md:flex items-center gap-8 font-body-md text-on-surface-variant">
+<a class="hover:text-on-surface transition-colors" href="#how">How it works</a>
+<a class="hover:text-on-surface transition-colors" href="#evidence">Evidence</a>
+<a class="hover:text-on-surface transition-colors" href="#faq">FAQ</a>
+<a class="hover:text-on-surface transition-colors" href="/verify">Verify</a>
+</nav>
+<div class="flex items-center gap-3">
+<a href="/app" class="hidden sm:inline-flex h-10 items-center px-4 bg-surface text-primary border border-outline-variant font-data-tabular text-data-tabular rounded hover:bg-surface-container-low transition-colors">Upload files</a>
+<a href="/try-sample" class="inline-flex h-10 items-center px-4 bg-primary text-on-primary font-data-tabular text-data-tabular rounded hover:bg-audit-blue transition-colors shadow-sm">Try sample</a>
+</div>
+</div>
+</header>
+<main>
+<div class="relative overflow-hidden bg-background">
+<!-- Interactive Background Particles -->
+<div class="absolute inset-0 pointer-events-none z-0 opacity-40 mix-blend-multiply" id="particle-canvas-container"></div>
+<!-- Hero Section -->
+<section class="relative z-10 w-full min-h-[870px] flex flex-col justify-center px-container-padding py-24 overflow-hidden">
+<div class="max-w-[1400px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-gutter items-center">
+<!-- Typography & CTA -->
+<div class="col-span-1 lg:col-span-6 flex flex-col items-start justify-center gap-8 pr-0 lg:pr-12 relative z-20">
+<div class="inline-flex items-center gap-3 px-4 py-2 bg-surface-container-low rounded-full border border-outline-variant shadow-sm backdrop-blur-md animate-fade-rise delay-0">
+<span class="w-2.5 h-2.5 rounded-full bg-evidence-green animate-pulse"></span>
+<span class="font-label-caps text-label-caps text-on-surface tracking-widest uppercase">System Operational</span>
+</div>
+<h1 class="font-display-lg text-[64px] leading-[72px] tracking-tight text-on-surface m-0 relative animate-fade-rise delay-70">
+<span class="block text-surface-tint font-headline-md text-headline-md mb-4 uppercase tracking-[0.1em] text-opacity-80">Untangle Reconciliation</span>
+          Close your Razorpay settlement books — <br/>
+<span class="relative inline-block text-on-surface-variant overflow-hidden group">
+<span class="relative z-10 text-primary mix-blend-exclusion">with proof, not guesses.</span>
+<span class="absolute bottom-1 left-0 w-full h-3 bg-evidence-green opacity-60 z-0 transform origin-left scale-x-0 group-hover:scale-x-100 transition-transform duration-700 ease-out"></span>
+</span>
+</h1>
+<p class="font-title-sm text-title-sm text-on-surface-variant max-w-xl animate-fade-rise delay-140">
+          untangle is an agent that closes one finance-ops loop across a 50+ record batch: it reconciles your bank credits to Razorpay settlements to the paise, reports its match rate and the exceptions it refuses to guess, proves every verdict, and hands you a balanced journal entry ready to post to Tally.
+        </p>
+<div class="flex flex-col w-full gap-4 mt-4 animate-fade-rise delay-210">
+<div class="flex flex-wrap items-center gap-4">
+<a href="/try-sample" role="button" class="inline-flex items-center justify-center h-row-height-standard px-8 bg-primary text-on-primary font-data-tabular text-data-tabular rounded hover:bg-audit-blue transition-all duration-300 ease-out shadow-md hover:shadow-xl hover:-translate-y-0.5 active:scale-[0.98] active:shadow-sm focus-visible:ring-2 focus-visible:ring-audit-blue focus-visible:ring-offset-2 relative overflow-hidden group">
+<span class="relative z-10 flex items-center gap-2">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[18px]"><path d="M280-280h160v-160H280v160Zm240 0h160v-160H520v160ZM280-520h160v-160H280v160Zm240 0h160v-160H520v160ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg>
+              Try with sample data
+            </span>
+<div class="absolute inset-0 bg-white/20 transform -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out z-0"></div>
+</a>
+<a href="/app" role="button" class="h-row-height-standard px-8 bg-surface text-primary border border-outline-variant font-data-tabular text-data-tabular rounded hover:bg-surface-container-low transition-all duration-300 ease-out shadow-sm hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-audit-blue focus-visible:ring-offset-2 flex items-center gap-2">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[18px]"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg>
+            Upload your files
+          </a>
+</div>
+<div class="font-data-tabular text-[12px] text-on-surface-variant opacity-80 mt-2">
+            sealed-benchmark precision ≥ 0.999 · abstains rather than guessing · every verdict independently verifiable
+          </div>
+</div>
+</div>
+<!-- Hero Visual: Evidence Case File Preview -->
+<div class="col-span-1 lg:col-span-6 relative z-10 mt-16 lg:mt-0 perspective-1000 animate-fade-rise delay-280 flex flex-col items-center">
+<div class="relative w-full aspect-square md:aspect-[4/3] rounded-xl bg-surface shadow-2xl border border-outline-variant overflow-hidden transform rotate-y-[-5deg] rotate-x-[2deg] hover:rotate-y-0 hover:rotate-x-0 transition-transform duration-1000 ease-out flex flex-col ring-1 ring-black/5 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.25)]">
+<!-- Browser Window Chrome -->
+<div class="h-8 bg-surface-container-lowest border-b border-outline-variant flex items-center px-4 gap-2 flex-shrink-0">
+<div class="flex gap-1.5">
+<div class="w-2.5 h-2.5 rounded-full bg-error/80"></div>
+<div class="w-2.5 h-2.5 rounded-full bg-amber/80"></div>
+<div class="w-2.5 h-2.5 rounded-full bg-evidence-green/80"></div>
+</div>
+<div class="flex-1 text-center">
+<div class="inline-block px-4 py-0.5 bg-surface-container-low rounded-md text-[10px] font-data-tabular text-on-surface-variant opacity-70">untangle-reconciliation.app</div>
+</div>
+</div>
+<div class="flex-1 flex flex-col p-6 gap-4 bg-surface relative overflow-hidden">
+<!-- Mock Window Header -->
+<div class="flex justify-between items-center pb-4 border-b border-outline-variant/50 relative z-10">
+<div class="font-label-caps text-label-caps text-on-surface-variant bg-surface-container-low px-3 py-1 rounded">EVIDENCE CASE FILE: TX-8829-A</div>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant"><path d="M440-280h80v-240h-80v240Zm68.5-331.5Q520-623 520-640t-11.5-28.5Q497-680 480-680t-28.5 11.5Q440-657 440-640t11.5 28.5Q463-600 480-600t28.5-11.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
+</div>
+<!-- Mock Data Content -->
+<div class="flex-1 flex gap-4 overflow-hidden relative z-10">
+<!-- Left: Provenance Bar & Meta -->
+<div class="w-1/3 flex flex-col gap-4 border-r border-outline-variant/30 pr-4">
+<div class="w-full h-24 bg-surface-container-low rounded border-l-4 border-evidence-green flex flex-col justify-center px-4 relative overflow-hidden transition-all hover:bg-surface-container">
+<div class="absolute right-[-10px] top-[-10px] opacity-10">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[64px] text-evidence-green"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Zm34-102 102-44 104 44 56-96 110-26-10-112 74-84-74-86 10-112-110-24-58-96-102 44-104-44-56 96-110 24 10 112-74 86 74 84-10 114 110 24 58 96Zm102-318Zm-42 142 226-226-56-58-170 170-86-84-56 56 142 142Z"/></svg>
+</div>
+<span class="font-label-caps text-[10px] text-on-surface-variant mb-1">INTEGRITY STATUS</span>
+<span class="font-data-tabular text-data-tabular text-evidence-green font-semibold">100% MATCHED</span>
+</div>
+<div class="space-y-3 mt-2">
+<div>
+<span class="block font-label-caps text-[10px] text-outline">SOURCE CREDITS</span>
+<span class="block font-data-tabular text-sm text-on-surface">Razorpay Settlement</span>
+<span class="block font-label-caps text-[11px] text-on-surface-variant mt-0.5 font-mono">ID: RZ_8892110X</span>
+</div>
+<div>
+<span class="block font-label-caps text-[10px] text-outline">BANK STATEMENT</span>
+<span class="block font-data-tabular text-sm text-on-surface">HDFC Current *4421</span>
+<span class="block font-label-caps text-[11px] text-on-surface-variant mt-0.5 font-mono">REF: NEFT-HDFC-992</span>
+</div>
+</div>
+</div>
+<!-- Right: Ledger -->
+<div class="w-2/3 flex flex-col gap-2">
+<!-- Headers -->
+<div class="grid grid-cols-4 gap-2 pb-2 border-b border-outline-variant/30 px-2">
+<span class="col-span-2 font-label-caps text-[10px] text-outline">PARTICULARS</span>
+<span class="font-label-caps text-[10px] text-outline text-right">DEBIT</span>
+<span class="font-label-caps text-[10px] text-outline text-right">CREDIT</span>
+</div>
+<!-- Rows -->
+<div class="flex flex-col gap-1">
+<div class="grid grid-cols-4 gap-2 p-2 hover:bg-surface-container-low rounded transition-colors duration-200 group cursor-default">
+<span class="col-span-2 font-body-sm text-on-surface font-data-tabular truncate">Gross Settlement</span>
+<span class="font-data-tabular text-sm text-on-surface-variant text-right">-</span>
+<span class="font-data-tabular text-sm text-on-surface text-right">₹ 1,45,000</span>
+</div>
+<div class="grid grid-cols-4 gap-2 p-2 hover:bg-surface-container-low rounded transition-colors duration-200 group cursor-default">
+<span class="col-span-2 font-body-sm text-on-surface font-data-tabular truncate">Gateway Fee (1.5%)</span>
+<span class="font-data-tabular text-sm text-on-surface text-right">₹ 2,175</span>
+<span class="font-data-tabular text-sm text-on-surface-variant text-right">-</span>
+</div>
+<div class="grid grid-cols-4 gap-2 p-2 hover:bg-surface-container-low rounded transition-colors duration-200 group cursor-default bg-surface-container-highest/30">
+<div class="col-span-2 flex items-center gap-1">
+<span class="font-body-sm text-on-surface font-data-tabular truncate">IGST on Fee (18%)</span>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px] text-amber"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg>
+</div>
+<span class="font-data-tabular text-sm text-on-surface text-right">₹ 391</span>
+<span class="font-data-tabular text-sm text-on-surface-variant text-right">-</span>
+</div>
+</div>
+<div class="mt-auto border-t border-outline-variant/50 pt-3 grid grid-cols-4 gap-2 px-2">
+<span class="col-span-2 font-data-tabular text-sm text-on-surface font-bold">NET BANK CREDIT</span>
+<span class="font-data-tabular text-sm text-on-surface-variant text-right">-</span>
+<span class="font-data-tabular text-sm text-evidence-green font-bold text-right">₹ 1,42,434</span>
+</div>
+</div>
+</div>
+<!-- Decorative UI elements -->
+<div class="absolute -right-12 -bottom-12 w-64 h-64 bg-evidence-green/10 blur-[80px] rounded-full z-0 pointer-events-none"></div>
+</div>
+</div>
+<div class="mt-6 font-data-tabular text-[12px] text-on-surface-variant flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-evidence-green"></span>
+  Example run — 91 of 103 matched, exceptions surfaced
+</div>
+</div>
+</div>
+</section>
+<!-- Features Bento Grid -->
+<section class="w-full px-container-padding py-24 bg-surface-bright relative z-10">
+<div class="max-w-[1400px] mx-auto">
+<div class="mb-16 max-w-2xl relative animate-fade-rise delay-0">
+<!-- Vertical Accent -->
+<div class="absolute -left-8 top-2 bottom-2 w-1 bg-gradient-to-b from-audit-blue via-audit-blue/50 to-transparent"></div>
+<h2 class="font-display-lg text-[40px] leading-[48px] text-on-surface">Why It Matters</h2>
+<p class="font-body-md text-on-surface-variant mt-4">Automated integrity for forensic accountants and financial controllers.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-gutter">
+<!-- Feature 1: Certainty (Spans 8 cols) -->
+<div class="col-span-1 md:col-span-2 lg:col-span-8 bg-surface rounded-xl border border-outline-variant p-8 shadow-sm transition-all duration-300 ease-out hover:shadow-md hover:-translate-y-[2px] relative overflow-hidden group animate-fade-rise delay-70">
+<div class="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110 duration-700 ease-out">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[120px] text-audit-blue"><path d="M520-520h278q-15-110-91.5-186.5T520-798v278Zm-80 358v-636q-121 15-200.5 105.5T160-480q0 122 79.5 212.5T440-162Zm80 0q110-14 187-91t91-187H520v278Zm-40-318Zm0 400q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 155.5 31.5t127 86q54.5 54.5 86 127T880-480q0 82-31.5 155T763-197.5q-54 54.5-127 86T480-80Z"/></svg>
+</div>
+<div class="w-12 h-12 bg-primary-fixed rounded flex items-center justify-center mb-6 border border-primary/10 transition-transform duration-300 group-hover:scale-105">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-audit-blue text-[24px]"><path d="M520-520h278q-15-110-91.5-186.5T520-798v278Zm-80 358v-636q-121 15-200.5 105.5T160-480q0 122 79.5 212.5T440-162Zm80 0q110-14 187-91t91-187H520v278Zm-40-318Zm0 400q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 155.5 31.5t127 86q54.5 54.5 86 127T880-480q0 82-31.5 155T763-197.5q-54 54.5-127 86T480-80Z"/></svg>
+</div>
+<h3 class="font-title-sm text-[24px] text-on-surface mb-3">The 5% that eats 80% of the work</h3>
+<p class="font-body-md text-on-surface-variant max-w-md mb-8">
+            60–75% of settlement lines auto-match on day one. It's the mangled UTRs, split settlements, and cross-cycle refunds — barely 1–4% of lines — that consume 70–80% of a finance team's time. untangle is built for that slice.
+          </p>
+<!-- Abstract Visualization: Data connecting -->
+<div class="w-full h-32 bg-surface-container-low rounded border border-outline-variant/50 relative overflow-hidden flex items-center px-8 group-hover:border-outline-variant transition-colors duration-300">
+<!-- SVG Connection Graphic -->
+<svg class="w-full h-full absolute inset-0 text-outline-variant/30" preserveaspectratio="none" viewbox="0 0 400 100">
+<path class="animate-[dash_20s_linear_infinite]" d="M 50 50 C 150 50, 150 20, 200 20 S 250 80, 350 80" fill="none" stroke="currentColor" stroke-dasharray="4 4" stroke-width="2"></path>
+<path class="animate-[dash_15s_linear_infinite_reverse]" d="M 50 50 C 150 50, 150 80, 200 80 S 250 20, 350 20" fill="none" stroke="currentColor" stroke-dasharray="4 4" stroke-width="2"></path>
+</svg>
+<div class="relative z-10 flex w-full justify-between items-center">
+<div class="px-4 py-2 bg-surface rounded shadow-sm border border-outline-variant/50 font-label-caps text-[10px]">RAW SETTLEMENT</div>
+<div class="w-8 h-8 rounded-full bg-evidence-green flex items-center justify-center shadow-md animate-pulse">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px] text-on-primary"><path d="M268-240 42-466l57-56 170 170 56 56-57 56Zm226 0L268-466l56-57 170 170 368-368 56 57-424 424Zm0-226-57-56 198-198 57 56-198 198Z"/></svg>
+</div>
+<div class="px-4 py-2 bg-surface rounded shadow-sm border border-outline-variant/50 font-label-caps text-[10px]">BANK CREDIT</div>
+</div>
+</div>
+</div>
+<!-- Feature 2: Tax Recovery (Spans 4 cols) -->
+<div class="col-span-1 md:col-span-1 lg:col-span-4 bg-audit-blue text-white rounded-xl p-8 shadow-sm transition-all duration-300 ease-out hover:shadow-md hover:-translate-y-[2px] relative overflow-hidden group animate-fade-rise delay-140">
+<!-- Ambient Glow -->
+<div class="absolute -top-24 -right-24 w-64 h-64 bg-audit-blue/20 blur-[60px] rounded-full"></div>
+<div class="w-12 h-12 bg-white/10 rounded flex items-center justify-center mb-6 backdrop-blur-sm border border-white/10 transition-transform duration-300 group-hover:scale-105">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-white text-[24px]"><path d="M549-120 280-400v-80h140q53 0 91.5-34.5T558-600H240v-80h306q-17-35-50.5-57.5T420-760H240v-80h480v80H590q14 17 25 37t17 43h88v80h-81q-8 85-70 142.5T420-400h-29l269 280H549Z"/></svg>
+</div>
+<h3 class="font-title-sm text-[24px] text-white mb-3">See the GST you were charged</h3>
+<p class="font-body-md text-white/80 mb-6">
+            Every reconciled gateway fee reports the <span class="tooltip-trigger" data-tooltip="Input tax credit — reclaimable subject to your GST eligibility">GST it was charged</span> (whatever the settlement records — it may be zero), surfaced per transaction as a schedule you can review for input-tax-credit you may be able to reclaim.
+          </p>
+<div class="mt-auto p-4 bg-black/20 rounded border border-white/10 flex items-center justify-between transition-colors duration-300 group-hover:bg-black/30">
+<div>
+<span class="block font-label-caps text-[10px] text-gray-300">EXAMPLE RUN · GST ON FEES</span>
+<span class="block font-data-tabular text-[20px] text-white font-bold mt-1">₹12,450</span>
+</div>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-evidence-green text-[32px]"><path d="m136-240-56-56 296-298 160 160 208-206H640v-80h240v240h-80v-104L536-320 376-480 136-240Z"/></svg>
+</div>
+</div>
+<!-- Feature 3: Zero Guesswork (Spans 5 cols) -->
+<div class="col-span-1 md:col-span-1 lg:col-span-5 bg-surface rounded-xl border border-outline-variant p-8 shadow-sm transition-all duration-300 ease-out hover:shadow-md hover:-translate-y-[2px] animate-fade-rise delay-210 group">
+<div class="w-12 h-12 bg-error-container rounded flex items-center justify-center mb-6 border border-error/10 transition-transform duration-300 group-hover:scale-105">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-on-error-container text-[24px]"><path d="M160-120v-80h480v80H160Zm226-194L160-540l84-86 228 226-86 86Zm254-254L414-796l86-84 226 226-86 86Zm184 408L302-682l56-56 522 522-56 56Z"/></svg>
+</div>
+<h3 class="font-title-sm text-[24px] text-on-surface mb-3">It refuses to guess</h3>
+<p class="font-body-md text-on-surface-variant mb-8">
+            In India a wrong or unexplained credit can attract ~78% tax (Section 115BBE). untangle only calls a credit Razorpay's when the settlement report proves it, and abstains otherwise. Precision is a financial safeguard.
+          </p>
+<!-- UI Micro-interaction mock -->
+<div class="space-y-2">
+<div class="p-3 bg-surface border border-outline-variant rounded flex items-center justify-between opacity-50 transition-opacity duration-300 group-hover:opacity-70">
+<span class="font-data-tabular text-sm">TX-901</span>
+<span class="px-2 py-1 bg-surface-container-low text-on-surface-variant text-[10px] rounded font-label-caps">CLEARED</span>
+</div>
+<div class="p-3 bg-error-container/10 border border-error/30 rounded flex items-center justify-between relative transform scale-105 shadow-md z-10 transition-all duration-300 group-hover:bg-error-container/20">
+<span class="font-data-tabular text-sm text-on-surface font-semibold">TX-902</span>
+<span class="px-2 py-1 bg-error text-on-error text-[10px] rounded font-label-caps animate-pulse">ABSTAIN</span>
+<div class="absolute -left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 bg-error rounded-full shadow-[0_0_8px_rgba(186,26,26,0.6)]"></div>
+</div>
+<div class="p-3 bg-surface border border-outline-variant rounded flex items-center justify-between opacity-50 transition-opacity duration-300 group-hover:opacity-70">
+<span class="font-data-tabular text-sm">TX-903</span>
+<span class="px-2 py-1 bg-surface-container-low text-on-surface-variant text-[10px] rounded font-label-caps">CLEARED</span>
+</div>
+</div>
+</div>
+<!-- Feature 4: Tally-Ready Journals (Spans 7 cols) -->
+<div class="col-span-1 md:col-span-2 lg:col-span-7 bg-surface rounded-xl border border-outline-variant shadow-sm transition-all duration-300 ease-out hover:shadow-md hover:-translate-y-[2px] overflow-hidden flex flex-col md:flex-row group animate-fade-rise delay-280">
+<div class="p-8 flex-1 flex flex-col justify-center bg-surface-container-low/50 relative z-10 border-r border-outline-variant/50">
+<div class="w-12 h-12 bg-audit-blue text-white rounded flex items-center justify-center mb-6 transition-transform duration-300 group-hover:scale-105">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[24px]"><path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>
+</div>
+<h3 class="font-title-sm text-[24px] text-on-surface mb-3">It hands you postable books</h3>
+<p class="font-body-md text-on-surface-variant mb-6">
+              Not a report to eyeball — a balanced double-entry journal (Tally XML + JSON), with an independently-verifiable audit trail behind every number.
+            </p>
+<a href="/app" role="button" class="self-start px-6 h-10 border-2 border-audit-blue text-audit-blue font-label-caps text-label-caps rounded hover:bg-audit-blue hover:text-white transition-all duration-300 ease-out flex items-center gap-2 active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-audit-blue focus-visible:ring-offset-2">
+              GENERATE EXPORT
+              <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px] group-hover:translate-x-1 transition-transform"><path d="M647-440H160v-80h487L423-744l57-56 320 320-320 320-57-56 224-224Z"/></svg>
+</a>
+</div>
+<!-- Decorative Image Area -->
+<div class="w-full md:w-2/5 h-64 md:h-auto relative bg-surface-container border-l border-outline-variant/30 flex items-center justify-center overflow-hidden">
+<!-- Background Image Placeholder -->
+<div class="absolute inset-0 bg-cover bg-center opacity-40 mix-blend-luminosity grayscale group-hover:grayscale-0 transition-all duration-700" data-alt="A clean, minimalist macro photograph of printed ledger paper with precise grid lines and crisp typography, subtle depth of field, bathed in cool, professional studio lighting." style="background-color: #f1f5f9;">
+</div>
+<!-- Code snippet overlay -->
+<div class="relative z-10 bg-audit-blue/90 text-white p-4 rounded shadow-2xl font-data-tabular text-[10px] leading-tight transform rotate-3 scale-110 border border-outline/30 w-[120%] -right-4 transition-transform duration-500 group-hover:rotate-1 group-hover:scale-105">
+<div class="text-evidence-green mb-2">/* Tally XML Export Snippet */</div>
+<div class="pl-2 border-l border-outline/50 opacity-80">
+<voucher vchtype="Journal"><br/>
+                  <date>20231015</date><br/>
+                  <narration>Reconciliation Batch #889</narration><br/>
+                  <allledgerentries.list><br/>
+                    <ledgername>HDFC Bank</ledgername><br/>
+                    <isdeemedpositive>Yes</isdeemedpositive><br/>
+                    <amount>-142434.00</amount><br/>
+                  </allledgerentries.list><br/>
+</voucher>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- HOW IT WORKS Section -->
+<section id="how" class="w-full px-container-padding py-24 bg-surface relative z-10 border-t border-outline-variant">
+<div class="max-w-[1400px] mx-auto">
+<div class="mb-16 max-w-2xl text-center mx-auto animate-fade-rise delay-0">
+<h2 class="font-display-lg text-[40px] leading-[48px] text-on-surface">How it works</h2>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-5 gap-4 lg:gap-8 relative">
+<!-- Line connecting steps -->
+<div class="hidden md:block absolute top-[44px] left-12 right-12 h-0.5 bg-outline-variant/30 z-0"></div>
+<!-- Step 1 -->
+<div class="relative z-10 bg-surface border border-outline-variant p-6 rounded-xl shadow-sm text-center transition-all duration-300 hover:shadow-md hover:-translate-y-[2px] animate-fade-rise delay-70">
+<div class="w-12 h-12 mx-auto bg-surface-container rounded-full flex items-center justify-center font-headline-md text-audit-blue mb-4 border border-outline-variant bg-surface relative z-10">1</div>
+<h3 class="font-title-sm text-[16px] text-on-surface mb-3 uppercase tracking-wider font-label-caps">UPLOAD</h3>
+<p class="font-body-sm text-on-surface-variant">
+      Upload your bank statements and order ledgers securely into a temporary processing sandbox.
+    </p>
+</div>
+<!-- Step 2 -->
+<div class="relative z-10 bg-surface border border-outline-variant p-6 rounded-xl shadow-sm text-center transition-all duration-300 hover:shadow-md hover:-translate-y-[2px] animate-fade-rise delay-140">
+<div class="w-12 h-12 mx-auto bg-surface-container rounded-full flex items-center justify-center font-headline-md text-audit-blue mb-4 border border-outline-variant bg-surface relative z-10">2</div>
+<h3 class="font-title-sm text-[16px] text-on-surface mb-3 uppercase tracking-wider font-label-caps">ATTRIBUTE</h3>
+<p class="font-body-sm text-on-surface-variant">
+      Match credits via deterministic UTR logic. Razorpay only on a genuine tie. No tie → abstain.
+    </p>
+</div>
+<!-- Step 3 -->
+<div class="relative z-10 bg-surface border border-outline-variant p-6 rounded-xl shadow-sm text-center transition-all duration-300 hover:shadow-md hover:-translate-y-[2px] animate-fade-rise delay-210">
+<div class="w-12 h-12 mx-auto bg-surface-container rounded-full flex items-center justify-center font-headline-md text-audit-blue mb-4 border border-outline-variant bg-surface relative z-10">3</div>
+<h3 class="font-title-sm text-[16px] text-on-surface mb-3 uppercase tracking-wider font-label-caps">RECONCILE</h3>
+<p class="font-body-sm text-on-surface-variant">
+      Verify the evidence-backed slice. Decompose gross → fee → GST → net to bank.
+    </p>
+</div>
+<!-- Step 4 -->
+<div class="relative z-10 bg-surface border border-outline-variant p-6 rounded-xl shadow-sm text-center transition-all duration-300 hover:shadow-md hover:-translate-y-[2px] animate-fade-rise delay-280">
+<div class="w-12 h-12 mx-auto bg-surface-container rounded-full flex items-center justify-center font-headline-md text-audit-blue mb-4 border border-outline-variant bg-surface relative z-10">4</div>
+<h3 class="font-title-sm text-[16px] text-on-surface mb-3 uppercase tracking-wider font-label-caps">INVESTIGATE</h3>
+<p class="font-body-sm text-on-surface-variant">
+      Agentic root-cause trace for exceptions surfaces actionable insights for unmatched lines.
+    </p>
+</div>
+<!-- Step 5 -->
+<div class="relative z-10 bg-surface border border-outline-variant p-6 rounded-xl shadow-sm text-center transition-all duration-300 hover:shadow-md hover:-translate-y-[2px] animate-fade-rise delay-350">
+<div class="w-12 h-12 mx-auto bg-surface-container rounded-full flex items-center justify-center font-headline-md text-audit-blue mb-4 border border-outline-variant bg-surface relative z-10">5</div>
+<h3 class="font-title-sm text-[16px] text-on-surface mb-3 uppercase tracking-wider font-label-caps">EXPORT &amp; VERIFY</h3>
+<p class="font-body-sm text-on-surface-variant">
+      Export balanced journals and close certificates. Re-verify independently.
+    </p>
+</div>
+</div>
+</div>
+</section>
+<!-- PRODUCT PROOF Section -->
+<section id="evidence" class="w-full px-container-padding py-24 bg-surface-bright relative z-10 border-t border-outline-variant">
+<div class="max-w-[1400px] mx-auto">
+<div class="mb-16 max-w-2xl text-center mx-auto animate-fade-rise delay-0">
+<h2 class="font-display-lg text-[40px] leading-[48px] text-on-surface">See the evidence</h2>
+<p class="font-body-md text-on-surface-variant mt-4 font-label-caps text-[12px] uppercase tracking-wider">Example demo run.</p>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8 animate-fade-rise delay-70">
+<div class="bg-surface p-6 rounded-xl border border-outline-variant shadow-sm flex flex-col gap-2">
+<span class="font-label-caps text-on-surface-variant text-[11px]">RECONCILED CREDITS</span>
+<span class="font-data-tabular text-[32px] text-evidence-green">1,402</span>
+</div>
+<div class="bg-surface p-6 rounded-xl border border-outline-variant shadow-sm flex flex-col gap-2">
+<span class="font-label-caps text-on-surface-variant text-[11px]">ABSTAINED CASES</span>
+<span class="font-data-tabular text-[32px] text-amber">14</span>
+</div>
+<div class="bg-surface p-6 rounded-xl border border-outline-variant shadow-sm flex flex-col gap-2">
+<span class="font-label-caps text-on-surface-variant text-[11px]">GST ON FEES (EXAMPLE)</span>
+<span class="font-data-tabular text-[32px] text-audit-blue">₹12,450</span>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-rise delay-140">
+<div class="bg-surface rounded-xl border border-outline-variant overflow-hidden shadow-sm flex flex-col">
+<div class="p-4 bg-surface-container-low border-b border-outline-variant font-label-caps text-[12px] flex justify-between items-center">
+<span>EXCEPTION QUEUE</span>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg>
+</div>
+<div class="p-4 flex flex-col gap-3">
+<div class="p-3 bg-error-container/10 border border-error/30 rounded flex items-center justify-between">
+<div>
+<span class="font-data-tabular text-sm text-on-surface font-semibold block">TX-7742-SPLIT</span>
+<span class="font-body-sm text-on-surface-variant">Amount mismatch: Bank ₹45,000 / Settlement ₹45,100</span>
+</div>
+<a href="/try-sample" role="button" class="px-3 py-1 bg-surface-container-high hover:bg-surface-container text-on-surface text-[12px] rounded font-label-caps border border-outline-variant transition-colors flex items-center gap-1">
+          INVESTIGATE <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px]"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg>
+</a>
+</div>
+</div>
+</div>
+<div class="bg-surface rounded-xl border border-outline-variant overflow-hidden shadow-sm flex flex-col">
+<div class="p-4 bg-surface-container-low border-b border-outline-variant font-label-caps text-[12px] flex justify-between items-center">
+<span>WINNING EXPLANATION PROOF</span>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px] text-evidence-green"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Zm34-102 102-44 104 44 56-96 110-26-10-112 74-84-74-86 10-112-110-24-58-96-102 44-104-44-56 96-110 24 10 112-74 86 74 84-10 114 110 24 58 96Zm102-318Zm-42 142 226-226-56-58-170 170-86-84-56 56 142 142Z"/></svg>
+</div>
+<div class="p-4 flex flex-col gap-3">
+<div class="p-4 border border-outline-variant/50 rounded bg-surface-container-lowest">
+<p class="font-body-sm text-on-surface mb-3">Line 42 positively matched to Razorpay Settlement RZ_8892110X.</p>
+<div class="flex flex-wrap gap-2">
+<span class="px-2 py-1 bg-surface-container-high rounded text-[10px] font-data-tabular border border-outline-variant/30 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-evidence-green"></span> UTR MATCH</span>
+<span class="px-2 py-1 bg-surface-container-high rounded text-[10px] font-data-tabular border border-outline-variant/30 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-evidence-green"></span> DATE BOUNDS</span>
+<span class="px-2 py-1 bg-surface-container-high rounded text-[10px] font-data-tabular border border-outline-variant/30 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-evidence-green"></span> NET AMOUNT MATCH</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-8 bg-surface rounded-xl border border-outline-variant overflow-hidden shadow-sm animate-fade-rise delay-210">
+<div class="p-4 bg-surface-container-low border-b border-outline-variant font-label-caps text-[12px] text-center">
+      BALANCED JOURNAL PREVIEW
+    </div>
+<div class="p-6 overflow-x-auto">
+<table class="w-full text-left font-data-tabular text-sm">
+<thead>
+<tr class="border-b border-outline-variant/50">
+<th class="pb-2 font-label-caps text-outline-variant">ACCOUNT</th>
+<th class="pb-2 font-label-caps text-outline-variant text-right">DEBIT</th>
+<th class="pb-2 font-label-caps text-outline-variant text-right">CREDIT</th>
+</tr>
+</thead>
+<tbody>
+<tr class="border-b border-outline-variant/10">
+<td class="py-3">HDFC Bank Current Account</td>
+<td class="py-3 text-right">1,42,434.00</td>
+<td class="py-3 text-right">-</td>
+</tr>
+<tr class="border-b border-outline-variant/10">
+<td class="py-3 pl-4 text-on-surface-variant">Razorpay Gateway Charges</td>
+<td class="py-3 text-right">2,175.00</td>
+<td class="py-3 text-right">-</td>
+</tr>
+<tr class="border-b border-outline-variant/10">
+<td class="py-3 pl-4 text-on-surface-variant">IGST Input (18%)</td>
+<td class="py-3 text-right">391.00</td>
+<td class="py-3 text-right">-</td>
+</tr>
+<tr>
+<td class="py-3 font-semibold">Razorpay Settlement Clearing</td>
+<td class="py-3 text-right">-</td>
+<td class="py-3 text-right font-semibold">1,45,000.00</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</section>
+<!-- TRUST BOUNDARY Section -->
+<section class="w-full px-container-padding py-16 bg-surface-container-low relative z-10 border-t border-b border-outline-variant">
+<div class="max-w-[1000px] mx-auto text-center animate-fade-rise delay-0">
+<h2 class="font-display-lg text-[32px] text-on-surface mb-4">Precision means refusing to guess.</h2>
+<p class="font-body-md text-on-surface-variant font-semibold">Deterministic code decides money and evidence; AI narration is advisory.</p>
+</div>
+</section>
+<!-- OUTCOMES Section -->
+<section class="w-full px-container-padding py-24 bg-surface relative z-10 border-b border-outline-variant">
+<div class="max-w-[1400px] mx-auto">
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+<div class="p-6 border border-outline-variant rounded-xl bg-surface hover:shadow-md transition-shadow animate-fade-rise delay-0">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[24px] text-audit-blue mb-4 block"><path d="M240-80q-50 0-85-35t-35-85v-120h120v-560l60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60v680q0 50-35 85t-85 35H240Zm480-80q17 0 28.5-11.5T760-200v-560H320v440h360v120q0 17 11.5 28.5T720-160ZM360-600v-80h240v80H360Zm0 120v-80h240v80H360Zm320-120q-17 0-28.5-11.5T640-640q0-17 11.5-28.5T680-680q17 0 28.5 11.5T720-640q0 17-11.5 28.5T680-600Zm0 120q-17 0-28.5-11.5T640-520q0-17 11.5-28.5T680-560q17 0 28.5 11.5T720-520q0 17-11.5 28.5T680-480ZM240-160h360v-80H200v40q0 17 11.5 28.5T240-160Zm-40 0v-80 80Z"/></svg>
+<h4 class="font-title-sm text-on-surface mb-2">GST-on-fees surfacing</h4>
+<p class="font-body-sm text-on-surface-variant">Surface the GST charged on gateway fees as a per-transaction schedule to review for reclaimable input-tax-credit.</p>
+</div>
+<div class="p-6 border border-outline-variant rounded-xl bg-surface hover:shadow-md transition-shadow animate-fade-rise delay-70">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[24px] text-audit-blue mb-4 block"><path d="M280-120 80-320l200-200 57 56-104 104h607v80H233l104 104-57 56Zm400-320-57-56 104-104H120v-80h607L623-784l57-56 200 200-200 200Z"/></svg>
+<h4 class="font-title-sm text-on-surface mb-2">Tally XML &amp; JSON Exports</h4>
+<p class="font-body-sm text-on-surface-variant">Postable double-entry journals ready for your accounting stack.</p>
+</div>
+<div class="p-6 border border-outline-variant rounded-xl bg-surface hover:shadow-md transition-shadow animate-fade-rise delay-140">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[24px] text-audit-blue mb-4 block"><path d="M320-160q-33 0-56.5-23.5T240-240v-120h120v-90q-35-2-66.5-15.5T236-506v-44h-46L60-680q36-46 89-65t107-19q27 0 52.5 4t51.5 15v-55h480v520q0 50-35 85t-85 35H320Zm120-200h240v80q0 17 11.5 28.5T720-240q17 0 28.5-11.5T760-280v-440H440v24l240 240v56h-56L510-514l-8 8q-14 14-29.5 25T440-464v104ZM224-630h92v86q12 8 25 11t27 3q23 0 41.5-7t36.5-25l8-8-56-56q-29-29-65-43.5T256-684q-20 0-38 3t-36 9l42 42Zm376 350H320v40h286q-3-9-4.5-19t-1.5-21Zm-280 40v-40 40Z"/></svg>
+<h4 class="font-title-sm text-on-surface mb-2">Versioned Proof Packets</h4>
+<p class="font-body-sm text-on-surface-variant">Immutable audit trails backing every single reconciled line.</p>
+</div>
+<div class="p-6 border border-outline-variant rounded-xl bg-surface hover:shadow-md transition-shadow animate-fade-rise delay-210">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[24px] text-audit-blue mb-4 block"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Zm34-102 102-44 104 44 56-96 110-26-10-112 74-84-74-86 10-112-110-24-58-96-102 44-104-44-56 96-110 24 10 112-74 86 74 84-10 114 110 24 58 96Zm102-318Zm-42 142 226-226-56-58-170 170-86-84-56 56 142 142Z"/></svg>
+<h4 class="font-title-sm text-on-surface mb-2">Verifiable Close Certificates</h4>
+<p class="font-body-sm text-on-surface-variant">Content-hashed close summaries anyone can re-check — optionally ECDSA-signed.</p>
+</div>
+</div>
+</div>
+</section>
+<!-- CONTROLLERS vs AGENTS Section -->
+<section class="w-full px-container-padding py-16 bg-surface-bright relative z-10 border-b border-outline-variant">
+<div class="max-w-[1000px] mx-auto text-center animate-fade-rise delay-0">
+<h2 class="font-title-sm text-[24px] text-on-surface mb-4 uppercase tracking-wider">Controllers vs Agents</h2>
+<p class="font-body-md text-on-surface-variant max-w-2xl mx-auto border-l-4 border-audit-blue pl-4 py-2 text-left bg-surface-container-low">
+       Agents are read-only and cannot move money, approve journals, override abstention, or certify a close. Human controllers hold the keys.
+     </p>
+</div>
+</section>
+<!-- VERIFIED EVALUATION Section -->
+<section class="w-full px-container-padding py-12 bg-surface-container-lowest relative z-10 border-b border-outline-variant flex justify-center items-center gap-8 flex-wrap animate-fade-rise delay-0">
+<div class="flex items-center gap-2 text-on-surface-variant font-label-caps text-[11px] opacity-70">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]"><path d="M160-120q-33 0-56.5-23.5T80-200v-560q0-33 23.5-56.5T160-840h640q33 0 56.5 23.5T880-760v560q0 33-23.5 56.5T800-120H160Zm0-80h640v-560H160v560Zm40-80h200v-80H200v80Zm382-80 198-198-57-57-141 142-57-57-56 57 113 113Zm-382-80h200v-80H200v80Zm0-160h200v-80H200v80Zm-40 400v-560 560Z"/></svg> Sealed Benchmark Evaluation
+    </div>
+<div class="flex items-center gap-2 text-on-surface-variant font-label-caps text-[11px] opacity-70">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]"><path d="M339.5-108.5q-65.5-28.5-114-77t-77-114Q120-365 120-440h80q0 117 81.5 198.5T480-160q117 0 198.5-81.5T760-440q0-117-81.5-198.5T480-720h-6l62 62-56 58-160-160 160-160 56 58-62 62h6q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-440q0 75-28.5 140.5t-77 114q-48.5 48.5-114 77T480-80q-75 0-140.5-28.5Z"/></svg> Replay Identity
+    </div>
+<div class="flex items-center gap-2 text-on-surface-variant font-label-caps text-[11px] opacity-70">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q97-30 162-118.5T718-480H480v-315l-240 90v207q0 7 2 18h238v316Z"/></svg> Decoy False-Positive Checks
+    </div>
+</section>
+<!-- FAQ Section -->
+<section id="faq" class="w-full px-container-padding py-24 bg-surface-bright relative z-10 border-t border-outline-variant">
+<div class="max-w-[800px] mx-auto">
+<div class="mb-12 text-center animate-fade-rise delay-0">
+<h2 class="font-display-lg text-[40px] leading-[48px] text-on-surface">Questions a finance team asks</h2>
+</div>
+<div class="space-y-4 animate-fade-rise delay-70">
+<!-- FAQ 1 -->
+<div class="border border-outline-variant rounded-xl bg-surface overflow-hidden hover:border-audit-blue/50 transition-colors">
+<button id="faq-btn-0" class="w-full flex items-center justify-between p-6 text-left focus:outline-none" aria-controls="faq-panel-0" aria-expanded="true" onclick="toggleFaq(this)">
+<span class="font-title-sm text-[18px] text-on-surface">Is my data stored anywhere? (Data Privacy)</span>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant accordion-icon open"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
+</button><div id="faq-panel-0" role="region" aria-labelledby="faq-btn-0" class="accordion-content open px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
+      No. Your files are held in memory only for the duration of the request — never written to disk and never persisted. No database, no stored keys.
+    </div>
+</div>
+<!-- FAQ 2 -->
+<div class="border border-outline-variant rounded-xl bg-surface overflow-hidden hover:border-audit-blue/50 transition-colors">
+<button id="faq-btn-1" class="w-full flex items-center justify-between p-6 text-left focus:outline-none" aria-controls="faq-panel-1" aria-expanded="false" onclick="toggleFaq(this)">
+<span class="font-title-sm text-[18px] text-on-surface">Does it work with a real Razorpay settlement export?</span>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant accordion-icon"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
+</button><div id="faq-panel-1" role="region" aria-labelledby="faq-btn-1" class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
+      untangle's ingest schema follows the fields a Razorpay settlement report carries (entity_id, fee, tax, settled_at, settlement_utr, …) and auto-detects the fee/GST convention per settlement, so a real export maps onto untangle's model. As with any new source, dry-run on a sample first.
+    </div>
+</div>
+<!-- FAQ 3 -->
+<div class="border border-outline-variant rounded-xl bg-surface overflow-hidden hover:border-audit-blue/50 transition-colors">
+<button id="faq-btn-2" class="w-full flex items-center justify-between p-6 text-left focus:outline-none" aria-controls="faq-panel-2" aria-expanded="false" onclick="toggleFaq(this)">
+<span class="font-title-sm text-[18px] text-on-surface">What does it mean that it 'abstains'?</span>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant accordion-icon"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
+</button><div id="faq-panel-2" role="region" aria-labelledby="faq-btn-2" class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
+      When the evidence isn't strong enough to prove a credit is Razorpay's, untangle refuses to guess and routes it to the exception queue with a reason. In India a wrong match can attract ~78% tax, so precision is a safeguard, not a nicety. Our abstention logic prioritizes safety.
+    </div>
+</div>
+<!-- FAQ 4 -->
+<div class="border border-outline-variant rounded-xl bg-surface overflow-hidden hover:border-audit-blue/50 transition-colors">
+<button id="faq-btn-3" class="w-full flex items-center justify-between p-6 text-left focus:outline-none" aria-controls="faq-panel-3" aria-expanded="false" onclick="toggleFaq(this)">
+<span class="font-title-sm text-[18px] text-on-surface">Why not just a 200-line Python script?</span>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant accordion-icon"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
+</button><div id="faq-panel-3" role="region" aria-labelledby="faq-btn-3" class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
+      Scripts break on mangled UTRs, split settlements, and cross-cycle refunds. untangle adds proof-backed attribution, calibrated abstention, an agentic root-cause investigator, and an audit trail a CA can verify, far beyond simple scripts.
+    </div>
+</div>
+<!-- FAQ 5 -->
+<div class="border border-outline-variant rounded-xl bg-surface overflow-hidden hover:border-audit-blue/50 transition-colors">
+<button id="faq-btn-4" class="w-full flex items-center justify-between p-6 text-left focus:outline-none" aria-controls="faq-panel-4" aria-expanded="false" onclick="toggleFaq(this)">
+<span class="font-title-sm text-[18px] text-on-surface">Can I trust automated journal entries?</span>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant accordion-icon"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
+</button><div id="faq-panel-4" role="region" aria-labelledby="faq-btn-4" class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
+      Every reconciled voucher balances to ±₹0 and carries a verifiable proof packet; the whole run seals into a content-hashed (optionally signed) certificate anyone can independently re-check on the Verify page. Trust is built on these proof packets.
+    </div>
+</div>
+<!-- FAQ 6 -->
+<div class="border border-outline-variant rounded-xl bg-surface overflow-hidden hover:border-audit-blue/50 transition-colors">
+<button id="faq-btn-5" class="w-full flex items-center justify-between p-6 text-left focus:outline-none" aria-controls="faq-panel-5" aria-expanded="false" onclick="toggleFaq(this)">
+<span class="font-title-sm text-[18px] text-on-surface">What can I export?</span>
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant accordion-icon"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
+</button><div id="faq-panel-5" role="region" aria-labelledby="faq-btn-5" class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
+      A balanced double-entry journal as Tally Prime XML and clean JSON, plus per-credit proof packets and the close certificate (content-hashed, optionally signed).
+    </div>
+</div>
+</div>
+</div>
+</section>
+<!-- Final CTA Strip -->
+<section class="w-full bg-audit-blue border-t border-outline-variant py-16 relative overflow-hidden">
+<!-- Decorative typography pattern -->
+<div class="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none opacity-5">
+<div class="font-display-lg text-[180px] leading-none whitespace-nowrap text-white select-none -translate-y-1/4 -rotate-2">
+        UNTANGLE UNTANGLE UNTANGLE UNTANGLE
+      </div>
+</div>
+<div class="max-w-[1000px] mx-auto px-container-padding text-center relative z-10 flex flex-col items-center animate-fade-rise delay-0">
+<h2 class="font-display-lg text-[32px] text-white mb-4">It knows what it doesn't know.</h2>
+<p class="font-body-md text-white/80 max-w-md mx-auto mb-8">Exceptions are surfaced with a reason and a suggested next action — never force-matched.</p>
+<div class="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto">
+<a href="/try-sample" role="button" class="inline-flex items-center justify-center w-full sm:w-auto h-row-height-standard px-8 bg-white text-audit-blue font-data-tabular text-data-tabular rounded hover:bg-gray-100 transition-all duration-300 ease-out shadow-md hover:shadow-lg active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-audit-blue">
+          See a live reconciliation
+        </a>
+</div>
+</div>
+</section>
+
+</div>
+</main>
+<footer class="w-full bg-surface-container-lowest border-t border-outline-variant py-12">
+<div class="max-w-[1400px] mx-auto px-container-padding flex flex-col md:flex-row md:items-start justify-between gap-8">
+<div class="max-w-sm">
+<div class="font-headline-md text-headline-md tracking-tight mb-2"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></div>
+<p class="font-body-sm text-on-surface-variant">Attribution-first reconciliation for Razorpay settlements. Deterministic verdicts, calibrated abstention, and a close anyone can independently re-verify.</p>
+</div>
+<nav aria-label="Footer" class="flex flex-col gap-2 font-body-sm text-on-surface-variant">
+<a class="hover:text-on-surface transition-colors" target="_blank" rel="noopener noreferrer" href="https://github.com/vinayaksonthalia/untangle">Source</a>
+<a class="hover:text-on-surface transition-colors" target="_blank" rel="noopener noreferrer" href="https://github.com/vinayaksonthalia/untangle/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+<a class="hover:text-on-surface transition-colors" target="_blank" rel="noopener noreferrer" href="https://github.com/vinayaksonthalia/untangle/blob/main/SECURITY.md">Security</a>
+<a class="hover:text-on-surface transition-colors" target="_blank" rel="noopener noreferrer" href="https://github.com/vinayaksonthalia/untangle/blob/main/LICENSE">License (Apache-2.0)</a>
+</nav>
+</div>
+</footer>
+<script>
+  // Ambient grid dots for the hero background. Disabled under reduced motion.
+  document.addEventListener('DOMContentLoaded', () => {
+    const container = document.getElementById('particle-canvas-container');
+    if (!container) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    svg.style.position = "absolute"; svg.style.top = "0"; svg.style.left = "0";
+    const spacing = 40;
+    const cols = Math.floor(window.innerWidth / spacing);
+    const rows = Math.floor(window.innerHeight / spacing);
+    for (let i = 0; i < cols; i++) {
+      for (let j = 0; j < rows; j++) {
+        if (Math.random() > 0.15) continue;
+        const circle = document.createElementNS(svgNS, "circle");
+        circle.setAttribute("cx", i * spacing + (Math.random() * 10 - 5));
+        circle.setAttribute("cy", j * spacing + (Math.random() * 10 - 5));
+        circle.setAttribute("r", "1");
+        circle.setAttribute("fill", Math.random() > 0.5 ? '#0f172a' : '#10B981');
+        circle.style.opacity = (Math.random() * 0.2 + 0.05).toString();
+        const duration = Math.random() * 4 + 2;
+        circle.style.transition = `opacity ${duration}s ease-in-out`;
+        setInterval(() => {
+          circle.style.opacity = circle.style.opacity > 0.2 ? "0.05" : (Math.random() * 0.2 + 0.1).toString();
+        }, duration * 1000);
+        svg.appendChild(circle);
+      }
+    }
+    container.appendChild(svg);
+  });
+
+  // FAQ accordion
+  function toggleFaq(btn) {
+    const content = btn.nextElementSibling;
+    const icon = btn.querySelector('.accordion-icon');
+    const willOpen = !content.classList.contains('open');
+    document.querySelectorAll('.accordion-content.open').forEach(el => {
+      if (el !== content) {
+        el.classList.remove('open');
+        el.previousElementSibling.querySelector('.accordion-icon').classList.remove('open');
+        el.previousElementSibling.setAttribute('aria-expanded', 'false');
+      }
+    });
+    content.classList.toggle('open', willOpen);
+    icon.classList.toggle('open', willOpen);
+    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  }
+</script>
+</body>
+</html>

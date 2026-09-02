@@ -108,6 +108,24 @@ Untangle's web layer (`webapp/app.py`) isolates synchronous reconciliation execu
 - **No Application Upload Paths**: Admitted uploads become bounded immutable byte snapshots, so timeout and cancellation paths cannot race application-owned temporary-file cleanup.
 - **Immutable Byte Snapshots**: Worker threads read and own immutable in-memory byte snapshots (`reconcile_bytes`), ensuring concurrent requests operate in total isolation without cross-contamination.
 
+### Landing page: a pre-built, dependency-free asset
+
+The marketing landing page (`/`) is a static artifact, not a runtime template render. It is
+served by a small fail-loud loader (`webapp.pages._load_template`) from
+`webapp/templates/landing.html`, with its CSS and fonts under a `/static` mount. The running
+app needs **no Node, no build step, and no external network** — the hardened CSP
+(`default-src 'self'`) forbids external stylesheet/font/script hosts, so every asset is
+first-party:
+
+- **Icons** are inlined SVGs (`currentColor`, `aria-hidden`), not a web font.
+- **Fonts** are self-hosted woff2 subsets under `webapp/static/fonts/` (OFL 1.1; see
+  `LICENSES.md` + `OFL.txt`).
+- **CSS** is Tailwind compiled once to `webapp/static/landing.css` and committed.
+
+Regeneration is dev-only (`bash tools/tailwind/build.sh`, requires Node + python3): it
+fetches the fonts, rebuilds `landing.html` from the design source, and recompiles the CSS.
+The committed outputs are the source of truth for the deployed app.
+
 
 ## The three attribution tiers (the heart of it)
 
