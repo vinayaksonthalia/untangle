@@ -10,6 +10,7 @@ are never persisted to an application database. Read-only toward money. The dete
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import mimetypes
@@ -727,14 +728,24 @@ async def api_verify(request: Request) -> JSONResponse:
 
 
 _SAMPLE_FILES = ("bank_statement.csv", "recon_report.json", "order_ledger.csv")
+_SAMPLE_CACHE_LOCK = threading.Lock()  # single-flight: coalesce concurrent cache misses
 
 
 def _sample_fingerprint() -> tuple:
-    """Identity of the sample inputs (path, size, mtime). Caller must _ensure_sample() first."""
-    return tuple(
+    """Identity of everything the cached result depends on: the sample inputs (path, size,
+    mtime) AND the signing-key context (issue_certificate signs with $UNTANGLE_SIGNING_KEY).
+
+    Keying on the signing key too means rotating/removing it busts the cache, so the endpoint
+    can never serve a certificate the current verification key would reject. Caller must
+    _ensure_sample() first. The key value itself is hashed, never stored in the key.
+    """
+    files = tuple(
         (name, (st := os.stat(os.path.join(_SAMPLE, name))).st_size, st.st_mtime_ns)
         for name in _SAMPLE_FILES
     )
+    pem = os.environ.get("UNTANGLE_SIGNING_KEY", "")  # engine.certificate._SIGNING_KEY_ENV
+    key_id = hashlib.sha256(pem.encode()).hexdigest()[:16] if pem else "unsigned"
+    return files + (("signing_key", key_id),)
 
 
 @lru_cache(maxsize=2)
@@ -762,8 +773,12 @@ def api_presentation_sample(limit: int = 100, offset: int = 0) -> JSONResponse:
     from webapp.presentation import PresentationSchemaError, build_presentation_payload
 
     _ensure_sample()
-    # expensive part cached per input version (fingerprint); only paginate per request
-    report, cert = _sample_report_and_cert(_sample_fingerprint())
+    # expensive part cached per input version (fingerprint); only paginate per request.
+    # The lock is single-flight: on a cache miss only one thread reconciles while the rest
+    # wait for its cached result, so a cold-start / post-update burst can't saturate the
+    # worker pool with duplicate reconciliations (this GET bypasses capacity admission).
+    with _SAMPLE_CACHE_LOCK:
+        report, cert = _sample_report_and_cert(_sample_fingerprint())
     try:
         presentation = build_presentation_payload(report, certificate=cert, limit=limit, offset=offset)
     except PresentationSchemaError as exc:

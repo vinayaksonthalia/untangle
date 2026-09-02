@@ -105,6 +105,12 @@ def test_sample_cache_keyed_on_input_identity(tmp_path, monkeypatch):
     for name in web._SAMPLE_FILES:
         (tmp_path / name).write_text("seed")
     monkeypatch.setattr(web, "_SAMPLE", str(tmp_path))
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
     fp1 = web._sample_fingerprint()
     (tmp_path / "bank_statement.csv").write_text("changed — different size and mtime")
     assert web._sample_fingerprint() != fp1
+
+    # rotating the signing key also busts the key (issue_certificate depends on it)
+    fp2 = web._sample_fingerprint()
+    monkeypatch.setenv("UNTANGLE_SIGNING_KEY", "rotated-key-material")
+    assert web._sample_fingerprint() != fp2
