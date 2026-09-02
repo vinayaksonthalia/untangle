@@ -160,6 +160,23 @@ def verify_certificate(payload: dict) -> dict:
     embedded_report = raw_report if isinstance(raw_report, dict) else None
     packets_verified = packets_passed = None
     report_binding_valid: bool | None = None
+
+    # Evidence pack provenance check for schema 1.1.0 vs legacy certificates
+    cert_schema = cert.get("certificate_schema_version")
+    cert_pack = cert.get("evidence_pack")
+    is_schema_1_1 = cert_schema == "1.1.0" or (isinstance(cert_pack, dict) and "schema_version" in cert_pack)
+    if is_schema_1_1:
+        pack_valid = (
+            isinstance(cert_pack, dict)
+            and isinstance(cert_pack.get("pack_id"), str)
+            and isinstance(cert_pack.get("version"), str)
+            and isinstance(cert_pack.get("schema_version"), str)
+        )
+    else:
+        # Legacy is strictly unbound. Any pack metadata makes this a partial migration and
+        # therefore invalid rather than silently accepting unverifiable proof packets.
+        pack_valid = cert_schema is None and cert_pack is None
+
     if report_present and embedded_report is None:
         report_binding_valid = False
     elif embedded_report is not None:
@@ -175,8 +192,25 @@ def verify_certificate(payload: dict) -> dict:
                 isinstance(expected_report_hash, str)
                 and hashlib.sha256(_canonical(embedded_report)).hexdigest() == expected_report_hash
             )
+            # Guardrail: attached report's evidence-pack identity MUST match certificate's evidence-pack identity
+            report_cfg = embedded_report.get("config", {}) if isinstance(embedded_report, dict) else {}
+            report_pack = report_cfg.get("evidence_pack")
+            report_schema = report_cfg.get("report_schema_version")
+            # Schema-less reports are legacy only when genuinely unbound. Hybrid metadata must
+            # not bypass modern proof-packet and provenance checks.
+            if (report_schema is None) != (report_pack is None):
+                report_binding_valid = False
+                pack_valid = False
+            if cert_pack != report_pack:
+                report_binding_valid = False
+                pack_valid = False
+
             results = verify_report(embedded_report)
-            pkt = [r for r in results if r.packet_line_key != "report:audit_root"]
+            # Modern schema reports are fully verified, while legacy reports retain their
+            # historical binding contract (they lack the metadata needed for these checks).
+            if report_schema == "1.1.0":
+                report_binding_valid = report_binding_valid and all(r.ok for r in results)
+            pkt = [r for r in results if not r.packet_line_key.startswith("report:")]
             packets_verified = len(pkt)
             packets_passed = sum(1 for r in pkt if r.ok)
         except Exception:  # noqa: BLE001 — never-raises contract on untrusted attachment input
@@ -188,6 +222,7 @@ def verify_certificate(payload: dict) -> dict:
         and (sig is None or signature_valid is True)     # a claimed signature must be valid
         and (report_binding_valid is not False)
         and (packets_passed is None or packets_passed == packets_verified)
+        and pack_valid
     )
     return {
         "ok": bool(ok),
@@ -204,6 +239,9 @@ def verify_certificate(payload: dict) -> dict:
         "packets_verified": packets_verified,
         "packets_passed": packets_passed,
         "report_binding_valid": report_binding_valid,
+        "evidence_pack": cert_pack,
+        "evidence_pack_valid": pack_valid,
+        "legacy": not is_schema_1_1,
         "summary": cert.get("summary"),
         "audit_root": cert.get("audit_root"),
     }
@@ -246,8 +284,8 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
 
     # Verification block (using verify_report)
     verification_results = verify_report(report)
-    # Count packet verification (excluding the report:audit_root result)
-    packet_results = [r for r in verification_results if r.packet_line_key != "report:audit_root"]
+    # Count packet verification (excluding report-level checks)
+    packet_results = [r for r in verification_results if not r.packet_line_key.startswith("report:")]
     packets_verified = len(packet_results)
     packets_passed = sum(1 for r in packet_results if r.ok)
 
@@ -255,9 +293,25 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
     audit_res = next((r for r in verification_results if r.packet_line_key == "report:audit_root"), None)
     audit_root_valid = audit_res.ok if audit_res else False
 
-    engine_version = config.get("engine_version", "0.1.0")
+    engine_version = config.get("engine_version", "1.1.0")
     seed = config.get("seed", 42)
     audit_root = report.get("audit_root", "")
+    evidence_pack = config.get("evidence_pack")
+    # Preserve legacy reports as legacy certificates; do not add schema/provenance claims
+    # that were absent from the input report.
+    cert_schema = config.get("report_schema_version")
+    if cert_schema is not None and cert_schema != "1.1.0":
+        raise ValueError(f"Unsupported report schema version: {cert_schema!r}")
+    if cert_schema == "1.1.0" and not isinstance(evidence_pack, dict):
+        raise ValueError("Schema 1.1.0 report must carry evidence-pack provenance")
+    if cert_schema == "1.1.0":
+        from engine.packs import PackError, resolve_pack_provenance
+        try:
+            resolve_pack_provenance(evidence_pack)
+        except PackError as exc:
+            raise ValueError(str(exc)) from exc
+    if cert_schema is None and evidence_pack is not None:
+        raise ValueError("Schema-less report cannot carry evidence-pack provenance")
 
     generated_from_hashes = {
         "audit_root": audit_root,
@@ -275,6 +329,8 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
 
     return {
         "summary": summary,
+        "certificate_schema_version": cert_schema,
+        "evidence_pack": evidence_pack,
         "period_records": period_records,
         "proven_razorpay_count": proven_rzp_count,
         "proven_razorpay_inr": proven_rzp_inr,

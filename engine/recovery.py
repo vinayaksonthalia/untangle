@@ -186,6 +186,8 @@ def _derive_blocking_reason(
     attribution: RailAttribution,
     index: ReconIndex,
     exception: ExceptionRecord | None,
+    *,
+    pack=None,
 ) -> str:
     """Deterministically derive the blocking reason for an unresolved credit."""
     # 1. Rule conflict
@@ -205,7 +207,7 @@ def _derive_blocking_reason(
         return BLOCKING_RECON_FAILURE
 
     # 4. Razorpay-leaning signals
-    rzp_ev = razorpay_signals(line, index)
+    rzp_ev = razorpay_signals(line, index, pack=pack)
     all_rzp_signals = {e.signal for e in rzp_ev} | {
         e.signal for e in attribution.evidence
         if e.signal.startswith(_RZP_SIGNAL_PREFIXES) or e.signal in {"split_reconstruction", "utr_suffix_weak"}
@@ -232,13 +234,15 @@ def diagnose(
     attribution: RailAttribution,
     index: ReconIndex,
     exception: ExceptionRecord | None = None,
+    *,
+    pack=None,
 ) -> list[Hypothesis]:
     """Diagnose why an unresolved credit could not be proven and enumerate competing hypotheses.
 
     Pure function: deterministic, reads only inputs, does not mutate anything.
     Weights are derived using the existing `_combine` correlation-aware scoring.
     """
-    blocking = _derive_blocking_reason(line, attribution, index, exception)
+    blocking = _derive_blocking_reason(line, attribution, index, exception, pack=pack)
     hypotheses: list[Hypothesis] = []
 
     # 1. Razorpay hypothesis
@@ -252,7 +256,7 @@ def diagnose(
             )
         )
     else:
-        rzp_ev = razorpay_signals(line, index)
+        rzp_ev = razorpay_signals(line, index, pack=pack)
         rzp_items = list(rzp_ev)
         for e in attribution.evidence:
             if e not in rzp_items and (
@@ -273,7 +277,7 @@ def diagnose(
                 )
 
     # 2. Competing non-Razorpay rail hypotheses
-    non_rzp = narration_rail_signals(line)
+    non_rzp = narration_rail_signals(line, pack=pack)
     for rail, items in non_rzp.items():
         if items:
             w = _combine(items)
@@ -381,6 +385,7 @@ def build_recovery_plan(
     exceptions: list[ExceptionRecord],
     *,
     max_actions: int = 20,
+    pack=None,
 ) -> RecoveryPlan:
     """Build a ranked, deduplicated plan of next-best recovery actions.
 
@@ -434,7 +439,7 @@ def build_recovery_plan(
             RailAttribution(line.key, Rail.UNKNOWN.value, 0.0, "none", [], abstained=True),
         )
         exc = excs_by_key.get(line.key)
-        blocking = _derive_blocking_reason(line, attr, index, exc)
+        blocking = _derive_blocking_reason(line, attr, index, exc, pack=pack)
         act_type, params, cost = _map_blocking_to_action(line, blocking, exc)
 
         if act_type == ACTION_EXPORT_SETTLEMENT_REPORT:
