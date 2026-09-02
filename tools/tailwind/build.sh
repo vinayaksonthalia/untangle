@@ -34,16 +34,24 @@ fi
 echo "==> inlining icons in verify.html (idempotent)"
 python3 tools/tailwind/inline_icons.py webapp/templates/verify.html
 
-compile() {  # <config> <out-css>
+# Compile every stylesheet to a STAGED file first; publish to webapp/static only
+# after all of them succeed, so a failed second compile can't leave the committed
+# CSS in a mixed-generation state. Temp files are always cleaned up.
+trap 'rm -f tools/tailwind/_stage_*.css tools/tailwind/_tw.css' EXIT
+
+build_css() {  # <config> <staged-out>
   npx --yes "tailwindcss@${TW_VERSION}" -c "$1" -i tools/tailwind/input.css -o tools/tailwind/_tw.css --minify
   { cat tools/tailwind/fonts.css; echo; cat tools/tailwind/_tw.css; } > "$2"
   rm -f tools/tailwind/_tw.css
 }
 
-echo "==> compiling webapp/static/landing.css"
-compile tools/tailwind/tailwind.config.js webapp/static/landing.css
-echo "==> compiling webapp/static/verify.css"
-compile tools/tailwind/verify.config.js webapp/static/verify.css
+echo "==> compiling stylesheets (staged)"
+build_css tools/tailwind/tailwind.config.js tools/tailwind/_stage_landing.css
+build_css tools/tailwind/verify.config.js  tools/tailwind/_stage_verify.css
+
+echo "==> publishing stylesheets (all compiled OK)"
+mv tools/tailwind/_stage_landing.css webapp/static/landing.css
+mv tools/tailwind/_stage_verify.css  webapp/static/verify.css
 
 echo "==> done"
 wc -c webapp/static/landing.css webapp/static/verify.css

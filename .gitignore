@@ -51,6 +51,8 @@ scripts/worker.py
 node_modules/
 .npm/
 tools/tailwind/tailwind.out.css
+tools/tailwind/_stage_*.css
+tools/tailwind/_tw.css
 # design handoff export — build input only; the built landing.html is the committed artifact
 tools/tailwind/stitch_source.html
 # local test virtualenv

@@ -107,8 +107,9 @@ COPY_FIXES = [
         "18% GST input-tax-credit</span> that merchants routinely miss — surfaced as a "
         "per-transaction, postable schedule.",
         'reports the <span class="tooltip-trigger" data-tooltip="Input tax credit — reclaimable '
-        'subject to your GST eligibility">18% GST it was charged</span>, surfaced per transaction '
-        "as a schedule you can review for input-tax-credit you may be able to reclaim.",
+        'subject to your GST eligibility">GST it was charged</span> (whatever the settlement '
+        "records — it may be zero), surfaced per transaction as a schedule you can review for "
+        "input-tax-credit you may be able to reclaim.",
     ),
     ("It pays for itself", "See the GST you were charged"),
     ("RECOVERABLE GST", "GST ON FEES (EXAMPLE)"),
