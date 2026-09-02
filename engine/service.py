@@ -33,6 +33,7 @@ def reconcile_bytes(
     threshold: float | None = None,
     seed: int = 42,
     global_solver: bool = False,
+    evidence_pack: str | None = None,
 ) -> dict:
     """Reconcile one immutable in-memory snapshot of the three inputs."""
     lines = load_bank_bytes(bank_bytes)
@@ -48,15 +49,26 @@ def reconcile_bytes(
         threshold=threshold,
         seed=seed,
         global_solver=global_solver,
+        evidence_pack=evidence_pack,
     )
 
 
 def read_input_snapshot(path: str, *, label: str, option: str) -> bytes:
-    fd = None
+    """Read a path completely into an immutable bytes snapshot before processing.
+
+    Enforces the single-snapshot boundary:
+      - stat + open via O_RDONLY (rejects non-regular files: dirs, devices, FIFOs);
+      - bounds total bytes read at MAX_INPUT_BYTES (15 MiB per file);
+      - returns an immutable bytes buffer that cannot be mutated by later steps.
+    """
+    fd: int | None = None
     try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
-        mode = os.fstat(fd).st_mode
-        if not stat.S_ISREG(mode):
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(path, flags)
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
             raise InputError(f"{label} is not a regular file: {path}.")
         with os.fdopen(fd, "rb") as fh:
             fd = None
@@ -96,6 +108,7 @@ def reconcile(
     threshold: float | None = None,
     seed: int = 42,
     global_solver: bool = False,
+    evidence_pack: str | None = None,
 ) -> dict:
     """Read every input once, then reconcile the exact immutable byte snapshot."""
     snapshots = (
@@ -111,6 +124,7 @@ def reconcile(
         threshold=threshold,
         seed=seed,
         global_solver=global_solver,
+        evidence_pack=evidence_pack,
     )
 
 
@@ -125,6 +139,7 @@ def _reconcile_loaded(
     threshold: float | None = None,
     seed: int = 42,
     global_solver: bool = False,
+    evidence_pack: str | None = None,
 ) -> dict:
     """Attribute → reconcile → fee-GST → exceptions from already parsed snapshots."""
     cfg = build_config(
@@ -134,6 +149,7 @@ def _reconcile_loaded(
         threshold=threshold,
         seed=seed,
         global_solver=global_solver,
+        evidence_pack=evidence_pack,
     )
     index = ReconIndex(recon_rows)
     solver_out: dict = {}
@@ -144,6 +160,7 @@ def _reconcile_loaded(
         global_solver=cfg.global_solver,
         solver_result_out=solver_out if cfg.global_solver else None,
         audit_challenger=True,  # evidence courtroom: attach proof margin + rejected explanation (display-only)
+        pack=cfg.evidence_pack,
     )
     if cfg.use_ai:
         client = LLMClient(enabled=True, provider=cfg.provider, model=cfg.model, api_key=cfg.api_key)

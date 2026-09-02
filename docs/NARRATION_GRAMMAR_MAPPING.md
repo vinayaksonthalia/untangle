@@ -66,3 +66,19 @@ Real Indian bank statements subject transaction strings to known mechanical corr
 3. **Delimiter Wrapping / Spacing (`spaced`)**: Printer-oriented bank systems insert spaces or line breaks partway through alphanumeric UTR strings (e.g. `178049 8800xys9`).
 4. **Middle Drop (`drop_middle`)**: Character omission during fixed-width column parsing across legacy mainframe interfaces.
 5. **Case Mutation (`upper`)**: Lowercase or mixed-case processor tokens converted to full uppercase.
+
+---
+
+## 5. Versioned Narration Evidence Pack Packaging
+
+The narration rules and tokens specified above are bundled into an immutable, versioned evidence pack (`engine/packs.py`):
+
+- **Default Pack Identifier**: `in.untangle.narration.default`
+- **Current Pack Version**: `1.0.0`
+- **Pack Schema Version**: `1.0.0`
+- **Selection Syntax**: `--evidence-pack in.untangle.narration.default@1.0.0` (or `DEFAULT_PACK_ID`)
+- **Immutability Contract**: Packs are deeply frozen (`@dataclass(frozen=True)` with `MappingProxyType` collections). No runtime mutation or mutable registration is permitted.
+- **Fail-Closed Resolution**: Unknown pack identifiers, unsupported version strings, or schema version mismatches fail closed with an actionable `PackError`.
+- **Exclusion Dominance Semantics**: Decoy markers (`payouts`, `vendor refund`, `@ybl`, `collect`, `payout`) dominate positive narration resemblance only (suppressing `narration_brand_rzp`, `ifsc_ratn`, and `settlement_ref`). They never erase independent report-backed ties (`utr_exact`, `amount_corr`).
+- **Unicode Boundary Normalization**: `normalize_narration()` replaces zero-width and invisible joiner characters (`\u200b`, `\u200c`, `\u200d`, `\ufeff`, `\u2060`, `\u00ad`) with explicit whitespace boundaries (`' '`), preventing artificial token concatenation or fake UTR manufacture. Normalization is deterministic and idempotent across keyword matching, decoy checking, and token extraction.
+- **Report & Certificate Binding**: All decisions produced under an active evidence pack bind the pack metadata (`pack_id`, `version`, `schema_version`) into the report configuration (`report_schema_version: 1.1.0`), audit ledger (`run_start`), and period close certificate (`certificate_schema_version: 1.1.0`). Attached report verification enforces exact equality between the certificate and report evidence pack provenance.

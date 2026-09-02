@@ -55,6 +55,7 @@ def build_proof_packets(
     feegst: FeeGstRecovery,
     *,
     rejected_matches: list[dict] | None = None,
+    pack=None,
 ) -> list[dict]:
     """One Proof Packet per credit proven to be Razorpay's (never an abstained credit)."""
     lines_by_key = {ln.key: ln for ln in lines}
@@ -97,7 +98,7 @@ def build_proof_packets(
         # Accurate "why not another rail" — derived from the line's ACTUAL competing signals, not
         # asserted. A hard tie (e.g. exact UTR) outranks a narration keyword, so a competing keyword
         # may be present; say so honestly rather than claim none existed (Qodo #2).
-        competing = [rail.value for rail in narration_rail_signals(line)]
+        competing = [rail.value for rail in narration_rail_signals(line, pack=pack)]
         if competing:
             rejected = (
                 f"A distinctive narration keyword for {', '.join(sorted(competing))} was also present, "

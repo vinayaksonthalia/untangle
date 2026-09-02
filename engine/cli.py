@@ -28,9 +28,10 @@ from engine.ingest import InputError, load_bank, load_ledger, load_recon
 from engine.llm.client import LLMClient
 from engine.llm.narrate import resolve_unknowns
 from engine.models import Rail, RunReport
+from engine.packs import get_default_pack
 from engine.reconcile import reconcile
 
-_ENGINE_VERSION = "0.1.0"
+_ENGINE_VERSION = "1.1.0"
 
 
 def _indian_group(digits: str) -> str:
@@ -65,6 +66,7 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
                  global_solver: bool = False,
                  solver_result: Any | None = None) -> tuple[RunReport, audit_mod.AuditLedger]:
     solver_active = global_solver or getattr(cfg, "global_solver", False)
+    pack = getattr(cfg, "evidence_pack", None) or get_default_pack()
     rejected_matches = None
     if solver_active:
         if solver_result is not None:
@@ -78,14 +80,15 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
                 from engine.solver import run_global_solver
 
                 attributions, solver_result = run_global_solver(
-                    lines, index, attributions, threshold=cfg.threshold
+                    lines, index, attributions, threshold=cfg.threshold, pack=pack
                 )
                 rejected_matches = solver_result.rejected_matches
 
     ledger = audit_mod.AuditLedger()
     ledger.append("run_start", {"engine_version": _ENGINE_VERSION, "seed": cfg.seed,
                                 "provider": cfg.provider_or_none(), "threshold": cfg.threshold,
-                                "n_bank_lines": len(lines), "n_recon_rows": len(recon_rows)})
+                                "n_bank_lines": len(lines), "n_recon_rows": len(recon_rows),
+                                "evidence_pack_id": pack.pack_id, "evidence_pack_version": pack.version})
     for a in attributions:
         ledger.append("attribution", {"line_key": a.line_key, "rail": a.rail,
                                       "confidence": round(a.confidence, 4), "tier": a.tier,
@@ -147,9 +150,9 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
 
     # Additive post-pass: computed only when enabled, so a report built with_recovery=False is byte-identical
     # to the pre-Feature-005 report (the additivity property test relies on this to compare both builds).
-    recovery_plan = build_recovery_plan(lines, attributions, index, exceptions) if with_recovery else None
+    recovery_plan = build_recovery_plan(lines, attributions, index, exceptions, pack=pack) if with_recovery else None
     proof_packets = build_proof_packets(
-        lines, attributions, reconciliations, recon_rows, feegst, rejected_matches=rejected_matches
+        lines, attributions, reconciliations, recon_rows, feegst, rejected_matches=rejected_matches, pack=pack
     )
     from engine.journal import build_journal_entries, to_journal_json
     journal = to_journal_json(build_journal_entries(reconciliations, recon_rows))
@@ -166,6 +169,8 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
         "provider": cfg.provider_or_none(),
         "model": cfg.model if cfg.use_ai else None,
         "threshold": cfg.threshold,
+        "report_schema_version": "1.1.0",
+        "evidence_pack": pack.to_dict(),
     }
     if solver_active:
         report_cfg["global_solver"] = True
@@ -188,6 +193,7 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
 
 def _cmd_run(args) -> int:
     global_solver = getattr(args, "global_solver", False)
+    evidence_pack_arg = getattr(args, "evidence_pack", None)
     try:
         cfg = build_config(
             no_ai=not args.ai,
@@ -196,6 +202,7 @@ def _cmd_run(args) -> int:
             threshold=args.threshold,
             seed=args.seed,
             global_solver=global_solver,
+            evidence_pack=evidence_pack_arg,
         )
     except ConfigError as exc:
         print(f"Config error: {exc}", file=sys.stderr)
@@ -216,6 +223,7 @@ def _cmd_run(args) -> int:
         cfg.threshold,
         global_solver=cfg.global_solver,
         solver_result_out=solver_out if cfg.global_solver else None,
+        pack=cfg.evidence_pack,
     )
 
     if cfg.use_ai:
@@ -353,6 +361,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="enable global evidence-constrained reconciliation solver (default: False)",
+    )
+    run.add_argument(
+        "--evidence-pack",
+        default=None,
+        help="Evidence pack selector (e.g. in.untangle.narration.default@1.0.0)",
     )
     run.set_defaults(func=_cmd_run)
 

@@ -17,6 +17,11 @@ import re
 from datetime import date
 
 from engine.models import BankCreditLine, EvidenceItem, Rail, ReconRow
+from engine.packs import (
+    NarrationEvidencePack,
+    get_default_pack,
+    normalize_narration,
+)
 
 # A Razorpay settlement UTR is 10 digits + 6 lowercase alnum (verified: all 112 in the
 # sample recon report match this shape). Anchored on non-alphanumeric boundaries so it does
@@ -27,36 +32,6 @@ _UTR = re.compile(r"(?<![0-9a-z])[0-9]{10}[a-z0-9]{6}(?![0-9a-z])", re.I)
 # Generic alphanumeric run, used to test whether a bank token is the SUFFIX of a UTR
 # whose prefix the bank destroyed (hard case: prefix_destroyed).
 _ALNUM = re.compile(r"[a-z0-9]{5,}", re.I)
-
-# Distinctive brand tokens for the non-Razorpay rails. These are high precision:
-# a bank narration carrying "PAYU" is a PayU payout, not a Razorpay settlement.
-_RAIL_KEYWORDS: dict[Rail, tuple[str, ...]] = {
-    Rail.OTHER_GATEWAY: (
-        "payu", "cashfree", "ccavenue", "cc avenue", "easebuzz",
-        "billdesk", "instamojo", "infibeam", "phonepe payment",
-    ),
-    Rail.COD_REMITTANCE: (
-        "cod", "shiprocket", "delhivery", "xpressbees", "ecom express",
-        "shopify commerce", "cash on delivery",
-    ),
-    Rail.DIRECT_UPI: (
-        "upi settlement", "upi merchant", "upi/cr", "bulk upi cr",
-        "npci", "upi/", "@ybl", "@okaxis", "@paytm", "@okhdfcbank",
-    ),
-    Rail.UNRELATED: (
-        "personal", "gst refund", "savings interest", "interest credit",
-        "int.pd", "charges", " chg", "outward chg", "vendor refund",
-        "payouts", "amazon seller", "salary", "loan disbursal", "cbic",
-    ),
-}
-
-# Markers that a razorpay-looking token is actually a decoy / different rail.
-_DECOY_MARKERS = ("payouts", "vendor refund", "@ybl", "collect", "payout")
-
-# Narration context words that support (but do not prove) a Razorpay settlement.
-_RZP_BRAND = ("razorpay", "rzp")
-_RZP_CONTEXT = ("settlement", "settle", "razorpay software", "razorpayx settlement")
-_RZP_IFSC = "ratn0000088"  # Razorpay's RBL settlement-account IFSC (brand-less tie).
 
 # value-date proximity window to a settlement's settled_at.
 _DATE_WINDOW_DAYS = 3
@@ -109,38 +84,46 @@ class ReconIndex:
 
 
 def extract_utr_tokens(text: str) -> list[str]:
-    return [m.group(0) for m in _UTR.finditer(text)]
+    """Extract 16-character Razorpay-shaped UTR tokens after boundary-preserving normalization."""
+    norm = normalize_narration(text)
+    return [m.group(0) for m in _UTR.finditer(norm)]
 
 
-def _has_any(text: str, needles: tuple[str, ...]) -> str | None:
-    for n in needles:
-        if n in text:
-            return n
-    return None
-
-
-def narration_rail_signals(line: BankCreditLine) -> dict[Rail, list[EvidenceItem]]:
+def narration_rail_signals(
+    line: BankCreditLine,
+    *,
+    pack: NarrationEvidencePack | None = None,
+) -> dict[Rail, list[EvidenceItem]]:
     """Distinctive non-Razorpay narration keywords → weighted evidence per rail."""
-    text = line.raw_text().lower()
-    out: dict[Rail, list[EvidenceItem]] = {}
-    for rail, kws in _RAIL_KEYWORDS.items():
-        hit = _has_any(text, kws)
-        if hit:
-            out.setdefault(rail, []).append(
-                EvidenceItem(
-                    signal=f"narration_pattern:{rail.value}",
-                    detail=f"narration contains {hit!r}",
-                    weight=0.95,
-                )
-            )
-    return out
+    p = pack if pack is not None else get_default_pack()
+    return p.evaluate_non_rzp_signals(line)
 
 
-def razorpay_signals(line: BankCreditLine, index: ReconIndex) -> list[EvidenceItem]:
-    """Evidence that a credit is a Razorpay settlement, tied back to the recon report."""
+def has_decoy_marker(
+    line: BankCreditLine,
+    *,
+    pack: NarrationEvidencePack | None = None,
+) -> str | None:
+    """Return matching decoy marker token if present in normalized narration."""
+    p = pack if pack is not None else get_default_pack()
+    return p.has_decoy_marker(line)
+
+
+def razorpay_signals(
+    line: BankCreditLine,
+    index: ReconIndex,
+    *,
+    pack: NarrationEvidencePack | None = None,
+) -> list[EvidenceItem]:
+    """Evidence that a credit is a Razorpay settlement, tied back to the recon report.
+
+    Reconciliation report-backed ties (exact UTR, suffix UTR, net amount correlation, and
+    value date proximity) are evaluated directly against index data. Narration brand, context,
+    IFSC, and settlement references are evaluated via the configured immutable evidence pack.
+    """
+    p = pack if pack is not None else get_default_pack()
     ev: list[EvidenceItem] = []
-    text = line.raw_text()
-    low = text.lower()
+    text = normalize_narration(line.raw_text())
 
     # Tier-A grade: a UTR token that exactly matches a settlement_utr. Zero false
     # positives observed on the benchmark — decoys carry no real settlement UTR.
@@ -219,29 +202,15 @@ def razorpay_signals(line: BankCreditLine, index: ReconIndex) -> list[EvidenceIt
                 )
             )
 
-    # Narration brand/context — weak, and voided when decoy markers are present.
-    decoy = _has_any(low, _DECOY_MARKERS)
-    if not decoy:
-        rzp_identity = _has_any(low, _RZP_BRAND) or (_RZP_IFSC in low)
-        if _has_any(low, _RZP_BRAND) and _has_any(low, _RZP_CONTEXT):
-            ev.append(EvidenceItem("narration_brand_rzp", "razorpay brand + settlement context", 0.3))
-        elif _has_any(low, _RZP_BRAND):
-            ev.append(EvidenceItem("narration_brand_rzp", "razorpay brand token (weak)", 0.15))
-        if _RZP_IFSC in low:
-            ev.append(EvidenceItem("ifsc_ratn", "RATN0000088 (Razorpay RBL settlement IFSC)", 0.25))
-
-        # A UTR-shaped transfer reference alongside a Razorpay identity token, where the
-        # UTR is NOT itself a settlement_utr. This is the fingerprint of split-settlement
-        # legs (each leg carries its own per-leg bank UTR, absent from the recon report).
-        # Gated on a Razorpay identity token so a stray 16-char token elsewhere cannot fire.
-        if rzp_identity and tokens and not matched_exact:
-            ev.append(
-                EvidenceItem(
-                    "settlement_ref",
-                    "UTR-shaped transfer reference with a Razorpay identity token",
-                    0.5,
-                )
-            )
+    # Narration brand/context/IFSC/settlement_ref evaluated through the immutable evidence pack.
+    # Decoy markers suppress positive narration-derived evidence, but never erase report-backed UTR/amount ties.
+    ev.extend(
+        p.evaluate_rzp_narration_signals(
+            line,
+            has_tokens=bool(tokens),
+            matched_exact_utr=bool(matched_exact),
+        )
+    )
     return ev
 
 
@@ -250,7 +219,3 @@ def _date_near(vd: date, candidates: list[date | None]) -> bool:
         if c is not None and abs((vd - c).days) <= _DATE_WINDOW_DAYS:
             return True
     return False
-
-
-def has_decoy_marker(line: BankCreditLine) -> str | None:
-    return _has_any(line.raw_text().lower(), _DECOY_MARKERS)

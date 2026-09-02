@@ -43,6 +43,7 @@ enforces both — this is what makes the reported numbers trustworthy.
 | Module | Job | Why it's separate |
 |---|---|---|
 | `engine/bank_adapters.py` | Detect schema and parse bank exports via fail-closed adapters | Isolate bank format variations behind a deterministic, fail-closed schema boundary |
+| `engine/packs.py` | Versioned, deeply immutable narration evidence packs and boundary-safe Unicode normalization | Decouple narration pattern rules from engine decision logic with verifiable provenance |
 | `engine/ingest.py` | Load + validate the 3 files; derive a **stable line_key** = hash(value_date, amount, narration, bank_ref) | Real statements have no stable row id; we must never use the generator's `line_id` (that would be cheating) |
 | `engine/evidence.py` | Turn a credit into **weighted signals** (UTR match, narration keyword, amount correlation, date proximity, Razorpay identity) | Signals are facts; keeping them separate from the verdict makes both testable |
 | `engine/attribute.py` | Combine signals into a **rail verdict or UNKNOWN** via Tiers A→B→C | The decision logic lives in one auditable place |
@@ -55,6 +56,16 @@ enforces both — this is what makes the reported numbers trustworthy.
 | `eval/metrics.py` + `eval/harness.py` | Score vs blind ground truth: per-rail + per-hard-case P/R, decoy FP, conservation | The only component allowed to see the answer key |
 | `eval/benchmark.py` | Complete-pipeline 15 MiB stress & resource benchmark | See [BENCHMARK.md](BENCHMARK.md) |
 | `eval/multimonth.py` | Extended 90-day & multi-month evaluation across 3 calendar months | See [BENCHMARK.md](BENCHMARK.md) |
+
+## Versioned narration evidence pack boundary
+
+Narration-derived payment rail evidence rules are isolated behind an immutable, versioned evidence pack boundary (`engine/packs.py`):
+
+- **Strict Narration Scope**: The pack contains only narration-derived rules (rail keywords, Razorpay brand/context tokens, decoy markers, and narration-specific weights). Reconciliation report-backed signals (`utr_exact`, `utr_suffix`, `amount_corr`, `value_date_proximity`, `setsum`, and global solver optimization) remain strictly outside the pack.
+- **Deep Immutability & Thread Safety**: Packs are `@dataclass(frozen=True)` with immutable mapping/tuple collections. The pack registry is an immutable `MappingProxyType` holding built-in default pack `in.untangle.narration.default@1.0.0`. Packs are resolved once from `Config` and passed explicitly through the call graph, avoiding mutable process-global state.
+- **Unicode & Zero-Width Boundary Protection**: Narration text is normalized deterministically and idempotently (`normalize_narration`). Zero-width, invisible, and formatting characters (`\u200b`, `\u200c`, `\u200d`, `\ufeff`, `\u2060`, `\u00ad`) are mapped to whitespace boundaries (`' '`) rather than stripped, preventing manufactured UTRs or false brand concatenations.
+- **Exclusion Dominance**: Decoy markers dominate positive narration resemblance only (suppressing `narration_brand_rzp`, `ifsc_ratn`, and `settlement_ref`). They do not erase independently verified report-backed hard ties (`utr_exact`, `amount_corr`). Contradictory narration classifications fail closed.
+- **Report & Certificate Provenance**: Newly issued reports and certificates declare schema `1.1.0` and bind active evidence pack metadata (`pack_id`, `version`, `schema_version`) into the report configuration, audit ledger, and period close certificate. Certificate verification validates attached report evidence-pack equality. Legacy artifacts (< 1.1.0) verify cleanly as legacy/unbound.
 
 ## Bank statement adapter boundary
 

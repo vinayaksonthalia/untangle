@@ -40,6 +40,7 @@ from engine.evidence import (
     razorpay_signals,
 )
 from engine.models import BankCreditLine, EvidenceItem, Rail, RailAttribution, Tier
+from engine.packs import NarrationEvidencePack
 
 
 @dataclass(frozen=True)
@@ -123,6 +124,7 @@ def build_candidate_graph(
     max_candidates: int = _SPLIT_MAX_CANDIDATES,
     max_combinations: int = _MAX_SPLIT_COMBINATIONS,
     threshold: float | None = None,
+    pack: NarrationEvidencePack | None = None,
 ) -> AssignmentGraph:
     """Construct bounded candidate assignment graph for one period.
 
@@ -180,7 +182,7 @@ def build_candidate_graph(
         )
 
         # (b) Non-Razorpay rail candidate edges
-        rail_evs = narration_rail_signals(ln)
+        rail_evs = narration_rail_signals(ln, pack=pack)
         for rail_obj, items in sorted(rail_evs.items(), key=lambda kv: kv[0].value if hasattr(kv[0], "value") else str(kv[0])):
             rail_name = rail_obj.value if hasattr(rail_obj, "value") else str(rail_obj)
             score = _combine(items)
@@ -206,7 +208,7 @@ def build_candidate_graph(
         # (c) Razorpay single-credit settlement edges
         # HARD PROOF-GATE: an edge to razorpay_settlement may ONLY be created when
         # the credit carries a genuine tie in _RZP_TIE_SIGNALS.
-        rzp_ev = razorpay_signals(ln, index)
+        rzp_ev = razorpay_signals(ln, index, pack=pack)
         tie_signals = {e.signal for e in rzp_ev if e.signal in _RZP_TIE_SIGNALS}
 
         if tie_signals:
@@ -218,44 +220,36 @@ def build_candidate_graph(
                 if ln.bank_ref:
                     utr_tokens.append(ln.bank_ref.strip())
                 for tok in utr_tokens:
-                    tok_clean = tok.lower()
-                    if index.utr_exact(tok_clean):
-                        sid = index.utr_to_sid.get(tok_clean)
+                    if index.utr_exact(tok):
+                        sid = index.utr_to_sid.get(tok.lower())
                         if sid:
                             matched_sids.add(sid)
 
-            # Corroborated UTR suffix tie
+            # Unique UTR suffix tie
             if "utr_suffix" in tie_signals:
                 for e in rzp_ev:
                     if e.signal == "utr_suffix":
-                        # Token tails settlement_utr; extract matching sid from detail or index
                         m = re.search(r"settlement_utr\s+([a-z0-9]+)", e.detail, re.I)
                         if m:
                             sid = index.utr_to_sid.get(m.group(1).lower())
                             if sid:
                                 matched_sids.add(sid)
 
-            # Unique amount correlation tie
+            # Net amount match tie
             if "amount_corr" in tie_signals:
-                sids = index.net_to_settlements.get(ln.amount_paise, [])
-                for sid in sids:
+                for sid in index.net_to_settlements.get(ln.amount_paise, []):
                     sdate = index.settlement_date.get(sid)
                     if sdate is not None and abs((ln.value_date - sdate).days) <= _SPLIT_DATE_WINDOW:
                         matched_sids.add(sid)
 
-            # Build candidate assignment for each verified settlement tie
+            is_exact = "utr_exact" in tie_signals
+            tier_val = Tier.A.value if is_exact else Tier.B.value
+            conf = 0.95 if is_exact else _combine(rzp_ev)
+            if threshold is not None and threshold > DEFAULT_THRESHOLD and conf < threshold:
+                continue
             for sid in sorted(matched_sids):
                 net = index.settlement_net.get(sid, ln.amount_paise)
                 residual = ln.amount_paise - net
-                is_exact = "utr_exact" in tie_signals
-                tier = Tier.A.value if is_exact else Tier.B.value
-                conf = 0.95 if is_exact else _combine(rzp_ev)
-                # A tied Razorpay edge is proof (the proof-gate already validated the tie), so at the
-                # default threshold it is always kept. Only a STRICTER-than-default run additionally
-                # requires the confidence to clear that stricter bar (Qodo #3: single edges below
-                # threshold should not be emitted on elevated-threshold runs).
-                if threshold is not None and threshold > DEFAULT_THRESHOLD and conf < threshold:
-                    continue
                 cost = (
                     0,
                     0,
@@ -269,7 +263,7 @@ def build_candidate_graph(
                         credit_keys=(ln.key,),
                         target_id=sid,
                         rail=Rail.RAZORPAY_SETTLEMENT.value,
-                        tier=tier,
+                        tier=tier_val,
                         confidence=round(conf, 4),
                         evidence=tuple(rzp_ev),
                         residual_paise=residual,
@@ -286,9 +280,9 @@ def build_candidate_graph(
         tied_sids_by_key: dict[str, set[str]] = defaultdict(set)
 
         for ln in lines:
-            if not (ln.is_credit and ln.amount_paise > 0 and not narration_rail_signals(ln)):
+            if not (ln.is_credit and ln.amount_paise > 0 and not narration_rail_signals(ln, pack=pack)):
                 continue
-            rzp_signals_list = razorpay_signals(ln, index)
+            rzp_signals_list = razorpay_signals(ln, index, pack=pack)
             sigs = {e.signal for e in rzp_signals_list}
             if "utr_exact" in sigs:
                 continue
@@ -350,7 +344,7 @@ def build_candidate_graph(
                 for c in sub:
                     for sig in _STRONG_RZP_SIGNALS:
                         if sig in sig_by_key.get(c.key, set()):
-                            for item in razorpay_signals(c, index):
+                            for item in razorpay_signals(c, index, pack=pack):
                                 if item.signal == sig and item not in split_ev:
                                     split_ev.append(item)
 
@@ -775,6 +769,7 @@ def run_global_solver(
     margin_threshold: float = 0.0,
     max_candidates: int = _SPLIT_MAX_CANDIDATES,
     max_combinations: int = _MAX_SPLIT_COMBINATIONS,
+    pack: NarrationEvidencePack | None = None,
 ) -> tuple[list[RailAttribution], SolverResult]:
     """Run the global evidence-constrained reconciliation solver.
 
@@ -790,6 +785,7 @@ def run_global_solver(
         max_candidates=max_candidates,
         max_combinations=max_combinations,
         threshold=threshold,
+        pack=pack,
     )
     result = solve_assignment(graph, margin_threshold=margin_threshold)
 
