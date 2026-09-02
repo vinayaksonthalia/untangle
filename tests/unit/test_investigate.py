@@ -18,6 +18,7 @@ Plus non-negotiable guarantees:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime
 
 from engine.evidence import ReconIndex
@@ -319,6 +320,36 @@ def test_partial_capture_is_not_inferred_from_free_text():
     # And the skipped classifier is recorded transparently in the negative space.
     pc = next(c for c in inv.candidates_tried if c["root_cause"] == ROOT_CAUSE_PARTIAL_CAPTURE)
     assert pc["matched"] is False and "Skipped" in pc["reason"]
+
+
+def test_partial_capture_accepts_mixed_full_and_partial_capture_rows():
+    """A zero-gap capture is valid alongside one genuine gap that closes the variance."""
+    line = _make_bank_line("line_mixed_capture", 175000)
+    fully_captured = replace(
+        _make_payment_row("pay_full", 100000, 0, 0),
+        authorized_amount_paise=100000,
+        captured_amount_paise=100000,
+    )
+    partially_captured = replace(
+        _make_payment_row("pay_partial", 100000, 0, 0),
+        authorized_amount_paise=100000,
+        captured_amount_paise=75000,
+    )
+    rows = [fully_captured, partially_captured]
+    rec = ReconciliationResult(
+        line_key=line.key,
+        covered_entity_ids=[("payment", "pay_full"), ("payment", "pay_partial")],
+        covered_net_paise=200000,
+        credit_amount_paise=line.amount_paise,
+        residual_paise=-25000,
+        balanced=False,
+    )
+
+    inv = investigate(line, None, rec, rows, ReconIndex(rows))
+
+    assert inv.root_cause == ROOT_CAUSE_PARTIAL_CAPTURE
+    assert inv.variance_paise == -25000
+    _assert_entry_balanced(inv.corrective_entry)
 
 
 def test_investigate_bank_charge_or_rounding():

@@ -6,6 +6,9 @@ import hashlib
 import json
 from decimal import Decimal
 
+import pytest
+
+from engine.ingest import InputError, load_recon_bytes
 from engine.service import reconcile_bytes
 from eval.metrics import score
 from generator.config import Config
@@ -83,3 +86,38 @@ def test_investigation_ground_truth_is_explicit_and_deterministic(tmp_path):
     labels = json.loads(truth_a)["labels"]
     assert all(label.get("intended_root_cause") for label in labels)
     assert all(isinstance(label.get("expected_variance_paise"), int) for label in labels)
+
+
+@pytest.mark.parametrize("bad_amount", [True, False, 125.5, float("nan"), float("inf")])
+def test_recon_loader_rejects_non_integer_capture_evidence(bad_amount):
+    """Capture evidence must cross the public loader's integer-paise boundary safely."""
+    row = {
+        "entity_id": "pay_capture_guard",
+        "type": "payment",
+        "amount": 100_00,
+        "fee": 0,
+        "tax": 0,
+        "debit": 0,
+        "credit": 100_00,
+        "authorized_amount": bad_amount,
+        "captured_amount": 90_00,
+    }
+    with pytest.raises(InputError, match="expected an integer paise value"):
+        load_recon_bytes(json.dumps([row]).encode("utf-8"))
+
+
+def test_recon_loader_preserves_valid_integer_capture_evidence():
+    row = {
+        "entity_id": "pay_capture_valid",
+        "type": "payment",
+        "amount": 100_00,
+        "fee": 0,
+        "tax": 0,
+        "debit": 0,
+        "credit": 100_00,
+        "authorized_amount": 100_00,
+        "captured_amount": 90_00,
+    }
+    loaded = load_recon_bytes(json.dumps([row]).encode("utf-8"))
+    assert loaded[0].authorized_amount_paise == 100_00
+    assert loaded[0].captured_amount_paise == 90_00
