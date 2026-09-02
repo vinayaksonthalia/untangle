@@ -105,6 +105,17 @@ COPY_FIXES = [
         "Live reconciliation — 91 of 103 matched, exceptions surfaced",
         "Example run — 91 of 103 matched, exceptions surfaced",
     ),
+    # avoid an unverifiable "reconciles as-is" guarantee; state what the ingest
+    # schema actually does (fields are real: see engine/ingest.py, engine/models.py)
+    (
+        "Yes. untangle's schema mirrors the real Razorpay settlement report "
+        "(entity_id, fee, tax, settled_at, settlement_utr, …), and it detects the "
+        "fee/GST convention per settlement, so real exports reconcile as-is.",
+        "untangle's ingest schema follows the fields a Razorpay settlement report "
+        "carries (entity_id, fee, tax, settled_at, settlement_utr, …) and auto-detects "
+        "the fee/GST convention per settlement, so a real export maps onto untangle's "
+        "model. As with any new source, dry-run on a sample first.",
+    ),
 ]
 
 # section anchors used by the top nav
@@ -241,6 +252,15 @@ PARTICLE_SCRIPT = """<script>
 
 
 def main() -> int:
+    if not SRC.is_file():
+        raise SystemExit(
+            f"Stitch design export not found: {SRC}\n"
+            "This file is the build INPUT for the landing page and is intentionally not\n"
+            "committed (it is a design-tool export). To regenerate landing.html, export the\n"
+            "Stitch landing screen's HTML to that path, then re-run this script.\n"
+            "The committed webapp/templates/landing.html is the source of truth for deploys;\n"
+            "run `bash tools/tailwind/build.sh` to recompile CSS/fonts without rebuilding HTML."
+        )
     src = SRC.read_text(encoding="utf-8")
 
     # slice out just the section content (drop the mock sidebar + app header)
