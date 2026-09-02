@@ -191,6 +191,14 @@ def _load_recon_data(data, source: str) -> list[ReconRow]:
                 description=(str(r["description"]) if r.get("description") else None),
                 # Vendor-provided IDs are metadata only; physical position is canonical.
                 row_id=f"recon_{i}",
+                authorized_amount_paise=(
+                    _as_int_paise(r.get("authorized_amount"), ctx=f"recon row {i} authorized_amount")
+                    if r.get("authorized_amount") not in (None, "") else None
+                ),
+                captured_amount_paise=(
+                    _as_int_paise(r.get("captured_amount"), ctx=f"recon row {i} captured_amount")
+                    if r.get("captured_amount") not in (None, "") else None
+                ),
             )
         )
     if not rows:

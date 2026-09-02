@@ -14,6 +14,7 @@ import math
 import random
 from collections import defaultdict
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 from engine.ingest import load_bank, load_bank_bytes
 
@@ -347,7 +348,7 @@ def score_bytes(report: dict, truth_bytes: bytes, bank_bytes: bytes) -> dict:
                           if pred.get(lid, ("UNKNOWN", 0))[0] == lab["rail"])
     coverage = sum(1 for r, _ in pred.values() if r != "UNKNOWN") / len(labels)
 
-    return {
+    result = {
         "n_labels": len(labels),
         "per_rail": {r: per_rail[r].as_dict() for r in _RAILS},
         "per_hard_case": per_hard,
@@ -365,3 +366,42 @@ def score_bytes(report: dict, truth_bytes: bytes, bank_bytes: bytes) -> dict:
             "coverage": round(coverage, 4),
         },
     }
+    intended = {
+        lid: lab["intended_root_cause"]
+        for lid, lab in labels.items()
+        if lab.get("intended_root_cause")
+    }
+    if intended:
+        predicted = {
+            key2lid.get(inv.get("line_key")): inv
+            for inv in report.get("investigations", [])
+            if key2lid.get(inv.get("line_key"))
+        }
+        per_class: dict[str, dict] = {}
+        resolved = balanced = 0
+        for cause in sorted(set(intended.values())):
+            lids = [lid for lid, expected in intended.items() if expected == cause]
+            correct = balanced_for_class = 0
+            for lid in lids:
+                inv = predicted.get(lid, {})
+                if inv.get("root_cause") != cause:
+                    continue
+                correct += 1
+                entry = inv.get("corrective_entry")
+                if cause == "unexplained":
+                    balanced_for_class += int(entry is None)
+                elif entry:
+                    debits = sum(Decimal(x.get("debit_inr", "0.00")) for x in entry.get("lines", []))
+                    credits = sum(Decimal(x.get("credit_inr", "0.00")) for x in entry.get("lines", []))
+                    balanced_for_class += int(entry.get("balanced") is True and debits == credits)
+            resolved += correct
+            balanced += balanced_for_class
+            per_class[cause] = {
+                "support": len(lids), "resolved": correct, "balanced": balanced_for_class,
+            }
+        result["investigation_resolution"] = {
+            "support": len(intended), "resolved": resolved,
+            "accuracy": round(resolved / len(intended), 4),
+            "balanced_or_abstained": balanced, "per_class": per_class,
+        }
+    return result
