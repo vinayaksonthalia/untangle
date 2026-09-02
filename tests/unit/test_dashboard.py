@@ -93,3 +93,14 @@ def test_render_debit_only_uses_exposure_as_primary_amount():
     assert "review only · not recoverable" in output
     assert "29.50" in output  # exact paise in the cell, not rounded to 30
     assert "₹0.00" not in output
+
+
+def test_dashboard_has_phone_breakpoint_collapsing_stat_cards():
+    # Regression: on ~375px the 4-up stat-card grid clipped off-screen. A <=560px breakpoint must
+    # collapse .cards to a single column so no card is cut off on phones.
+    html = render(_report())
+    assert "@media(max-width:560px)" in html
+    # the phone rule must set the cards grid to one column
+    import re
+    block = re.search(r"@media\(max-width:560px\)\{(.*?)\}\}", html, re.S)
+    assert block and ".cards{grid-template-columns:1fr}" in block.group(1)
