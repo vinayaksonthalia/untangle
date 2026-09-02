@@ -104,3 +104,17 @@ def test_nav_and_ctas_resolve(client):
         assert href in html
     for path in ("/app", "/try-sample", "/"):
         assert client.get(path).status_code == 200
+
+
+def test_unsigned_verdict_not_overstated(client):
+    html = client.get("/verify").text
+    # unsigned certs shown as consistent-not-provenance, never a plain green VERIFIED
+    assert "Hash consistent — but unsigned" in html
+    assert "does NOT prove it came from untangle" in html
+    assert "r.ok && r.signed && r.authenticated" in html  # green path gated on real signature
+
+
+def test_verify_discloses_server_send(client):
+    html = client.get("/verify").text
+    assert "Nothing is uploaded" not in html
+    assert "sent to untangle's <code>/api/verify" in html

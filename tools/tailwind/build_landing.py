@@ -97,9 +97,47 @@ COPY_FIXES = [
         "precision 1.000 · abstains, never guesses · every verdict independently verifiable · 243 tests passing",
         "sealed-benchmark precision ≥ 0.999 · abstains rather than guessing · every verdict independently verifiable",
     ),
-    # fabricated "average recovery" -> tie to the labelled example run
-    ("AVERAGE RECOVERY", "EXAMPLE RUN · GST RECOVERED"),
+    # fabricated "average recovery" -> tie to the labelled example run, and don't
+    # imply the GST is guaranteed-recoverable (engine only reports GST charged)
+    ("AVERAGE RECOVERY", "EXAMPLE RUN · GST ON FEES"),
     ("₹42k / month", "₹12,450"),
+    # GST: the engine surfaces the GST *charged* on fees, not a guaranteed input credit
+    (
+        'carries recoverable <span class="tooltip-trigger" data-tooltip="Input Tax Credit">'
+        "18% GST input-tax-credit</span> that merchants routinely miss — surfaced as a "
+        "per-transaction, postable schedule.",
+        'reports the <span class="tooltip-trigger" data-tooltip="Input tax credit — reclaimable '
+        'subject to your GST eligibility">18% GST it was charged</span>, surfaced per transaction '
+        "as a schedule you can review for input-tax-credit you may be able to reclaim.",
+    ),
+    ("It pays for itself", "See the GST you were charged"),
+    ("RECOVERABLE GST", "GST ON FEES (EXAMPLE)"),
+    (
+        "Recoverable GST Surfacing",
+        "GST-on-fees surfacing",
+    ),
+    (
+        "Automatically identify and schedule missed input tax credits.",
+        "Surface the GST charged on gateway fees as a per-transaction schedule to review for "
+        "reclaimable input-tax-credit.",
+    ),
+    # certificates are content-hashed always, ECDSA-signed only when configured
+    (
+        "Cryptographically signed summaries anyone can re-check.",
+        "Content-hashed close summaries anyone can re-check — optionally ECDSA-signed.",
+    ),
+    (
+        "per-credit proof packets and the signed close certificate.",
+        "per-credit proof packets and the close certificate (content-hashed, optionally signed).",
+    ),
+    # privacy: uploads are held in memory for the request, not written to a temp dir
+    (
+        "No. Your files are processed in a per-request temp directory and deleted the moment "
+        "your report renders — nothing is persisted, locally or hosted. No database, no keys "
+        "stored. Zero persistence.",
+        "No. Your files are held in memory only for the duration of the request — never written "
+        "to disk and never persisted. No database, no stored keys.",
+    ),
     # label the hero preview as illustrative
     (
         "Live reconciliation — 91 of 103 matched, exceptions surfaced",
@@ -251,6 +289,35 @@ PARTICLE_SCRIPT = """<script>
 </script>"""
 
 
+_FAQ_RE = re.compile(
+    r'<button class="(?P<bcls>w-full flex items-center justify-between p-6 text-left focus:outline-none)"'
+    r' onclick="toggleFaq\(this\)">(?P<inner>.*?)</button>\s*'
+    r'<div class="(?P<dcls>accordion-content[^"]*)"',
+    re.DOTALL,
+)
+
+
+def add_faq_a11y(html: str) -> str:
+    """Wire aria-expanded/aria-controls so the FAQ state is exposed to assistive tech."""
+    counter = {"i": 0}
+
+    def repl(m: re.Match) -> str:
+        i = counter["i"]
+        counter["i"] += 1
+        expanded = "true" if "open" in m.group("dcls").split() else "false"
+        return (
+            f'<button id="faq-btn-{i}" class="{m.group("bcls")}" aria-controls="faq-panel-{i}"'
+            f' aria-expanded="{expanded}" onclick="toggleFaq(this)">{m.group("inner")}</button>'
+            f'<div id="faq-panel-{i}" role="region" aria-labelledby="faq-btn-{i}"'
+            f' class="{m.group("dcls")}"'
+        )
+
+    html, n = _FAQ_RE.subn(repl, html)
+    if n == 0:
+        raise SystemExit("FAQ accordion markup not found for a11y wiring")
+    return html
+
+
 def main() -> int:
     if not SRC.is_file():
         raise SystemExit(
@@ -280,6 +347,7 @@ def main() -> int:
         sections = sections.replace(a, b)
 
     sections = buttons_to_links(sections)
+    sections = add_faq_a11y(sections)
     sections, n_icons = ICON_TAG_RE.subn(inline_icon, sections)
     if "material-symbols-outlined" in sections:
         raise SystemExit("some Material Symbols glyphs were not inlined")

@@ -13,8 +13,15 @@ holds the tooling to regenerate them.
 ## Regenerate
 
 ```bash
-bash tools/tailwind/build.sh      # needs Node (npx) + python3
+bash tools/tailwind/build.sh                 # deterministic: recompile CSS from committed inputs
+bash tools/tailwind/build.sh --refresh-fonts # ALSO re-fetch fonts (non-deterministic; updates committed woff2)
 ```
+
+Fonts are committed, pinned inputs (variable woff2 + `fonts.css`), so the default build
+reproduces `webapp/static/*.css` exactly from a clean checkout. Re-fetching hits the live,
+unversioned Google Fonts API and is therefore opt-in via `--refresh-fonts`. Each family is a
+true variable font spanning its full weight axis (Inter/Hanken 100–900, JetBrains Mono 100–800),
+so every weight renders from real outlines, not a synthesized face.
 
 What it does:
 

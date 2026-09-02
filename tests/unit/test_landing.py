@@ -114,3 +114,20 @@ def test_template_loader_fails_loudly(tmp_path, monkeypatch):
         _load_template("empty.html")
 
     _load_template.cache_clear()  # restore clean cache for other tests
+
+
+def test_faq_accessibility(client):
+    html = client.get("/").text
+    assert html.count('aria-controls="faq-panel-') == 6
+    assert html.count('id="faq-panel-') == 6
+    assert 'aria-expanded="true"' in html and 'aria-expanded="false"' in html
+
+
+def test_gst_and_certificate_and_privacy_claims_qualified(client):
+    html = client.get("/").text
+    assert "that merchants routinely miss" not in html      # overstated GST
+    assert "Cryptographically signed summaries" not in html  # certs aren't always signed
+    assert "optionally" in html.lower()                      # optionally ECDSA-signed
+    assert "per-request temp directory" not in html          # false privacy claim
+    assert "Zero persistence" not in html
+    assert "held in memory only" in html
