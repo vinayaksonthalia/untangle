@@ -12,7 +12,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import mimetypes
 import os
+import pathlib
 import shutil
 import threading
 import time
@@ -22,6 +24,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 
 from engine.certificate import issue_certificate, verify_certificate
 from engine.ingest import InputError, load_bank, load_bank_bytes
@@ -103,6 +106,16 @@ async def lifespan(app: FastAPI):
 
 _MAX_BYTES = 15 * 1024 * 1024  # 15 MB per file
 app = FastAPI(title="untangle", docs_url="/api/docs", lifespan=lifespan)
+
+# Serve the landing page's committed, self-hosted assets (compiled CSS + woff2 fonts).
+# Mounted under a dedicated /static prefix that never overlaps an app route or the /mcp
+# sub-app, so route resolution is unchanged. Everything here is first-party — the hardened
+# CSP (default-src 'self') requires it, since external stylesheet/font hosts are blocked.
+mimetypes.add_type("font/woff2", ".woff2")
+_STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
+if not _STATIC_DIR.is_dir():  # fail loudly at import rather than 404 silently in prod
+    raise RuntimeError(f"static assets directory missing: {_STATIC_DIR}")
+app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 # This is deliberately process-local: the public demo has no shared state store.  It protects a
 # single instance from accidental refresh storms without pretending to be production auth/quotas.

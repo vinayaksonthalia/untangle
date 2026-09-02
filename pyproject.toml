@@ -24,6 +24,17 @@ packages = ["engine", "engine.llm", "eval", "ui", "webapp", "generator"]
 # of untangle[mcp] ships the server, not just its dependency.
 py-modules = ["mcp_server"]
 
+# The landing page is served from non-Python assets that must ship inside the wheel;
+# without this a normal (non-editable) install fails to import webapp.app / serve "/".
+[tool.setuptools.package-data]
+webapp = [
+    "templates/*.html",
+    "static/*.css",
+    "static/fonts/*.woff2",
+    "static/fonts/*.txt",
+    "static/fonts/*.md",
+]
+
 [project.scripts]
 untangle-mcp = "mcp_server:main"
 
