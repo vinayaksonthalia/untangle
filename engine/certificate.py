@@ -304,6 +304,12 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
         raise ValueError(f"Unsupported report schema version: {cert_schema!r}")
     if cert_schema == "1.1.0" and not isinstance(evidence_pack, dict):
         raise ValueError("Schema 1.1.0 report must carry evidence-pack provenance")
+    if cert_schema == "1.1.0":
+        from engine.packs import PackError, resolve_pack_provenance
+        try:
+            resolve_pack_provenance(evidence_pack)
+        except PackError as exc:
+            raise ValueError(str(exc)) from exc
     if cert_schema is None and evidence_pack is not None:
         raise ValueError("Schema-less report cannot carry evidence-pack provenance")
 

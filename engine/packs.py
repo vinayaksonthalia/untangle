@@ -197,6 +197,20 @@ _REGISTRY: dict[tuple[str, str], NarrationEvidencePack] = {
 PACK_REGISTRY: MappingProxyType[tuple[str, str], NarrationEvidencePack] = MappingProxyType(_REGISTRY)
 
 
+def resolve_pack_provenance(value: Any) -> NarrationEvidencePack:
+    """Resolve serialized pack provenance and reject unknown or malformed identities."""
+    if not isinstance(value, dict) or set(value) != {"pack_id", "version", "schema_version", "description"}:
+        raise PackError("Invalid evidence-pack provenance shape")
+    if not all(isinstance(value[k], str) for k in ("pack_id", "version", "schema_version", "description")):
+        raise PackError("Evidence-pack provenance fields must be strings")
+    pack = get_pack(f"{value['pack_id']}@{value['version']}")
+    if value["schema_version"] != pack.schema_version:
+        raise PackError("Evidence-pack schema version does not match registry")
+    if value["description"] != pack.description:
+        raise PackError("Evidence-pack description does not match registry")
+    return pack
+
+
 def parse_pack_selector(selector: str | None = None) -> tuple[str, str]:
     """Parse a pack selector in the format 'pack_id@version' or return defaults."""
     if selector is None or selector == "default":
