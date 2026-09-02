@@ -168,7 +168,7 @@ ANCHOR_FIXES = [
 # ---------------------------------------------------------------------------
 # Static chrome
 # ---------------------------------------------------------------------------
-WORDMARK = '<span class="text-audit-blue">un</span><span class="text-on-surface">tangle</span>'
+WORDMARK = '<span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span>'
 
 HEAD_STYLE = """
     html, body { margin: 0; padding: 0; }
