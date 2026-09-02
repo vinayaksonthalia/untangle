@@ -71,8 +71,8 @@ def test_upload_no_fabricated_or_inaccurate_copy(client):
         "Integrity Level",
     ):
         assert bad not in html, bad
-    assert "processed <strong>in memory</strong>" in html
-    assert "as <strong>JSON</strong>" in html
+    assert "not persisted to any database" in html
+    assert "<strong>JSON</strong>" in html  # settlement report is JSON
 
 
 def test_upload_css_served(client):
@@ -100,3 +100,26 @@ def test_sample_link_present(client):
     html = client.get("/app").text
     assert 'href="/try-sample"' in html
     assert client.get("/try-sample").status_code == 200
+
+
+def test_schema_labels_match_ingest(client):
+    html = client.get("/app").text
+    # ledger requires amount_paise (not "amount"); recon join key needs type + entity_id
+    assert "amount_paise" in html
+    assert ">type<" in html and ">entity_id<" in html
+    # settlement report honestly labelled as untangle's schema, not native provider export
+    assert "untangle's expected" in html or "not a raw provider export" in html
+
+
+def test_privacy_claim_is_accurate(client):
+    html = client.get("/app").text
+    assert "never written to disk" not in html          # false absolute (Starlette may spool)
+    assert "spooled to a temp" in html or "spooled to a temporary" in html
+
+
+def test_filename_log_is_xss_safe(client):
+    html = client.get("/app").text
+    # the user-controlled filename must go through textContent, never interpolated into HTML
+    assert "nm.textContent = f.name" in html
+    assert "${f.name}" not in html
+    assert "log.innerHTML" not in html
