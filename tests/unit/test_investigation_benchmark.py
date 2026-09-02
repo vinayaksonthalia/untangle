@@ -88,9 +88,10 @@ def test_investigation_ground_truth_is_explicit_and_deterministic(tmp_path):
     assert all(isinstance(label.get("expected_variance_paise"), int) for label in labels)
 
 
+@pytest.mark.parametrize("field", ["authorized_amount", "captured_amount"])
 @pytest.mark.parametrize("bad_amount", [True, False, 125.5, float("nan"), float("inf")])
-def test_recon_loader_rejects_non_integer_capture_evidence(bad_amount):
-    """Capture evidence must cross the public loader's integer-paise boundary safely."""
+def test_recon_loader_rejects_non_integer_capture_evidence(field, bad_amount):
+    """Both capture fields must cross the public loader's integer-paise boundary safely."""
     row = {
         "entity_id": "pay_capture_guard",
         "type": "payment",
@@ -99,9 +100,10 @@ def test_recon_loader_rejects_non_integer_capture_evidence(bad_amount):
         "tax": 0,
         "debit": 0,
         "credit": 100_00,
-        "authorized_amount": bad_amount,
+        "authorized_amount": 100_00,
         "captured_amount": 90_00,
     }
+    row[field] = bad_amount
     with pytest.raises(InputError, match="expected an integer paise value"):
         load_recon_bytes(json.dumps([row]).encode("utf-8"))
 
