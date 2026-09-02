@@ -237,13 +237,13 @@
 <div class="w-12 h-12 bg-white/10 rounded flex items-center justify-center mb-6 backdrop-blur-sm border border-white/10 transition-transform duration-300 group-hover:scale-105">
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-white text-[24px]"><path d="M549-120 280-400v-80h140q53 0 91.5-34.5T558-600H240v-80h306q-17-35-50.5-57.5T420-760H240v-80h480v80H590q14 17 25 37t17 43h88v80h-81q-8 85-70 142.5T420-400h-29l269 280H549Z"/></svg>
 </div>
-<h3 class="font-title-sm text-[24px] text-white mb-3">It pays for itself</h3>
+<h3 class="font-title-sm text-[24px] text-white mb-3">See the GST you were charged</h3>
 <p class="font-body-md text-white/80 mb-6">
-            Every reconciled gateway fee carries recoverable <span class="tooltip-trigger" data-tooltip="Input Tax Credit">18% GST input-tax-credit</span> that merchants routinely miss — surfaced as a per-transaction, postable schedule.
+            Every reconciled gateway fee reports the <span class="tooltip-trigger" data-tooltip="Input tax credit — reclaimable subject to your GST eligibility">18% GST it was charged</span>, surfaced per transaction as a schedule you can review for input-tax-credit you may be able to reclaim.
           </p>
 <div class="mt-auto p-4 bg-black/20 rounded border border-white/10 flex items-center justify-between transition-colors duration-300 group-hover:bg-black/30">
 <div>
-<span class="block font-label-caps text-[10px] text-gray-300">EXAMPLE RUN · GST RECOVERED</span>
+<span class="block font-label-caps text-[10px] text-gray-300">EXAMPLE RUN · GST ON FEES</span>
 <span class="block font-data-tabular text-[20px] text-white font-bold mt-1">₹12,450</span>
 </div>
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-evidence-green text-[32px]"><path d="m136-240-56-56 296-298 160 160 208-206H640v-80h240v240h-80v-104L536-320 376-480 136-240Z"/></svg>
@@ -384,7 +384,7 @@
 <span class="font-data-tabular text-[32px] text-amber">14</span>
 </div>
 <div class="bg-surface p-6 rounded-xl border border-outline-variant shadow-sm flex flex-col gap-2">
-<span class="font-label-caps text-on-surface-variant text-[11px]">RECOVERABLE GST</span>
+<span class="font-label-caps text-on-surface-variant text-[11px]">GST ON FEES (EXAMPLE)</span>
 <span class="font-data-tabular text-[32px] text-audit-blue">₹12,450</span>
 </div>
 </div>
@@ -476,8 +476,8 @@
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
 <div class="p-6 border border-outline-variant rounded-xl bg-surface hover:shadow-md transition-shadow animate-fade-rise delay-0">
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[24px] text-audit-blue mb-4 block"><path d="M240-80q-50 0-85-35t-35-85v-120h120v-560l60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60v680q0 50-35 85t-85 35H240Zm480-80q17 0 28.5-11.5T760-200v-560H320v440h360v120q0 17 11.5 28.5T720-160ZM360-600v-80h240v80H360Zm0 120v-80h240v80H360Zm320-120q-17 0-28.5-11.5T640-640q0-17 11.5-28.5T680-680q17 0 28.5 11.5T720-640q0 17-11.5 28.5T680-600Zm0 120q-17 0-28.5-11.5T640-520q0-17 11.5-28.5T680-560q17 0 28.5 11.5T720-520q0 17-11.5 28.5T680-480ZM240-160h360v-80H200v40q0 17 11.5 28.5T240-160Zm-40 0v-80 80Z"/></svg>
-<h4 class="font-title-sm text-on-surface mb-2">Recoverable GST Surfacing</h4>
-<p class="font-body-sm text-on-surface-variant">Automatically identify and schedule missed input tax credits.</p>
+<h4 class="font-title-sm text-on-surface mb-2">GST-on-fees surfacing</h4>
+<p class="font-body-sm text-on-surface-variant">Surface the GST charged on gateway fees as a per-transaction schedule to review for reclaimable input-tax-credit.</p>
 </div>
 <div class="p-6 border border-outline-variant rounded-xl bg-surface hover:shadow-md transition-shadow animate-fade-rise delay-70">
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[24px] text-audit-blue mb-4 block"><path d="M280-120 80-320l200-200 57 56-104 104h607v80H233l104 104-57 56Zm400-320-57-56 104-104H120v-80h607L623-784l57-56 200 200-200 200Z"/></svg>
@@ -492,7 +492,7 @@
 <div class="p-6 border border-outline-variant rounded-xl bg-surface hover:shadow-md transition-shadow animate-fade-rise delay-210">
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[24px] text-audit-blue mb-4 block"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Zm34-102 102-44 104 44 56-96 110-26-10-112 74-84-74-86 10-112-110-24-58-96-102 44-104-44-56 96-110 24 10 112-74 86 74 84-10 114 110 24 58 96Zm102-318Zm-42 142 226-226-56-58-170 170-86-84-56 56 142 142Z"/></svg>
 <h4 class="font-title-sm text-on-surface mb-2">Verifiable Close Certificates</h4>
-<p class="font-body-sm text-on-surface-variant">Cryptographically signed summaries anyone can re-check.</p>
+<p class="font-body-sm text-on-surface-variant">Content-hashed close summaries anyone can re-check — optionally ECDSA-signed.</p>
 </div>
 </div>
 </div>
@@ -527,62 +527,56 @@
 <div class="space-y-4 animate-fade-rise delay-70">
 <!-- FAQ 1 -->
 <div class="border border-outline-variant rounded-xl bg-surface overflow-hidden hover:border-audit-blue/50 transition-colors">
-<button class="w-full flex items-center justify-between p-6 text-left focus:outline-none" onclick="toggleFaq(this)">
+<button id="faq-btn-0" class="w-full flex items-center justify-between p-6 text-left focus:outline-none" aria-controls="faq-panel-0" aria-expanded="true" onclick="toggleFaq(this)">
 <span class="font-title-sm text-[18px] text-on-surface">Is my data stored anywhere? (Data Privacy)</span>
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant accordion-icon open"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
-</button>
-<div class="accordion-content open px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
-      No. Your files are processed in a per-request temp directory and deleted the moment your report renders — nothing is persisted, locally or hosted. No database, no keys stored. Zero persistence.
+</button><div id="faq-panel-0" role="region" aria-labelledby="faq-btn-0" class="accordion-content open px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
+      No. Your files are held in memory only for the duration of the request — never written to disk and never persisted. No database, no stored keys.
     </div>
 </div>
 <!-- FAQ 2 -->
 <div class="border border-outline-variant rounded-xl bg-surface overflow-hidden hover:border-audit-blue/50 transition-colors">
-<button class="w-full flex items-center justify-between p-6 text-left focus:outline-none" onclick="toggleFaq(this)">
+<button id="faq-btn-1" class="w-full flex items-center justify-between p-6 text-left focus:outline-none" aria-controls="faq-panel-1" aria-expanded="false" onclick="toggleFaq(this)">
 <span class="font-title-sm text-[18px] text-on-surface">Does it work with a real Razorpay settlement export?</span>
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant accordion-icon"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
-</button>
-<div class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
+</button><div id="faq-panel-1" role="region" aria-labelledby="faq-btn-1" class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
       untangle's ingest schema follows the fields a Razorpay settlement report carries (entity_id, fee, tax, settled_at, settlement_utr, …) and auto-detects the fee/GST convention per settlement, so a real export maps onto untangle's model. As with any new source, dry-run on a sample first.
     </div>
 </div>
 <!-- FAQ 3 -->
 <div class="border border-outline-variant rounded-xl bg-surface overflow-hidden hover:border-audit-blue/50 transition-colors">
-<button class="w-full flex items-center justify-between p-6 text-left focus:outline-none" onclick="toggleFaq(this)">
+<button id="faq-btn-2" class="w-full flex items-center justify-between p-6 text-left focus:outline-none" aria-controls="faq-panel-2" aria-expanded="false" onclick="toggleFaq(this)">
 <span class="font-title-sm text-[18px] text-on-surface">What does it mean that it 'abstains'?</span>
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant accordion-icon"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
-</button>
-<div class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
+</button><div id="faq-panel-2" role="region" aria-labelledby="faq-btn-2" class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
       When the evidence isn't strong enough to prove a credit is Razorpay's, untangle refuses to guess and routes it to the exception queue with a reason. In India a wrong match can attract ~78% tax, so precision is a safeguard, not a nicety. Our abstention logic prioritizes safety.
     </div>
 </div>
 <!-- FAQ 4 -->
 <div class="border border-outline-variant rounded-xl bg-surface overflow-hidden hover:border-audit-blue/50 transition-colors">
-<button class="w-full flex items-center justify-between p-6 text-left focus:outline-none" onclick="toggleFaq(this)">
+<button id="faq-btn-3" class="w-full flex items-center justify-between p-6 text-left focus:outline-none" aria-controls="faq-panel-3" aria-expanded="false" onclick="toggleFaq(this)">
 <span class="font-title-sm text-[18px] text-on-surface">Why not just a 200-line Python script?</span>
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant accordion-icon"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
-</button>
-<div class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
+</button><div id="faq-panel-3" role="region" aria-labelledby="faq-btn-3" class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
       Scripts break on mangled UTRs, split settlements, and cross-cycle refunds. untangle adds proof-backed attribution, calibrated abstention, an agentic root-cause investigator, and an audit trail a CA can verify, far beyond simple scripts.
     </div>
 </div>
 <!-- FAQ 5 -->
 <div class="border border-outline-variant rounded-xl bg-surface overflow-hidden hover:border-audit-blue/50 transition-colors">
-<button class="w-full flex items-center justify-between p-6 text-left focus:outline-none" onclick="toggleFaq(this)">
+<button id="faq-btn-4" class="w-full flex items-center justify-between p-6 text-left focus:outline-none" aria-controls="faq-panel-4" aria-expanded="false" onclick="toggleFaq(this)">
 <span class="font-title-sm text-[18px] text-on-surface">Can I trust automated journal entries?</span>
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant accordion-icon"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
-</button>
-<div class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
+</button><div id="faq-panel-4" role="region" aria-labelledby="faq-btn-4" class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
       Every reconciled voucher balances to ±₹0 and carries a verifiable proof packet; the whole run seals into a content-hashed (optionally signed) certificate anyone can independently re-check on the Verify page. Trust is built on these proof packets.
     </div>
 </div>
 <!-- FAQ 6 -->
 <div class="border border-outline-variant rounded-xl bg-surface overflow-hidden hover:border-audit-blue/50 transition-colors">
-<button class="w-full flex items-center justify-between p-6 text-left focus:outline-none" onclick="toggleFaq(this)">
+<button id="faq-btn-5" class="w-full flex items-center justify-between p-6 text-left focus:outline-none" aria-controls="faq-panel-5" aria-expanded="false" onclick="toggleFaq(this)">
 <span class="font-title-sm text-[18px] text-on-surface">What can I export?</span>
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline-variant accordion-icon"><path d="M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z"/></svg>
-</button>
-<div class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
-      A balanced double-entry journal as Tally Prime XML and clean JSON, plus per-credit proof packets and the signed close certificate.
+</button><div id="faq-panel-5" role="region" aria-labelledby="faq-btn-5" class="accordion-content px-6 text-on-surface-variant font-body-md leading-relaxed border-t border-outline-variant/30">
+      A balanced double-entry journal as Tally Prime XML and clean JSON, plus per-credit proof packets and the close certificate (content-hashed, optionally signed).
     </div>
 </div>
 </div>

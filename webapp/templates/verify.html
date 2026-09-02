@@ -49,8 +49,10 @@
 Paste any untangle close certificate below. This page re-runs the same proof logic your
 browser can inspect: it recomputes the certificate's content hash and compares it to the
 claimed hash, checks the signature if one is present, and reports the proof-packet binding —
-so you can confirm the reconciliation results are byte-for-byte unaltered since issuance.
-Nothing is uploaded or stored; verification runs on the certificate you paste.
+A matching hash on a <em>signed</em> certificate confirms it came from untangle and is
+unaltered; on an <em>unsigned</em> certificate it confirms only that the file is internally
+consistent. The certificate is sent to untangle's <code>/api/verify</code> endpoint and
+verified in memory — it is not persisted, but treat it as a sensitive document.
 </p>
 </div>
 <div class="w-full md:w-64 shrink-0 bg-surface-container-low rounded-2xl shadow-sm p-6 flex flex-col items-center justify-center text-center border border-outline-variant/30">
@@ -295,16 +297,24 @@ Nothing is uploaded or stored; verification runs on the certificate you paste.
     // Overall verdict (honest, nuanced)
     const badge = $('status-badge'), verdict = $('final-verdict'), vIcon = $('verdict-icon');
     verdict.classList.remove('hidden', 'bg-secondary/10', 'text-secondary', 'border', 'border-secondary/20', 'bg-error/10', 'text-error', 'border-error/20');
-    if (r.ok) {
+    if (r.ok && r.signed && r.authenticated) {
+      // hash matches AND an authenticated signature: provenance + integrity
       badge.className = 'px-3 py-1.5 rounded-full bg-secondary/10 flex items-center gap-2';
       $('status-text').className = 'font-label-caps text-[10px] text-secondary';
       $('status-text').textContent = 'VERIFIED';
       verdict.classList.add('bg-secondary/10', 'text-secondary', 'border', 'border-secondary/20');
       swapIcon(vIcon, 'verified');
-      $('verdict-title').textContent = 'Integrity confirmed';
-      $('verdict-text').textContent = r.signed
-        ? 'The recomputed content hash matches and the signature is authenticated — unaltered since issuance.'
-        : 'The recomputed content hash matches the claimed hash — unaltered since issuance. This certificate is unsigned, so origin authenticity is not cryptographically proven.';
+      $('verdict-title').textContent = 'Verified — signed & unaltered';
+      $('verdict-text').textContent = 'The recomputed content hash matches and the signature is authenticated against the issuer key — this certificate came from untangle and is unaltered since issuance.';
+    } else if (r.ok) {
+      // hash matches but UNSIGNED: internal consistency only, NOT provenance
+      badge.className = 'px-3 py-1.5 rounded-full bg-tertiary-fixed-dim/30 flex items-center gap-2';
+      $('status-text').className = 'font-label-caps text-[10px] text-on-tertiary-container';
+      $('status-text').textContent = 'UNSIGNED';
+      verdict.classList.add('bg-tertiary-fixed-dim/20', 'text-on-tertiary-container', 'border', 'border-tertiary-fixed-dim/40');
+      swapIcon(vIcon, 'warning');
+      $('verdict-title').textContent = 'Hash consistent — but unsigned';
+      $('verdict-text').textContent = 'The recomputed hash matches the claimed hash, so the file is internally consistent. But it is unsigned: anyone can edit the certificate and recompute this hash, so this does NOT prove it came from untangle or that it was not regenerated. Only an authenticated signature proves origin.';
     } else {
       badge.className = 'px-3 py-1.5 rounded-full bg-error/10 flex items-center gap-2';
       $('status-text').className = 'font-label-caps text-[10px] text-error';

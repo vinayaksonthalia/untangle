@@ -27,13 +27,15 @@ FAMILIES = [
     ("Inter", "inter"),
     ("JetBrains Mono", "jetbrains-mono"),
 ]
-# (Google family, css slug, weights used). Requesting the weight SET returns one
-# variable woff2 per subset that spans the range (Google serves the same file for
-# every weight in the request), so one file per subset covers all real weights.
-FAMILY_WEIGHTS = {
-    "Hanken Grotesk": [600, 700],
-    "Inter": [400, 600, 700],
-    "JetBrains Mono": [400, 500, 600],
+# Each family is a VARIABLE font. Request the full weight axis so Google returns a
+# single true variable woff2 per subset that interpolates every weight — then the
+# @font-face declares that exact axis range (font-weight: min max). This is why one
+# file per subset correctly renders 400/600/700 etc. instead of synthesizing them.
+# Axis maxima differ per family (JetBrains Mono tops out at 800, not 900).
+FAMILY_AXIS = {
+    "Hanken Grotesk": (100, 900),
+    "Inter": (100, 900),
+    "JetBrains Mono": (100, 800),
 }
 KEEP_SUBSETS = {"latin", "latin-ext"}
 
@@ -62,12 +64,11 @@ def main() -> int:
     downloaded: list[str] = []
 
     for family, slug in FAMILIES:
-        weights = FAMILY_WEIGHTS[family]
-        wght = ";".join(str(w) for w in weights)
-        weight_range = f"{min(weights)} {max(weights)}"
+        lo, hi = FAMILY_AXIS[family]
+        weight_range = f"{lo} {hi}"
         css_url = (
             f"https://fonts.googleapis.com/css2?family="
-            f"{family.replace(' ', '+')}:wght@{wght}&display=swap"
+            f"{family.replace(' ', '+')}:wght@{lo}..{hi}&display=swap"
         )
         css = fetch(css_url).decode("utf-8")
         seen: set[str] = set()
