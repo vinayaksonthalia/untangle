@@ -726,16 +726,28 @@ async def api_verify(request: Request) -> JSONResponse:
     return JSONResponse(verify_certificate(payload))
 
 
-@lru_cache(maxsize=1)
-def _sample_report_and_cert():
-    """Reconcile the bundled (deterministic) sample once and cache the report + certificate.
+_SAMPLE_FILES = ("bank_statement.csv", "recon_report.json", "order_ledger.csv")
 
-    The sample inputs are fixed after `_ensure_sample`, so the expensive reconciliation +
-    certificate build must not run on every request. Without this, GET /api/presentation/sample
-    (hit on every dashboard load, and exempt from rate-limit/capacity admission) would re-run the
-    full pipeline per request — a cheap unauthenticated DoS. Pagination stays per-request (cheap).
+
+def _sample_fingerprint() -> tuple:
+    """Identity of the sample inputs (path, size, mtime). Caller must _ensure_sample() first."""
+    return tuple(
+        (name, (st := os.stat(os.path.join(_SAMPLE, name))).st_size, st.st_mtime_ns)
+        for name in _SAMPLE_FILES
+    )
+
+
+@lru_cache(maxsize=2)
+def _sample_report_and_cert(fingerprint: tuple):
+    """Reconcile the bundled sample once PER INPUT VERSION and cache the report + certificate.
+
+    Keyed on the sample files' identity (`fingerprint`), NOT on process history: if the sample
+    artifacts change (regenerated → new size/mtime), the key changes and we recompute, so a stale
+    financial result can never be served. The expensive reconciliation + certificate build must not
+    run on every request either — GET /api/presentation/sample is hit on every dashboard load and
+    is exempt from rate-limit/capacity admission, so re-running the full pipeline per request would
+    be a cheap unauthenticated DoS. Pagination stays per-request (cheap).
     """
-    _ensure_sample()
     report = reconcile(
         os.path.join(_SAMPLE, "bank_statement.csv"),
         os.path.join(_SAMPLE, "recon_report.json"),
@@ -749,7 +761,9 @@ def api_presentation_sample(limit: int = 100, offset: int = 0) -> JSONResponse:
     """Presentation contract for the bundled sample run — safe, read-only UI data. Nothing stored."""
     from webapp.presentation import PresentationSchemaError, build_presentation_payload
 
-    report, cert = _sample_report_and_cert()  # expensive part cached; only paginate per request
+    _ensure_sample()
+    # expensive part cached per input version (fingerprint); only paginate per request
+    report, cert = _sample_report_and_cert(_sample_fingerprint())
     try:
         presentation = build_presentation_payload(report, certificate=cert, limit=limit, offset=offset)
     except PresentationSchemaError as exc:
