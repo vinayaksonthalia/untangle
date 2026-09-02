@@ -255,6 +255,11 @@ def _voucher_corrects_variance(entry: dict | None, expected_variance_paise) -> b
         c = _exact_paise(x, "credit_inr")
         if d is None or c is None:
             return False
+        # Journal sides are unsigned amounts.  A negative debit or credit is not an
+        # opposite-side posting; allowing it would let malformed legs cancel in the
+        # aggregate and receive benchmark credit for an impossible voucher.
+        if d < 0 or c < 0:
+            return False
         # Proper double-entry: each line has EXACTLY one non-zero side (never both, never neither) —
         # a both-sided or self-balancing line is ambiguous and must not score as a correction.
         if (d != 0) == (c != 0):

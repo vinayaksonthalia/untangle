@@ -145,3 +145,25 @@ def test_voucher_scorer_rejects_ambiguous_double_entry_lines():
     assert _voucher_corrects_variance(both_sided, 1000) is False
     zero_line = {"balanced": True, "lines": [{"debit_inr": "0.00", "credit_inr": "0.00"}]}
     assert _voucher_corrects_variance(zero_line, 1000) is False
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        [
+            {"debit_inr": "-20.00", "credit_inr": "0.00"},
+            {"debit_inr": "30.00", "credit_inr": "0.00"},
+            {"debit_inr": "0.00", "credit_inr": "10.00"},
+        ],
+        [
+            {"debit_inr": "10.00", "credit_inr": "0.00"},
+            {"debit_inr": "0.00", "credit_inr": "30.00"},
+            {"debit_inr": "0.00", "credit_inr": "-20.00"},
+        ],
+    ],
+    ids=["negative-debit", "negative-credit"],
+)
+def test_voucher_scorer_rejects_negative_accounting_legs(lines):
+    # Both malformed vouchers aggregate to balanced ₹10 totals. Negative journal sides are still
+    # impossible and must never receive benchmark credit merely because the totals cancel.
+    assert _voucher_corrects_variance({"balanced": True, "lines": lines}, 1000) is False
