@@ -30,7 +30,7 @@ from engine.certificate import issue_certificate, verify_certificate
 from engine.ingest import InputError, load_bank, load_bank_bytes
 from engine.service import reconcile, reconcile_bytes
 from ui.dashboard import render as render_dashboard
-from webapp.pages import landing_page, upload_page, verify_page
+from webapp.pages import dashboard_page, landing_page, upload_page, verify_page
 
 # The public /mcp endpoint must be sandboxed so an unauthenticated remote caller cannot open arbitrary
 # server files. FAIL CLOSED: force the flag on (never `setdefault`, which would leave an inherited `0`
@@ -798,6 +798,11 @@ def api_evaluation_sealed() -> JSONResponse:
             status_code=503,
         )
     return JSONResponse(eval_payload)
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard() -> str:
+    return dashboard_page()
 
 
 @app.get("/verify", response_class=HTMLResponse)
