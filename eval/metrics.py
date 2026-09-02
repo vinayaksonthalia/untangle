@@ -219,6 +219,33 @@ class PR:
         }
 
 
+def _voucher_corrects_variance(entry: dict | None, expected_variance_paise) -> bool:
+    """Whether a resolved corrective voucher genuinely corrects the labelled variance.
+
+    Guards against false-positive scoring: the voucher must be marked balanced, have lines,
+    be expressible in EXACT integer paise (a sub-paise INR value like "10.005" is rejected, not
+    rounded), balance debits==credits in paise, and its debit total must equal the label's
+    expected variance (so an empty, zero, or wrong-sized voucher never scores as a correction).
+    """
+    if not entry or entry.get("balanced") is not True:
+        return False
+    lines = entry.get("lines", [])
+    if not lines:
+        return False
+
+    def _exact_paise(x, field):
+        cents = Decimal(str(x.get(field, "0.00"))) * 100
+        return int(cents) if cents == cents.to_integral_value() else None
+
+    dv = [_exact_paise(x, "debit_inr") for x in lines]
+    cv = [_exact_paise(x, "credit_inr") for x in lines]
+    if None in dv or None in cv:
+        return False
+    debits, credits = sum(dv), sum(cv)
+    expected = abs(int(expected_variance_paise))
+    return debits == credits and expected > 0 and debits == expected
+
+
 def score(report: dict, truth_path: str, bank_csv: str) -> dict:
     with open(truth_path, "rb") as truth_fh, open(bank_csv, "rb") as bank_fh:
         return score_bytes(report, truth_fh.read(), bank_fh.read())
@@ -391,24 +418,10 @@ def score_bytes(report: dict, truth_bytes: bytes, bank_bytes: bytes) -> dict:
                 if cause == "unexplained":
                     balanced_for_class += int(entry is None)
                 elif entry:
-                    # Sum in integer paise (no second monetary representation), and require the
-                    # voucher to actually correct the LABELLED variance — an empty/zero/wrong-sized
-                    # balanced voucher must NOT score as a successful correction.
-                    lines = entry.get("lines", [])
-                    debits = sum(
-                        int((Decimal(str(x.get("debit_inr", "0.00"))) * 100).to_integral_value())
-                        for x in lines
-                    )
-                    credits = sum(
-                        int((Decimal(str(x.get("credit_inr", "0.00"))) * 100).to_integral_value())
-                        for x in lines
-                    )
-                    expected = abs(int(labels[lid].get("expected_variance_paise", 0)))
                     balanced_for_class += int(
-                        entry.get("balanced") is True
-                        and debits == credits
-                        and expected > 0
-                        and debits == expected
+                        _voucher_corrects_variance(
+                            entry, labels[lid].get("expected_variance_paise", 0)
+                        )
                     )
             resolved += correct
             balanced += balanced_for_class
