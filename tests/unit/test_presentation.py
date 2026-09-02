@@ -23,6 +23,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import shutil
 from io import BytesIO
 from unittest.mock import patch
 
@@ -30,8 +31,10 @@ import pytest
 from starlette.testclient import TestClient
 
 import webapp.app as webapp_app
+import webapp.presentation as presentation_module
 from engine.certificate import issue_certificate
 from engine.service import reconcile_bytes
+from eval import sealed as sealed_eval
 from eval.benchmark_generator import (
     _format_bank_statement_csv,
     _format_order_ledger_csv,
@@ -424,6 +427,48 @@ def test_qodo_6_recovery_action_keys_mapped_from_engine_actions(sample_report_an
     assert "Export Razorpay settlement report" in act["description"]
 
 
+@pytest.mark.parametrize(
+    "recovery_plan",
+    [
+        "not-a-mapping",
+        {"actions": "not-a-list"},
+        {"actions": ["not-a-mapping"]},
+        {"actions": [{"action_type": "x"}]},
+        {
+            "actions": [
+                {
+                    "action_type": "x",
+                    "description": "x",
+                    "recoverable_paise": True,
+                    "debit_exposure_paise": 0,
+                    "gain_per_cost": 1.0,
+                    "resolves": [],
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "action_type": "x",
+                    "description": "x",
+                    "recoverable_paise": 1,
+                    "debit_exposure_paise": 0,
+                    "gain_per_cost": float("nan"),
+                    "resolves": [],
+                }
+            ]
+        },
+    ],
+)
+def test_malformed_recovery_plan_fails_with_schema_error(sample_report_and_cert, recovery_plan):
+    report, _, _ = sample_report_and_cert
+    malformed = copy.deepcopy(report)
+    malformed["recovery_plan"] = recovery_plan
+
+    with pytest.raises(PresentationSchemaError, match="[Rr]ecovery"):
+        build_presentation_payload(malformed)
+
+
 def test_qodo_7_rate_limiting_on_api_presentation():
     """Qodo #7: POST /api/presentation is subject to per-client rate-limit."""
     client = TestClient(app)
@@ -464,6 +509,27 @@ def test_qodo_8_9_sealed_evaluation_off_request_path_and_cached():
     assert r1.status_code == 200
     assert r2.status_code == 200
     assert r1.json() == r2.json()
+
+
+def test_sealed_presentation_ignores_unbound_precomputed_report(tmp_path):
+    """A writable report beside trusted inputs must never supply published metrics."""
+    sealed_dir = tmp_path / "sealed"
+    shutil.copytree("data/sealed", sealed_dir)
+    (sealed_dir / "sealed_report.json").write_text(
+        json.dumps({"metrics": {"per_rail": {"razorpay_settlement": {"precision": 0.123}}}}),
+        encoding="utf-8",
+    )
+    presentation_module._SEALED_PRESENTATION_CACHE.clear()
+
+    with patch("eval.sealed.evaluate_sealed", wraps=sealed_eval.evaluate_sealed) as evaluator:
+        payload = build_sealed_evaluation_presentation(
+            sealed_dir=str(sealed_dir),
+            allow_compute_if_absent=True,
+        )
+
+    evaluator.assert_called_once()
+    assert payload["evaluation_status"] == "verified_server_holdout"
+    assert payload["metrics"]["razorpay_precision"] == 1.0
 
 
 def test_qodo_10_controlled_integrity_and_schema_error_responses(tmp_path):

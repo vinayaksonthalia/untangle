@@ -16,9 +16,11 @@ Guarantees:
 
 from __future__ import annotations
 
+import copy
 import hashlib
-import json
+import math
 import os
+import tempfile
 from typing import Any
 
 from engine.certificate import verify_certificate
@@ -36,6 +38,11 @@ SUPPORTED_REPORT_SCHEMAS = frozenset({"1.1.0"})
 
 DEFAULT_VERDICTS_LIMIT = 100
 MAX_VERDICTS_LIMIT = 100
+
+# Only results produced by the authoritative evaluator are eligible for the sealed
+# presentation.  This cache is deliberately process-local and keyed by the authenticated
+# manifest; it is never populated from a writable ``out/`` file.
+_SEALED_PRESENTATION_CACHE: dict[tuple[str, str], dict[str, Any]] = {}
 
 
 class PresentationSchemaError(ValueError):
@@ -245,6 +252,52 @@ def _rail_label(rail: str) -> str:
     return labels.get(rail, rail.replace("_", " ").title())
 
 
+def _validate_recovery_plan(value: Any) -> dict[str, Any]:
+    """Validate untrusted report recovery data before any sorting or numeric conversion."""
+    if value is None:
+        return {"actions": [], "recoverable_if_actioned_paise": 0,
+                "unresolved_credit_paise": 0, "unresolved_debit_paise": 0}
+    if not isinstance(value, dict):
+        raise PresentationSchemaError("Report 'recovery_plan' must be a dictionary")
+
+    def non_negative_int(name: str, default: int = 0) -> int:
+        raw = value.get(name, default)
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+            raise PresentationSchemaError(f"Recovery plan field {name!r} must be a non-negative integer")
+        return raw
+
+    actions = value.get("actions", [])
+    if not isinstance(actions, list):
+        raise PresentationSchemaError("Recovery plan 'actions' must be a list")
+    clean_actions: list[dict[str, Any]] = []
+    for index, action in enumerate(actions):
+        if not isinstance(action, dict):
+            raise PresentationSchemaError(f"Recovery action {index} must be a dictionary")
+        for name in ("action_type", "description"):
+            if not isinstance(action.get(name), str):
+                raise PresentationSchemaError(f"Recovery action {index} field {name!r} must be a string")
+        for name in ("recoverable_paise", "debit_exposure_paise"):
+            raw = action.get(name)
+            if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+                raise PresentationSchemaError(
+                    f"Recovery action {index} field {name!r} must be a non-negative integer"
+                )
+        gain = action.get("gain_per_cost")
+        if isinstance(gain, bool) or not isinstance(gain, (int, float)) or not math.isfinite(gain) or gain < 0:
+            raise PresentationSchemaError(f"Recovery action {index} field 'gain_per_cost' must be finite and non-negative")
+        resolves = action.get("resolves", [])
+        if not isinstance(resolves, list) or not all(isinstance(item, str) for item in resolves):
+            raise PresentationSchemaError(f"Recovery action {index} field 'resolves' must be a list of strings")
+        clean_actions.append(action)
+
+    return {
+        "actions": clean_actions,
+        "recoverable_if_actioned_paise": non_negative_int("recoverable_if_actioned_paise"),
+        "unresolved_credit_paise": non_negative_int("unresolved_credit_paise"),
+        "unresolved_debit_paise": non_negative_int("unresolved_debit_paise"),
+    }
+
+
 def build_presentation_payload(
     report: dict[str, Any],
     *,
@@ -329,17 +382,17 @@ def build_presentation_payload(
     ]
 
     # 6. Actionable Recovery Plan (mapped from true RecoveryAction.to_dict keys)
-    rp = report.get("recovery_plan") or {}
+    rp = _validate_recovery_plan(report.get("recovery_plan"))
     recovery_actions = []
     if isinstance(rp.get("actions"), list):
-        for act in sorted(rp["actions"], key=lambda a: (-a.get("recoverable_paise", 0), a.get("action_type", ""))):
+        for act in sorted(rp["actions"], key=lambda a: (-a["recoverable_paise"], a["action_type"])):
             recovery_actions.append({
-                "action_type": act.get("action_type", ""),
-                "description": act.get("description", ""),
-                "recoverable_paise": act.get("recoverable_paise", 0),
-                "debit_exposure_paise": act.get("debit_exposure_paise", 0),
-                "resolves_count": len(act.get("resolves", [])) if isinstance(act.get("resolves"), list) else 0,
-                "gain_per_cost": round(float(act.get("gain_per_cost", 0.0)), 4),
+                "action_type": act["action_type"],
+                "description": act["description"],
+                "recoverable_paise": act["recoverable_paise"],
+                "debit_exposure_paise": act["debit_exposure_paise"],
+                "resolves_count": len(act["resolves"]),
+                "gain_per_cost": round(float(act["gain_per_cost"]), 4),
             })
 
     recovery = {
@@ -436,33 +489,38 @@ def build_sealed_evaluation_presentation(
         else:
             raise PresentationSchemaError("Sealed evaluation manifest not found")
 
-    # Authenticate manifest file
+    # Authenticate the manifest and every input artifact using the evaluator's committed
+    # trust anchor.  Parsing a mutable manifest locally is not sufficient evidence.
     try:
+        from eval.sealed import _verify_sealed_manifest
+
         with open(manifest_path, "rb") as fh:
             manifest_bytes = fh.read()
         manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
-        manifest_data = json.loads(manifest_bytes)
+        _verify_sealed_manifest(sealed_dir)
     except Exception as exc:
         raise PresentationSchemaError("Sealed evaluation manifest is invalid or unreadable") from exc
 
-    if not isinstance(manifest_data, dict) or not isinstance(manifest_data.get("files"), dict):
-        raise PresentationSchemaError("Sealed evaluation manifest structure is invalid")
-
-    report_path = os.path.join(sealed_dir, "sealed_report.json")
-    out_path = "out/sealed_report.json"
-
-    if os.path.exists(report_path):
-        with open(report_path, encoding="utf-8") as fh:
-            sealed_res = json.load(fh)
-    elif os.path.exists(out_path):
-        with open(out_path, encoding="utf-8") as fh:
-            sealed_res = json.load(fh)
-    elif allow_compute_if_absent:
+    cache_key = (os.path.abspath(sealed_dir), manifest_sha)
+    cached = _SEALED_PRESENTATION_CACHE.get(cache_key)
+    if cached is not None:
+        return copy.deepcopy(cached)
+    if not allow_compute_if_absent:
+        raise PresentationSchemaError("Sealed evaluation report is not an authenticated in-process result")
+    else:
+        # Always derive metrics through the authoritative evaluator.  In particular, never
+        # fall back to out/sealed_report.json or data/sealed/sealed_report.json: both are
+        # writable artifacts and have no trustworthy binding to the verified inputs.
         from eval.sealed import evaluate_sealed
 
-        sealed_res = evaluate_sealed(sealed_dir, out_report=report_path)
-    else:
-        raise PresentationSchemaError("Precomputed sealed evaluation report not found")
+        # ``evaluate_sealed`` always writes its detailed internal report. Keep that
+        # implementation artifact outside both the trusted input directory and the
+        # process working tree; only the sanitized presentation is cached.
+        with tempfile.TemporaryDirectory(prefix="untangle-sealed-eval-") as tmp_dir:
+            sealed_res = evaluate_sealed(
+                sealed_dir,
+                out_report=os.path.join(tmp_dir, "sealed_report.json"),
+            )
 
     metrics = sealed_res.get("metrics")
     if not isinstance(metrics, dict) or "per_rail" not in metrics:
@@ -488,7 +546,7 @@ def build_sealed_evaluation_presentation(
     precision_ci = _extract_ci(s_rzp.get("precision_ci95"), precision)
     recall_ci = _extract_ci(s_rzp.get("recall_ci95"), recall)
 
-    return {
+    payload = {
         "presentation_schema_version": PRESENTATION_SCHEMA_VERSION,
         "presentation_schema_provenance": dict(PRESENTATION_SCHEMA_PROVENANCE),
         "contract_type": "sealed_evaluation_presentation",
@@ -517,3 +575,5 @@ def build_sealed_evaluation_presentation(
             "recoverable_fee_gst_paise": totals.get("fee_gst_recoverable_paise", 0),
         },
     }
+    _SEALED_PRESENTATION_CACHE[cache_key] = copy.deepcopy(payload)
+    return payload
