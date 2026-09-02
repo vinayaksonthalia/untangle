@@ -71,3 +71,27 @@ def test_dashboard_download_and_verify_links_resolve(client):
     assert 'href="/api/journal/sample.tally.xml"' in html
     assert 'href="/verify"' in html
     assert client.get("/api/journal/sample.tally.xml").status_code == 200
+
+
+def test_money_is_validated_not_coerced(client):
+    html = client.get("/dashboard").text
+    # money helper rejects non-safe-integers instead of coercing to a fabricated ₹0
+    assert "Number.isSafeInteger(paise)" in html
+    assert "inr(s.unresolved_paise)" in html
+    assert "inr(s.unresolved_paise || 0)" not in html
+    assert "inr(s.fee_gst_recoverable_paise || 0)" not in html
+
+
+def test_unresolved_labelled_as_razorpay_slice(client):
+    html = client.get("/dashboard").text
+    assert "UNRESOLVED · RAZORPAY SLICE" in html   # honest scope
+    assert "UNRESOLVED VALUE" not in html          # not presented as total exposure
+
+
+def test_sample_presentation_is_stable_and_cached(client):
+    # repeated loads must not re-run reconciliation nor mutate the cached report
+    a = client.get("/api/presentation/sample").json()
+    b = client.get("/api/presentation/sample").json()
+    assert a == b
+    from webapp.app import _sample_report_and_cert
+    assert _sample_report_and_cert.cache_info().currsize == 1  # computed once, reused
