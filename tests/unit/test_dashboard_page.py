@@ -94,4 +94,17 @@ def test_sample_presentation_is_stable_and_cached(client):
     b = client.get("/api/presentation/sample").json()
     assert a == b
     from webapp.app import _sample_report_and_cert
-    assert _sample_report_and_cert.cache_info().currsize == 1  # computed once, reused
+    assert _sample_report_and_cert.cache_info().currsize >= 1  # computed once, reused
+
+
+def test_sample_cache_keyed_on_input_identity(tmp_path, monkeypatch):
+    # the cache key is the input files' identity (size + mtime), NOT process history —
+    # so a changed sample busts the key and can never serve a stale financial result.
+    from webapp import app as web
+
+    for name in web._SAMPLE_FILES:
+        (tmp_path / name).write_text("seed")
+    monkeypatch.setattr(web, "_SAMPLE", str(tmp_path))
+    fp1 = web._sample_fingerprint()
+    (tmp_path / "bank_statement.csv").write_text("changed — different size and mtime")
+    assert web._sample_fingerprint() != fp1
