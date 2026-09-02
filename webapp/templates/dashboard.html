@@ -62,7 +62,7 @@
 </div>
 <div class="bg-surface p-6 rounded-xl border border-outline-variant flex flex-col justify-between">
 <div class="flex justify-between items-start mb-4">
-<span class="font-label-caps text-on-surface-variant text-label-caps">UNRESOLVED VALUE</span>
+<span class="font-label-caps text-on-surface-variant text-label-caps">UNRESOLVED · RAZORPAY SLICE</span>
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-error"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg>
 </div>
 <div>
@@ -174,8 +174,13 @@
 
 <script>
   const $ = (id) => document.getElementById(id);
-  const inr = (paise) => '₹' + (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const pct = (n) => (n * 100).toFixed(1) + '%';
+  // Money is integer paise. Reject anything that isn't a finite safe integer (null,
+  // undefined, booleans, NaN, floats) rather than coercing it into a fabricated ₹0.
+  const inr = (paise) =>
+    (typeof paise === 'number' && Number.isSafeInteger(paise))
+      ? '₹' + (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : '—';
+  const pct = (n) => (Number.isFinite(n) ? (n * 100).toFixed(1) + '%' : '—');
 
   // buckets for "where the money came from" — mapped from real rails + summary
   const RAIL_LABEL = {
@@ -208,9 +213,13 @@
     $('m-coverage').textContent = pct(coverage);
     $('m-coverage-bar').style.width = (coverage * 100).toFixed(1) + '%';
     $('m-coverage-sub').textContent = s.attributed_count + ' of ' + s.n_bank_lines + ' credits attributed';
-    $('m-unresolved').textContent = inr(s.unresolved_paise || 0);
-    $('m-unresolved-sub').textContent = 'across ' + (s.unresolved_count || 0) + ' transactions';
-    $('m-gst').textContent = inr(s.fee_gst_recoverable_paise || 0);
+    // summary.unresolved_paise is the Razorpay reconciliation slice (rail total − reconciled),
+    // NOT the run's total exposure — label it as such and never fabricate ₹0 for a null.
+    $('m-unresolved').textContent = inr(s.unresolved_paise);
+    $('m-unresolved-sub').textContent = s.unresolved_paise == null
+      ? 'not available for this run'
+      : (s.unresolved_count ?? 0) + ' Razorpay credits not yet reconciled';
+    $('m-gst').textContent = inr(s.fee_gst_recoverable_paise);
 
     // classification bar + legend (real rail counts + abstained)
     const rails = p.rails || [];
@@ -276,8 +285,8 @@
 
     // ready to post (real reconciled totals + certificate status)
     $('j-reconciled-count').textContent = (s.reconciled_count || 0) + ' credits';
-    $('j-reconciled-value').textContent = inr(s.reconciled_paise || 0);
-    $('j-gst').textContent = inr(s.fee_gst_recoverable_paise || 0);
+    $('j-reconciled-value').textContent = inr(s.reconciled_paise);
+    $('j-gst').textContent = inr(s.fee_gst_recoverable_paise);
     const cs = p.certificate_status || {};
     $('j-cert').textContent = (cs.status || 'unknown') + (cs.authenticated ? ' · signed' : ' · unsigned');
   }

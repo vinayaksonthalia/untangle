@@ -20,6 +20,7 @@ import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
+from functools import lru_cache
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -725,18 +726,30 @@ async def api_verify(request: Request) -> JSONResponse:
     return JSONResponse(verify_certificate(payload))
 
 
-@app.get("/api/presentation/sample")
-def api_presentation_sample(limit: int = 100, offset: int = 0) -> JSONResponse:
-    """Presentation contract for the bundled sample run — safe, read-only UI data. Nothing stored."""
-    from webapp.presentation import PresentationSchemaError, build_presentation_payload
+@lru_cache(maxsize=1)
+def _sample_report_and_cert():
+    """Reconcile the bundled (deterministic) sample once and cache the report + certificate.
 
+    The sample inputs are fixed after `_ensure_sample`, so the expensive reconciliation +
+    certificate build must not run on every request. Without this, GET /api/presentation/sample
+    (hit on every dashboard load, and exempt from rate-limit/capacity admission) would re-run the
+    full pipeline per request — a cheap unauthenticated DoS. Pagination stays per-request (cheap).
+    """
     _ensure_sample()
     report = reconcile(
         os.path.join(_SAMPLE, "bank_statement.csv"),
         os.path.join(_SAMPLE, "recon_report.json"),
         os.path.join(_SAMPLE, "order_ledger.csv"),
     )
-    cert = issue_certificate(report)
+    return report, issue_certificate(report)
+
+
+@app.get("/api/presentation/sample")
+def api_presentation_sample(limit: int = 100, offset: int = 0) -> JSONResponse:
+    """Presentation contract for the bundled sample run — safe, read-only UI data. Nothing stored."""
+    from webapp.presentation import PresentationSchemaError, build_presentation_payload
+
+    report, cert = _sample_report_and_cert()  # expensive part cached; only paginate per request
     try:
         presentation = build_presentation_payload(report, certificate=cert, limit=limit, offset=offset)
     except PresentationSchemaError as exc:
