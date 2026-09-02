@@ -122,3 +122,26 @@ def test_voucher_corrects_variance_guards():
         ],
     }
     assert _voucher_corrects_variance(subpaise, 1000) is False  # sub-paise must not round to a pass
+
+
+def test_voucher_scorer_is_crash_safe_on_malformed_input():
+    # A malformed corrective entry must be REJECTED (return False), never raise — one bad voucher
+    # can't be allowed to abort the whole metrics run.
+    for bad_lines in (
+        [None],                                              # null line
+        ["not-a-mapping"],                                   # non-dict line
+        [{"debit_inr": True, "credit_inr": "0.00"}],         # boolean amount
+        [{"debit_inr": "abc", "credit_inr": "0.00"}],        # non-numeric text
+        [{"debit_inr": "NaN", "credit_inr": "0.00"}],        # non-finite
+        [{"debit_inr": "Infinity", "credit_inr": "0.00"}],
+    ):
+        entry = {"balanced": True, "lines": bad_lines}
+        assert _voucher_corrects_variance(entry, 1000) is False
+
+
+def test_voucher_scorer_rejects_ambiguous_double_entry_lines():
+    # A line with BOTH sides non-zero, or a single self-balancing line, is not valid double-entry.
+    both_sided = {"balanced": True, "lines": [{"debit_inr": "10.00", "credit_inr": "10.00"}]}
+    assert _voucher_corrects_variance(both_sided, 1000) is False
+    zero_line = {"balanced": True, "lines": [{"debit_inr": "0.00", "credit_inr": "0.00"}]}
+    assert _voucher_corrects_variance(zero_line, 1000) is False

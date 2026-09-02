@@ -14,7 +14,7 @@ import math
 import random
 from collections import defaultdict
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from engine.ingest import load_bank, load_bank_bytes
 
@@ -229,21 +229,40 @@ def _voucher_corrects_variance(entry: dict | None, expected_variance_paise) -> b
     """
     if not entry or entry.get("balanced") is not True:
         return False
-    lines = entry.get("lines", [])
-    if not lines:
+    lines = entry.get("lines")
+    if not isinstance(lines, list) or not lines:
         return False
 
     def _exact_paise(x, field):
-        cents = Decimal(str(x.get(field, "0.00"))) * 100
-        return int(cents) if cents == cents.to_integral_value() else None
+        # INR value -> exact integer paise, or None (reject) for ANY malformed input. Never raises,
+        # so a single unsupported corrective entry can't abort the whole metrics run.
+        if not isinstance(x, dict):
+            return None
+        v = x.get(field, "0.00")
+        if isinstance(v, bool):  # bool is an int subclass — reject explicitly
+            return None
+        try:
+            cents = Decimal(str(v)) * 100
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+        if not cents.is_finite() or cents != cents.to_integral_value():
+            return None
+        return int(cents)
 
-    dv = [_exact_paise(x, "debit_inr") for x in lines]
-    cv = [_exact_paise(x, "credit_inr") for x in lines]
-    if None in dv or None in cv:
-        return False
-    debits, credits = sum(dv), sum(cv)
+    total_debit = total_credit = 0
+    for x in lines:
+        d = _exact_paise(x, "debit_inr")
+        c = _exact_paise(x, "credit_inr")
+        if d is None or c is None:
+            return False
+        # Proper double-entry: each line has EXACTLY one non-zero side (never both, never neither) —
+        # a both-sided or self-balancing line is ambiguous and must not score as a correction.
+        if (d != 0) == (c != 0):
+            return False
+        total_debit += d
+        total_credit += c
     expected = abs(int(expected_variance_paise))
-    return debits == credits and expected > 0 and debits == expected
+    return total_debit == total_credit and expected > 0 and total_debit == expected
 
 
 def score(report: dict, truth_path: str, bank_csv: str) -> dict:
