@@ -99,6 +99,21 @@ def main() -> int:
             )
             css_parts.append(face)
 
+    # Fail loudly rather than commit an incomplete font set: a changed/partial
+    # provider response must not silently replace the committed @font-face rules
+    # (which would fall back to system fonts in production).
+    expected = {
+        f"{slug}-{subset}.woff2"
+        for _family, slug in FAMILIES
+        for subset in KEEP_SUBSETS
+    }
+    missing = expected - set(downloaded)
+    if missing:
+        raise SystemExit(
+            f"incomplete font download: missing {sorted(missing)} "
+            f"(got {sorted(downloaded)}). Refusing to write {OUT_CSS.name}."
+        )
+
     OUT_CSS.write_text("\n\n".join(css_parts) + "\n", encoding="utf-8")
     print(f"downloaded {len(downloaded)} woff2 files to {FONT_DIR}")
     for f in sorted(downloaded):
