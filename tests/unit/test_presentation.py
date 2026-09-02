@@ -23,7 +23,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import shutil
 from io import BytesIO
 from unittest.mock import patch
 
@@ -40,6 +39,7 @@ from eval.benchmark_generator import (
     _format_order_ledger_csv,
     _format_recon_json,
 )
+from eval.sealed import generate_sealed_holdout
 from generator import bank as BANK
 from generator import build as B
 from generator import config as C
@@ -469,6 +469,53 @@ def test_malformed_recovery_plan_fails_with_schema_error(sample_report_and_cert,
         build_presentation_payload(malformed)
 
 
+def test_present_recovery_plan_requires_all_financial_aggregates(sample_report_and_cert):
+    report, _, _ = sample_report_and_cert
+    incomplete = copy.deepcopy(report)
+    incomplete["recovery_plan"] = {
+        "actions": [],
+        "recoverable_if_actioned_paise": 10,
+        "unresolved_credit_paise": 10,
+    }
+
+    with pytest.raises(PresentationSchemaError, match="unresolved_debit_paise"):
+        build_presentation_payload(incomplete)
+
+
+def test_recovery_action_order_preserves_engine_ranking(sample_report_and_cert):
+    report, _, _ = sample_report_and_cert
+    ranked = copy.deepcopy(report)
+    ranked["recovery_plan"] = {
+        "recoverable_if_actioned_paise": 110,
+        "unresolved_credit_paise": 110,
+        "unresolved_debit_paise": 0,
+        "actions": [
+            {
+                "action_type": "high_gain_first",
+                "description": "Engine-ranked first",
+                "recoverable_paise": 10,
+                "debit_exposure_paise": 0,
+                "gain_per_cost": 10.0,
+                "resolves": ["a"],
+            },
+            {
+                "action_type": "larger_amount_second",
+                "description": "Engine-ranked second",
+                "recoverable_paise": 100,
+                "debit_exposure_paise": 0,
+                "gain_per_cost": 1.0,
+                "resolves": ["b"],
+            },
+        ],
+    }
+
+    payload = build_presentation_payload(ranked)
+    assert [action["action_type"] for action in payload["recovery"]["actions"]] == [
+        "high_gain_first",
+        "larger_amount_second",
+    ]
+
+
 def test_qodo_7_rate_limiting_on_api_presentation():
     """Qodo #7: POST /api/presentation is subject to per-client rate-limit."""
     client = TestClient(app)
@@ -514,7 +561,7 @@ def test_qodo_8_9_sealed_evaluation_off_request_path_and_cached():
 def test_sealed_presentation_ignores_unbound_precomputed_report(tmp_path):
     """A writable report beside trusted inputs must never supply published metrics."""
     sealed_dir = tmp_path / "sealed"
-    shutil.copytree("data/sealed", sealed_dir)
+    generate_sealed_holdout(seed=1337, out_dir=str(sealed_dir))
     (sealed_dir / "sealed_report.json").write_text(
         json.dumps({"metrics": {"per_rail": {"razorpay_settlement": {"precision": 0.123}}}}),
         encoding="utf-8",
@@ -530,6 +577,12 @@ def test_sealed_presentation_ignores_unbound_precomputed_report(tmp_path):
     evaluator.assert_called_once()
     assert payload["evaluation_status"] == "verified_server_holdout"
     assert payload["metrics"]["razorpay_precision"] == 1.0
+    evaluator_config = payload["evaluator"]
+    assert evaluator_config["protocol"] == "E3"
+    assert evaluator_config["threshold"] == 0.55
+    assert evaluator_config["global_solver"] is False
+    assert evaluator_config["evidence_pack"]["pack_id"] == "in.untangle.narration.default"
+    assert len(evaluator_config["config_sha256"]) == 64
 
 
 def test_qodo_10_controlled_integrity_and_schema_error_responses(tmp_path):

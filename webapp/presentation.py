@@ -18,13 +18,15 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import math
 import os
 import tempfile
 from typing import Any
 
 from engine.certificate import verify_certificate
-from engine.packs import PACK_REGISTRY
+from engine.config import DEFAULT_THRESHOLD
+from engine.packs import PACK_REGISTRY, get_default_pack
 
 PRESENTATION_SCHEMA_VERSION = "1.0.0"
 PRESENTATION_SCHEMA_PROVENANCE: dict[str, Any] = {
@@ -42,7 +44,10 @@ MAX_VERDICTS_LIMIT = 100
 # Only results produced by the authoritative evaluator are eligible for the sealed
 # presentation.  This cache is deliberately process-local and keyed by the authenticated
 # manifest; it is never populated from a writable ``out/`` file.
-_SEALED_PRESENTATION_CACHE: dict[tuple[str, str], dict[str, Any]] = {}
+_SEALED_EVALUATOR_VERSION = "1.0.0"
+_SEALED_ENGINE_VERSION = "1.1.0"
+_SEALED_GLOBAL_SOLVER = False
+_SEALED_PRESENTATION_CACHE: dict[tuple[str, str, str], dict[str, Any]] = {}
 
 
 class PresentationSchemaError(ValueError):
@@ -260,8 +265,10 @@ def _validate_recovery_plan(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise PresentationSchemaError("Report 'recovery_plan' must be a dictionary")
 
-    def non_negative_int(name: str, default: int = 0) -> int:
-        raw = value.get(name, default)
+    def required_non_negative_int(name: str) -> int:
+        if name not in value:
+            raise PresentationSchemaError(f"Recovery plan missing required field {name!r}")
+        raw = value[name]
         if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
             raise PresentationSchemaError(f"Recovery plan field {name!r} must be a non-negative integer")
         return raw
@@ -292,9 +299,9 @@ def _validate_recovery_plan(value: Any) -> dict[str, Any]:
 
     return {
         "actions": clean_actions,
-        "recoverable_if_actioned_paise": non_negative_int("recoverable_if_actioned_paise"),
-        "unresolved_credit_paise": non_negative_int("unresolved_credit_paise"),
-        "unresolved_debit_paise": non_negative_int("unresolved_debit_paise"),
+        "recoverable_if_actioned_paise": required_non_negative_int("recoverable_if_actioned_paise"),
+        "unresolved_credit_paise": required_non_negative_int("unresolved_credit_paise"),
+        "unresolved_debit_paise": required_non_negative_int("unresolved_debit_paise"),
     }
 
 
@@ -385,7 +392,9 @@ def build_presentation_payload(
     rp = _validate_recovery_plan(report.get("recovery_plan"))
     recovery_actions = []
     if isinstance(rp.get("actions"), list):
-        for act in sorted(rp["actions"], key=lambda a: (-a["recoverable_paise"], a["action_type"])):
+        # RecoveryPlan.to_dict() preserves the engine's authoritative gain-per-cost
+        # ranking. The presentation boundary must not replace that decision.
+        for act in rp["actions"]:
             recovery_actions.append({
                 "action_type": act["action_type"],
                 "description": act["description"],
@@ -501,7 +510,27 @@ def build_sealed_evaluation_presentation(
     except Exception as exc:
         raise PresentationSchemaError("Sealed evaluation manifest is invalid or unreadable") from exc
 
-    cache_key = (os.path.abspath(sealed_dir), manifest_sha)
+    default_pack = get_default_pack()
+    evaluator_config = {
+        "protocol": "E3",
+        "evaluator_version": _SEALED_EVALUATOR_VERSION,
+        "engine_version": _SEALED_ENGINE_VERSION,
+        "threshold": DEFAULT_THRESHOLD,
+        "global_solver": _SEALED_GLOBAL_SOLVER,
+        "evidence_pack": {
+            "pack_id": default_pack.pack_id,
+            "version": default_pack.version,
+            "schema_version": default_pack.schema_version,
+        },
+    }
+    config_bytes = json.dumps(
+        evaluator_config,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    evaluator_config_sha = hashlib.sha256(config_bytes).hexdigest()
+    cache_key = (os.path.abspath(sealed_dir), manifest_sha, evaluator_config_sha)
     cached = _SEALED_PRESENTATION_CACHE.get(cache_key)
     if cached is not None:
         return copy.deepcopy(cached)
@@ -519,7 +548,9 @@ def build_sealed_evaluation_presentation(
         with tempfile.TemporaryDirectory(prefix="untangle-sealed-eval-") as tmp_dir:
             sealed_res = evaluate_sealed(
                 sealed_dir,
+                threshold=DEFAULT_THRESHOLD,
                 out_report=os.path.join(tmp_dir, "sealed_report.json"),
+                global_solver=_SEALED_GLOBAL_SOLVER,
             )
 
     metrics = sealed_res.get("metrics")
@@ -555,6 +586,10 @@ def build_sealed_evaluation_presentation(
         "dataset_type": "synthetic_adversarial_holdout",
         "seed": 1337,
         "manifest_sha256": manifest_sha,
+        "evaluator": {
+            **evaluator_config,
+            "config_sha256": evaluator_config_sha,
+        },
         "disclaimer": (
             "Adversarial holdout benchmark on synthetic dataset. "
             "Not an empirical claim about unconfigured bank formats or universal production accuracy."
