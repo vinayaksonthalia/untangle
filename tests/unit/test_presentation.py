@@ -489,6 +489,45 @@ def test_qodo_10_controlled_integrity_and_schema_error_responses(tmp_path):
         assert "/var/data" not in json.dumps(data)
 
 
+def test_qodo_4_presentation_schema_provenance(sample_report_and_cert):
+    """Qodo #4: Ensure machine-readable presentation schema provenance is present in contracts."""
+    report, cert, _ = sample_report_and_cert
+    presentation = build_presentation_payload(report, certificate=cert)
+
+    # Top level schema provenance
+    prov = presentation.get("presentation_schema_provenance")
+    assert isinstance(prov, dict)
+    assert prov["schema_version"] == "1.0.0"
+    assert prov["creator"] == "untangle.presentation"
+    assert "created_at" in prov
+    assert "doc" in prov
+
+    # Run identity provenance
+    run_id = presentation.get("run_identity", {})
+    assert run_id.get("creator") == "untangle.presentation"
+    assert run_id.get("created_at") == "2026-09-02"
+
+    # Sealed evaluation presentation provenance
+    sealed_p = build_sealed_evaluation_presentation(allow_compute_if_absent=True)
+    sealed_prov = sealed_p.get("presentation_schema_provenance")
+    assert isinstance(sealed_prov, dict)
+    assert sealed_prov["schema_version"] == "1.0.0"
+    assert sealed_prov["creator"] == "untangle.presentation"
+
+
+def test_qodo_8_clean_deployment_sealed_provisioning(tmp_path):
+    """Qodo #8: On a clean deployment where data/sealed is missing, auto-generate on allow_compute_if_absent."""
+    empty_sealed_dir = tmp_path / "sealed"
+    # Ensure it doesn't exist yet
+    assert not empty_sealed_dir.exists()
+
+    # With allow_compute_if_absent=True, it should generate and evaluate cleanly
+    p = build_sealed_evaluation_presentation(sealed_dir=str(empty_sealed_dir), allow_compute_if_absent=True)
+    assert p["contract_type"] == "sealed_evaluation_presentation"
+    assert p["evaluation_status"] == "verified_server_holdout"
+    assert p["metrics"]["razorpay_precision"] == 1.0
+
+
 # ============================================================================
 # 7. Web API Endpoints Integration
 # ============================================================================

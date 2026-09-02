@@ -21,6 +21,9 @@ COPY mcp_server.py ./
 
 RUN pip install --upgrade pip && pip install -e ".[web,mcp]"
 
+# Pre-generate & authenticate the sealed evaluation holdout artifact during build
+RUN python -m eval.sealed
+
 # Run as an unprivileged user; give it a writable home for the runtime sample dataset.
 RUN useradd --create-home --uid 10001 app && chown -R app:app /app
 USER app

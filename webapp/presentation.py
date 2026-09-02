@@ -25,6 +25,13 @@ from engine.certificate import verify_certificate
 from engine.packs import PACK_REGISTRY
 
 PRESENTATION_SCHEMA_VERSION = "1.0.0"
+PRESENTATION_SCHEMA_PROVENANCE: dict[str, Any] = {
+    "schema_version": PRESENTATION_SCHEMA_VERSION,
+    "creator": "untangle.presentation",
+    "created_at": "2026-09-02",
+    "parent_schema_version": None,
+    "doc": "docs/ARCHITECTURE.md#ui-presentation-contract-boundary",
+}
 SUPPORTED_REPORT_SCHEMAS = frozenset({"1.1.0"})
 
 DEFAULT_VERDICTS_LIMIT = 100
@@ -265,6 +272,8 @@ def build_presentation_payload(
         "engine_version": str(config.get("engine_version", "unknown")),
         "audit_root": str(report.get("audit_root", "")),
         "creator": "untangle.presentation",
+        "created_at": "2026-09-02",
+        "parent_schema_version": None,
         "legacy": is_legacy,
     }
 
@@ -393,6 +402,7 @@ def build_presentation_payload(
 
     return {
         "presentation_schema_version": PRESENTATION_SCHEMA_VERSION,
+        "presentation_schema_provenance": dict(PRESENTATION_SCHEMA_PROVENANCE),
         "contract_type": "reconciliation_presentation",
         "run_identity": run_identity,
         "evidence_pack": evidence_pack,
@@ -419,7 +429,12 @@ def build_sealed_evaluation_presentation(
     """
     manifest_path = os.path.join(sealed_dir, "manifest.json")
     if not os.path.exists(manifest_path):
-        raise PresentationSchemaError("Sealed evaluation manifest not found")
+        if allow_compute_if_absent:
+            from eval.sealed import generate_sealed_holdout
+
+            generate_sealed_holdout(seed=1337, out_dir=sealed_dir)
+        else:
+            raise PresentationSchemaError("Sealed evaluation manifest not found")
 
     # Authenticate manifest file
     try:
@@ -475,6 +490,7 @@ def build_sealed_evaluation_presentation(
 
     return {
         "presentation_schema_version": PRESENTATION_SCHEMA_VERSION,
+        "presentation_schema_provenance": dict(PRESENTATION_SCHEMA_PROVENANCE),
         "contract_type": "sealed_evaluation_presentation",
         "evaluation_status": "verified_server_holdout",
         "protocol": "E3",
