@@ -433,7 +433,7 @@ def verify_report(report: dict) -> list[VerificationResult]:
             and isinstance(ep.get("schema_version"), str)
         )
         if ep_ok:
-            from engine.packs import get_pack, PackError
+            from engine.packs import PackError, get_pack
             try:
                 resolved = get_pack(f"{ep['pack_id']}@{ep['version']}")
                 ep_ok = ep["schema_version"] == resolved.schema_version
