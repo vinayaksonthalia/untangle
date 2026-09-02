@@ -7,8 +7,8 @@ import json
 
 import pytest
 
-from engine.ingest import load_bank
-from eval.metrics import cluster_bootstrap_ci95, format_ci, score, wilson_ci95
+from engine.ingest import load_bank, load_bank_bytes
+from eval.metrics import cluster_bootstrap_ci95, format_ci, score, score_bytes, wilson_ci95
 from eval.sealed import _load_dev_metrics, _validated_display_totals
 
 _BANK_CSV = (
@@ -69,6 +69,57 @@ def test_per_rail_precision_recall(tmp_path):
     assert rzp["precision_ci95"]["trials"] == 2
     assert rzp["precision_ci95"]["method"] == "cluster_bootstrap"
     assert 0.0 <= rzp["precision_ci95"]["low"] <= rzp["precision_ci95"]["high"] <= 1.0
+
+
+@pytest.mark.parametrize(
+    ("lines", "expected_balanced"),
+    [
+        ([], 0),
+        ([{"debit_inr": "0.00", "credit_inr": "0.00"}], 0),
+        ([{"debit_inr": "9.00", "credit_inr": "0.00"},
+          {"debit_inr": "0.00", "credit_inr": "9.00"}], 0),
+        ([{"debit_inr": "10.00", "credit_inr": "0.00"},
+          {"debit_inr": "0.00", "credit_inr": "10.00"}], 1),
+    ],
+)
+def test_score_bytes_requires_a_nonempty_exactly_sized_corrective_voucher(
+    lines, expected_balanced
+):
+    """Public scoring must not award empty, zero, or wrong-sized vouchers."""
+    bank_bytes = _BANK_CSV.encode("utf-8")
+    line_key = load_bank_bytes(bank_bytes)[0].key
+    truth = {
+        "labels": [
+            {
+                "line_id": "bl_A",
+                "rail": "razorpay_settlement",
+                "hard_cases": [],
+                "intended_root_cause": "mdr_fee_drift",
+                "expected_variance_paise": 1000,
+            },
+            {"line_id": "bl_B", "rail": "other_gateway", "hard_cases": []},
+            {"line_id": "bl_C", "rail": "unrelated", "hard_cases": []},
+            {"line_id": "bl_D", "rail": "razorpay_settlement", "hard_cases": []},
+        ]
+    }
+    report = {
+        "totals": {"n_bank_lines": 4, "attributed": 0, "abstained": 4},
+        "attributions": [
+            {"line_key": line.key, "rail": "UNKNOWN", "confidence": 0.0}
+            for line in load_bank_bytes(bank_bytes)
+        ],
+        "investigations": [{
+            "line_key": line_key,
+            "root_cause": "mdr_fee_drift",
+            "corrective_entry": {"balanced": True, "lines": lines},
+        }],
+    }
+
+    resolution = score_bytes(
+        report, json.dumps(truth).encode("utf-8"), bank_bytes
+    )["investigation_resolution"]
+    assert resolution["resolved"] == 1
+    assert resolution["balanced_or_abstained"] == expected_balanced
 
 
 def test_cluster_bootstrap_widens_interval_for_correlated_legs():

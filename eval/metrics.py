@@ -14,6 +14,7 @@ import math
 import random
 from collections import defaultdict
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 
 from engine.ingest import load_bank, load_bank_bytes
 
@@ -218,6 +219,57 @@ class PR:
         }
 
 
+def _voucher_corrects_variance(entry: dict | None, expected_variance_paise) -> bool:
+    """Whether a resolved corrective voucher genuinely corrects the labelled variance.
+
+    Guards against false-positive scoring: the voucher must be marked balanced, have lines,
+    be expressible in EXACT integer paise (a sub-paise INR value like "10.005" is rejected, not
+    rounded), balance debits==credits in paise, and its debit total must equal the label's
+    expected variance (so an empty, zero, or wrong-sized voucher never scores as a correction).
+    """
+    if not entry or entry.get("balanced") is not True:
+        return False
+    lines = entry.get("lines")
+    if not isinstance(lines, list) or not lines:
+        return False
+
+    def _exact_paise(x, field):
+        # INR value -> exact integer paise, or None (reject) for ANY malformed input. Never raises,
+        # so a single unsupported corrective entry can't abort the whole metrics run.
+        if not isinstance(x, dict):
+            return None
+        v = x.get(field, "0.00")
+        if isinstance(v, bool):  # bool is an int subclass — reject explicitly
+            return None
+        try:
+            cents = Decimal(str(v)) * 100
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+        if not cents.is_finite() or cents != cents.to_integral_value():
+            return None
+        return int(cents)
+
+    total_debit = total_credit = 0
+    for x in lines:
+        d = _exact_paise(x, "debit_inr")
+        c = _exact_paise(x, "credit_inr")
+        if d is None or c is None:
+            return False
+        # Journal sides are unsigned amounts.  A negative debit or credit is not an
+        # opposite-side posting; allowing it would let malformed legs cancel in the
+        # aggregate and receive benchmark credit for an impossible voucher.
+        if d < 0 or c < 0:
+            return False
+        # Proper double-entry: each line has EXACTLY one non-zero side (never both, never neither) —
+        # a both-sided or self-balancing line is ambiguous and must not score as a correction.
+        if (d != 0) == (c != 0):
+            return False
+        total_debit += d
+        total_credit += c
+    expected = abs(int(expected_variance_paise))
+    return total_debit == total_credit and expected > 0 and total_debit == expected
+
+
 def score(report: dict, truth_path: str, bank_csv: str) -> dict:
     with open(truth_path, "rb") as truth_fh, open(bank_csv, "rb") as bank_fh:
         return score_bytes(report, truth_fh.read(), bank_fh.read())
@@ -347,7 +399,7 @@ def score_bytes(report: dict, truth_bytes: bytes, bank_bytes: bytes) -> dict:
                           if pred.get(lid, ("UNKNOWN", 0))[0] == lab["rail"])
     coverage = sum(1 for r, _ in pred.values() if r != "UNKNOWN") / len(labels)
 
-    return {
+    result = {
         "n_labels": len(labels),
         "per_rail": {r: per_rail[r].as_dict() for r in _RAILS},
         "per_hard_case": per_hard,
@@ -365,3 +417,44 @@ def score_bytes(report: dict, truth_bytes: bytes, bank_bytes: bytes) -> dict:
             "coverage": round(coverage, 4),
         },
     }
+    intended = {
+        lid: lab["intended_root_cause"]
+        for lid, lab in labels.items()
+        if lab.get("intended_root_cause")
+    }
+    if intended:
+        predicted = {
+            key2lid.get(inv.get("line_key")): inv
+            for inv in report.get("investigations", [])
+            if key2lid.get(inv.get("line_key"))
+        }
+        per_class: dict[str, dict] = {}
+        resolved = balanced = 0
+        for cause in sorted(set(intended.values())):
+            lids = [lid for lid, expected in intended.items() if expected == cause]
+            correct = balanced_for_class = 0
+            for lid in lids:
+                inv = predicted.get(lid, {})
+                if inv.get("root_cause") != cause:
+                    continue
+                correct += 1
+                entry = inv.get("corrective_entry")
+                if cause == "unexplained":
+                    balanced_for_class += int(entry is None)
+                elif entry:
+                    balanced_for_class += int(
+                        _voucher_corrects_variance(
+                            entry, labels[lid].get("expected_variance_paise", 0)
+                        )
+                    )
+            resolved += correct
+            balanced += balanced_for_class
+            per_class[cause] = {
+                "support": len(lids), "resolved": correct, "balanced": balanced_for_class,
+            }
+        result["investigation_resolution"] = {
+            "support": len(intended), "resolved": resolved,
+            "accuracy": round(resolved / len(intended), 4),
+            "balanced_or_abstained": balanced, "per_class": per_class,
+        }
+    return result

@@ -99,8 +99,16 @@ def _parse_dt(raw: str) -> datetime | None:
 def _as_int_paise(v, *, ctx: str) -> int:
     if v is None or v == "":
         return 0
-    try:
+    if isinstance(v, bool):
+        raise InputError(f"{ctx}: expected an integer paise value, got boolean {v!r}.")
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        if not v.is_integer():  # also rejects NaN / inf
+            raise InputError(f"{ctx}: expected an integer paise value, got non-integer {v!r}.")
         return int(v)
+    try:
+        return int(str(v).strip())
     except (ValueError, TypeError) as exc:
         raise InputError(f"{ctx}: expected an integer paise value, got {v!r}.") from exc
 
@@ -191,6 +199,14 @@ def _load_recon_data(data, source: str) -> list[ReconRow]:
                 description=(str(r["description"]) if r.get("description") else None),
                 # Vendor-provided IDs are metadata only; physical position is canonical.
                 row_id=f"recon_{i}",
+                authorized_amount_paise=(
+                    _as_int_paise(r.get("authorized_amount"), ctx=f"recon row {i} authorized_amount")
+                    if r.get("authorized_amount") not in (None, "") else None
+                ),
+                captured_amount_paise=(
+                    _as_int_paise(r.get("captured_amount"), ctx=f"recon row {i} captured_amount")
+                    if r.get("captured_amount") not in (None, "") else None
+                ),
             )
         )
     if not rows:
