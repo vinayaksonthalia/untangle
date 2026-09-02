@@ -266,8 +266,19 @@ def write_investigation_benchmark(out_dir: str, cfg: Config) -> dict:
                     "payment_method": item["payment_method"],
                 }
             )
+    from generator.generate import GENERATOR_VERSION  # lazy import avoids a circular dependency
+
     payload = {
-        "_meta": {"seed": cfg.seed, "scale": cfg.scale, "benchmark": "investigation"},
+        "_meta": {
+            "generator_version": GENERATOR_VERSION,
+            "seed": cfg.seed,
+            "scale": cfg.scale,
+            "benchmark": "investigation",
+            "creator": "generator.investigation_cases",
+            "source": "synthetic",
+            "parent_version": None,
+            "note": "Answer key for the investigation exception benchmark. Amounts in PAISE.",
+        },
         "labels": truth,
     }
     with open(os.path.join(target, "ground_truth.json"), "w", encoding="utf-8") as fh:

@@ -391,9 +391,25 @@ def score_bytes(report: dict, truth_bytes: bytes, bank_bytes: bytes) -> dict:
                 if cause == "unexplained":
                     balanced_for_class += int(entry is None)
                 elif entry:
-                    debits = sum(Decimal(x.get("debit_inr", "0.00")) for x in entry.get("lines", []))
-                    credits = sum(Decimal(x.get("credit_inr", "0.00")) for x in entry.get("lines", []))
-                    balanced_for_class += int(entry.get("balanced") is True and debits == credits)
+                    # Sum in integer paise (no second monetary representation), and require the
+                    # voucher to actually correct the LABELLED variance — an empty/zero/wrong-sized
+                    # balanced voucher must NOT score as a successful correction.
+                    lines = entry.get("lines", [])
+                    debits = sum(
+                        int((Decimal(str(x.get("debit_inr", "0.00"))) * 100).to_integral_value())
+                        for x in lines
+                    )
+                    credits = sum(
+                        int((Decimal(str(x.get("credit_inr", "0.00"))) * 100).to_integral_value())
+                        for x in lines
+                    )
+                    expected = abs(int(labels[lid].get("expected_variance_paise", 0)))
+                    balanced_for_class += int(
+                        entry.get("balanced") is True
+                        and debits == credits
+                        and expected > 0
+                        and debits == expected
+                    )
             resolved += correct
             balanced += balanced_for_class
             per_class[cause] = {

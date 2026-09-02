@@ -99,8 +99,16 @@ def _parse_dt(raw: str) -> datetime | None:
 def _as_int_paise(v, *, ctx: str) -> int:
     if v is None or v == "":
         return 0
-    try:
+    if isinstance(v, bool):
+        raise InputError(f"{ctx}: expected an integer paise value, got boolean {v!r}.")
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        if not v.is_integer():  # also rejects NaN / inf
+            raise InputError(f"{ctx}: expected an integer paise value, got non-integer {v!r}.")
         return int(v)
+    try:
+        return int(str(v).strip())
     except (ValueError, TypeError) as exc:
         raise InputError(f"{ctx}: expected an integer paise value, got {v!r}.") from exc
 

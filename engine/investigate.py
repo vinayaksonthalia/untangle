@@ -500,11 +500,16 @@ def investigate(
         capture_rows = [r for r in associated_rows if (
             r.authorized_amount_paise is not None and r.captured_amount_paise is not None
         )]
+        # A fully-captured row (authorized == captured, zero gap) is valid evidence, not a
+        # disqualifier — require every row well-formed with authorized >= captured >= 0, and at
+        # least one genuine partial (positive gap) whose summed gap can close the variance.
         capture_evidence_valid = bool(capture_rows) and all(
             not isinstance(r.authorized_amount_paise, bool)
             and not isinstance(r.captured_amount_paise, bool)
-            and r.authorized_amount_paise > r.captured_amount_paise >= 0
+            and r.authorized_amount_paise >= r.captured_amount_paise >= 0
             for r in capture_rows
+        ) and any(
+            r.authorized_amount_paise > r.captured_amount_paise for r in capture_rows
         )
         capture_gap = sum(
             r.authorized_amount_paise - r.captured_amount_paise for r in capture_rows
