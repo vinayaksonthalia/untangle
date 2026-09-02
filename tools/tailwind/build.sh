@@ -42,5 +42,21 @@ echo "==> assembling webapp/static/landing.css (font faces + compiled utilities)
 } > webapp/static/landing.css
 rm -f tools/tailwind/tailwind.out.css
 
+echo "==> inlining icons + compiling verify.css from webapp/templates/verify.html"
+# verify.html is hand-authored (not generated from a Stitch source); inline_icons is
+# idempotent, so this is safe to re-run.
+python3 tools/tailwind/inline_icons.py webapp/templates/verify.html
+npx --yes "tailwindcss@${TW_VERSION}" \
+  -c tools/tailwind/verify.config.js \
+  -i tools/tailwind/input.css \
+  -o tools/tailwind/verify.out.css \
+  --minify
+{
+  cat tools/tailwind/fonts.css
+  echo
+  cat tools/tailwind/verify.out.css
+} > webapp/static/verify.css
+rm -f tools/tailwind/verify.out.css
+
 echo "==> done"
-wc -c webapp/static/landing.css
+wc -c webapp/static/landing.css webapp/static/verify.css
