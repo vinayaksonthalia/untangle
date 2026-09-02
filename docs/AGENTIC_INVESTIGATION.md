@@ -124,3 +124,25 @@ why alternative explanations were rejected:
 2. **Deterministic Confidence**: Confidence is calculated as a pure mathematical function of residual error ($1.0$ for exact 0-error matches, scaled for minor rounding tolerance), not a heuristic LLM score.
 3. **Additive & Read-Only**: Attaching investigations never modifies headline numbers, attributions, reconciliations, or fee GST. Corrective vouchers are proposals, never auto-posted.
 4. **Abstain Over Guess**: If no hypothesis matches the data, the system outputs `root_cause = "unexplained"` and omits journal drafts.
+
+---
+
+## 6. Investigation Companion Benchmark
+
+`python -m generator.generate --seed 42 --scale 1.0 --out data` leaves the established
+attribution benchmark unchanged and also writes `data/investigation/`. This companion dataset
+contains explicitly labelled bank/report discrepancies for every deterministic root-cause class,
+plus an unsupported control that must abstain. Run it through the normal CLI:
+
+```bash
+python -m engine.cli run \
+  --bank data/investigation/bank_statement.csv \
+  --recon data/investigation/recon_report.json \
+  --ledger data/investigation/order_ledger.csv \
+  --out out/investigation --no-ai --seed 42
+```
+
+Each companion label records `intended_root_cause`, `report_expected_net_paise`,
+`bank_evidence_amount_paise`, and `expected_variance_paise`. `eval.metrics.score()` exposes the
+separate additive `investigation_resolution` metric; these cases never alter attribution
+precision/recall or the core reconciliation and fee-GST figures.

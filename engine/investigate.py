@@ -497,27 +497,60 @@ def investigate(
     # Classifier 5: partial_capture
     # -------------------------------------------------------------------------
     if not matched_cause:
-        # Partial capture (captured < authorized) is NOT deterministically expressible on this
-        # schema: ReconRow carries no authorized-vs-captured amounts. Detecting it from free text
-        # (e.g. the word "partial" in a description) would be a guess and could post a full captured
-        # payment as an uncaptured variance — so we SKIP this classifier rather than infer it. It
-        # will be enabled only if/when the settlement schema carries explicit authorized/captured
-        # fields. (Skip-not-guess, per the abstention contract.)
-        _has_capture_fields = False  # no authorized/captured columns on ReconRow today
-        if _has_capture_fields:  # pragma: no cover - reserved for a schema that carries capture data
-            pass
-        candidates_tried.append({
-            "root_cause": ROOT_CAUSE_PARTIAL_CAPTURE,
-            "matched": False,
-            "delta_paise": 0,
-            "unexplained_residual_paise": abs(variance_paise),
-            "reason": "Skipped: the settlement schema carries no authorized/captured amounts, so "
-                      "partial capture cannot be determined deterministically (never inferred from text).",
-        })
-        reasoning_trace.append(
-            f"Step 6: Evaluated '{ROOT_CAUSE_PARTIAL_CAPTURE}' -> SKIPPED "
-            f"(no deterministic authorized/captured evidence in the schema; not inferred from text)."
+        capture_rows = [r for r in associated_rows if (
+            r.authorized_amount_paise is not None and r.captured_amount_paise is not None
+        )]
+        # Fail closed on AMBIGUOUS evidence: a row carrying only one of authorized/captured is
+        # incomplete — never classify partial_capture (or draft a voucher) when any associated row
+        # is one-sided.
+        one_sided_capture = any(
+            (r.authorized_amount_paise is None) != (r.captured_amount_paise is None)
+            for r in associated_rows
         )
+        # A fully-captured row (authorized == captured, zero gap) is valid evidence, not a
+        # disqualifier — require every row well-formed with authorized >= captured >= 0, and at
+        # least one genuine partial (positive gap) whose summed gap can close the variance.
+        capture_evidence_valid = (not one_sided_capture) and bool(capture_rows) and all(
+            not isinstance(r.authorized_amount_paise, bool)
+            and not isinstance(r.captured_amount_paise, bool)
+            and r.authorized_amount_paise >= r.captured_amount_paise >= 0
+            for r in capture_rows
+        ) and any(
+            r.authorized_amount_paise > r.captured_amount_paise for r in capture_rows
+        )
+        capture_gap = sum(
+            r.authorized_amount_paise - r.captured_amount_paise for r in capture_rows
+        ) if capture_evidence_valid else 0
+        if capture_evidence_valid and abs(variance_paise + capture_gap) <= _TOLERANCE_PAISE:
+            matched_cause = ROOT_CAUSE_PARTIAL_CAPTURE
+            matched_delta = -capture_gap
+            residual_err = abs(variance_paise - matched_delta)
+            confidence = round(1.0 - (residual_err / 100.0) * 0.1, 4)
+            pc_detail = f"Explicit authorized/captured gap of {_format_inr(capture_gap)} accounts for variance"
+            candidates_tried.append({
+                "root_cause": ROOT_CAUSE_PARTIAL_CAPTURE,
+                "matched": True,
+                "delta_paise": matched_delta,
+                "unexplained_residual_paise": residual_err,
+                "reason": pc_detail,
+            })
+            reasoning_trace.append(f"Step 6: Evaluated '{ROOT_CAUSE_PARTIAL_CAPTURE}' -> MATCH: {pc_detail}.")
+        else:
+            reason = (
+                "Explicit authorized/captured evidence is invalid or does not close the variance."
+                if capture_rows else
+                "Skipped: no explicit authorized/captured evidence; partial capture is never inferred from text."
+            )
+            candidates_tried.append({
+                "root_cause": ROOT_CAUSE_PARTIAL_CAPTURE,
+                "matched": False,
+                "delta_paise": 0,
+                "unexplained_residual_paise": abs(variance_paise),
+                "reason": reason,
+            })
+            reasoning_trace.append(
+                f"Step 6: Evaluated '{ROOT_CAUSE_PARTIAL_CAPTURE}' -> NO MATCH ({reason})."
+            )
 
     # -------------------------------------------------------------------------
     # Classifier 6: bank_charge_or_rounding

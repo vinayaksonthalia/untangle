@@ -80,6 +80,9 @@ class ReconRow:
     # Stable physical-row identity.  The public join key is not unique in malformed
     # or vendor-exported reports, so downstream accounting must never re-select by it.
     row_id: str | None = None
+    # Optional capture evidence. Never infer these values from narration.
+    authorized_amount_paise: int | None = None
+    captured_amount_paise: int | None = None
 
     @property
     def net_paise(self) -> int:

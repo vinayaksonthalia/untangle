@@ -39,7 +39,7 @@ RECON_FIELDS = [
     "on_hold", "settled", "created_at", "settled_at", "settlement_id", "posted_at",
     "credit_type", "description", "notes", "payment_id", "settlement_utr",
     "order_id", "order_receipt", "method", "card_network", "card_issuer",
-    "card_type", "dispute_id",
+    "card_type", "dispute_id", "authorized_amount", "captured_amount",
 ]
 
 
@@ -191,6 +191,11 @@ def run(cfg: C.Config, out_dir: str) -> dict:
             "bytes": os.path.getsize(path),
             "sha256": _sha256_file(path),
         }
+
+    # Deliberately inconsistent bank/report pairs live in a companion benchmark so the established
+    # attribution dataset and all of its metrics remain byte-for-byte unchanged.
+    from .investigation_cases import write_investigation_benchmark
+    manifest["investigation_benchmark"] = write_investigation_benchmark(out_dir, cfg)
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
 
