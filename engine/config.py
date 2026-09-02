@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from engine.packs import DEFAULT_PACK_ID, NarrationEvidencePack, get_pack
+
 _KEY_ENV = {
     "openrouter": "OPENROUTER_API_KEY",
     "gemini": "GEMINI_API_KEY",
@@ -49,6 +51,8 @@ class Config:
     threshold: float
     seed: int
     global_solver: bool = False
+    evidence_pack_selector: str | None = DEFAULT_PACK_ID
+    evidence_pack: NarrationEvidencePack | None = None
 
     def provider_or_none(self) -> str:
         return self.provider if self.use_ai else "none"
@@ -63,6 +67,7 @@ def build_config(
     seed: int,
     dotenv_path: str = ".env",
     global_solver: bool = False,
+    evidence_pack: str | None = None,
 ) -> Config:
     use_ai = not no_ai
     env = {**load_dotenv(dotenv_path), **os.environ}
@@ -113,6 +118,14 @@ def build_config(
             f"threshold must be a finite number in [0, 1]; got {resolved_threshold!r}. "
             "The abstention gate cannot be disabled with an out-of-range, NaN, or inf threshold."
         )
+    from engine.packs import PackError
+
+    pack_selector = evidence_pack or env.get("EVIDENCE_PACK") or DEFAULT_PACK_ID
+    try:
+        resolved_pack = get_pack(pack_selector)
+    except PackError as exc:
+        raise ConfigError(str(exc)) from exc
+
     return Config(
         use_ai=use_ai,
         provider=resolved_provider if use_ai else None,
@@ -121,4 +134,6 @@ def build_config(
         threshold=resolved_threshold,
         seed=seed,
         global_solver=global_solver,
+        evidence_pack_selector=pack_selector,
+        evidence_pack=resolved_pack,
     )

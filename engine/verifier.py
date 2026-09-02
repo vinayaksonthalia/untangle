@@ -422,4 +422,27 @@ def verify_report(report: dict) -> list[VerificationResult]:
             )
         )
 
+    # 3. Schema 1.1.0 provenance check (evidence pack identity)
+    cfg_obj = report.get("config")
+    if isinstance(cfg_obj, dict) and cfg_obj.get("report_schema_version") == "1.1.0":
+        ep = cfg_obj.get("evidence_pack")
+        ep_ok = (
+            isinstance(ep, dict)
+            and isinstance(ep.get("pack_id"), str)
+            and isinstance(ep.get("version"), str)
+            and isinstance(ep.get("schema_version"), str)
+        )
+        detail = (
+            f"Evidence pack provenance verified: {ep.get('pack_id')}@{ep.get('version')} (schema {ep.get('schema_version')})"
+            if ep_ok
+            else f"Schema 1.1.0 report must carry valid config.evidence_pack dict, got: {ep!r}"
+        )
+        results.append(
+            VerificationResult(
+                ok=ep_ok,
+                checks=[CheckResult("evidence_pack_provenance", ep_ok, detail)],
+                packet_line_key="report:config:evidence_pack",
+            )
+        )
+
     return results

@@ -26,6 +26,7 @@ from engine.evidence import (
     razorpay_signals,
 )
 from engine.models import BankCreditLine, EvidenceItem, Rail, RailAttribution, Tier
+from engine.packs import NarrationEvidencePack
 
 _HARD_RZP_SIGNALS = {"utr_exact", "utr_suffix", "setsum"}
 # Signals that constitute a genuine TIE back to the settlement report — the only signals that
@@ -193,6 +194,7 @@ def _finalize_razorpay(
     tier: Tier,
     margin_threshold: float,
     audit: bool = False,
+    pack: NarrationEvidencePack | None = None,
 ) -> RailAttribution:
     """Accept a machine Razorpay verdict — but first let the adversarial challenger try to disprove it.
 
@@ -219,14 +221,9 @@ def _finalize_razorpay(
     result = challenge_razorpay(line, index, rzp_ev, non_rzp, rzp_score, _combine)
     if result.truncated or result.proof_margin < margin_threshold:
         note = (
-            f"Razorpay proof margin {result.proof_margin:.3f} is below the calibrated minimum "
-            f"{margin_threshold:.3f}."
+            f"proof margin too low ({result.proof_margin:.3f} < {margin_threshold:.3f}) "
+            f"under challenger operator {result.strongest.operator if result.strongest else 'none'}"
         )
-        if result.strongest is not None:
-            note += (
-                f" Strongest alternative: {result.strongest.rail} "
-                f"({result.strongest.score:.2f}) — {result.strongest.detail}."
-            )
         ev = list(rzp_ev) + [EvidenceItem("proof_margin_low", note, 0.0)]
         return RailAttribution(
             line.key,
@@ -251,8 +248,9 @@ def attribute_line(
     *,
     margin_threshold: float = 0.0,
     audit: bool = False,
+    pack: NarrationEvidencePack | None = None,
 ) -> RailAttribution:
-    non_rzp = narration_rail_signals(line)
+    non_rzp = narration_rail_signals(line, pack=pack)
 
     # FR-015: v1 attributes inbound CREDITS. A debit (bank charge / reversal / sweep-out) is
     # never a Razorpay settlement credit — credit-side signals (UTR ties, amount ties, Tier A)
@@ -268,13 +266,15 @@ def attribute_line(
             return RailAttribution(line.key, Rail.UNKNOWN.value, d_conf, Tier.NONE.value, d_ev, abstained=True)
         return RailAttribution(line.key, d_rail, d_conf, Tier.B.value, d_ev)
 
-    rzp_ev = razorpay_signals(line, index)
+    rzp_ev = razorpay_signals(line, index, pack=pack)
     rzp_hard = any(e.signal in _HARD_RZP_SIGNALS for e in rzp_ev)
 
     # Tier A: clean UTR exact match is decisive — but still challenged before acceptance.
     if any(e.signal == "utr_exact" for e in rzp_ev):
         conf = _combine(rzp_ev)
-        return _finalize_razorpay(line, index, rzp_ev, non_rzp, conf, Tier.A, margin_threshold, audit=audit)
+        return _finalize_razorpay(
+            line, index, rzp_ev, non_rzp, conf, Tier.A, margin_threshold, audit=audit, pack=pack
+        )
 
     # Tier C: no single-net/UTR tie yet, but the line looks Razorpay-ish → try set-sum.
     tier_used = Tier.B
@@ -394,6 +394,7 @@ def reconstruct_splits(
     *,
     margin_threshold: float = 0.0,
     audit: bool = False,
+    pack: NarrationEvidencePack | None = None,
 ) -> list[RailAttribution]:
     """Recover split-settlement legs the *provable* way (FR-016): a Razorpay settlement paid out
     across 2–3 bank credits leaves legs whose per-leg UTR is absent from the recon report, so each
@@ -416,9 +417,9 @@ def reconstruct_splits(
         return attrs
     candidates: list[BankCreditLine] = []
     for ln, a in zip(lines, attrs, strict=True):
-        if not (a.abstained and ln.is_credit and ln.amount_paise > 0 and not narration_rail_signals(ln)):
+        if not (a.abstained and ln.is_credit and ln.amount_paise > 0 and not narration_rail_signals(ln, pack=pack)):
             continue
-        sigs = {e.signal for e in razorpay_signals(ln, index)}
+        sigs = {e.signal for e in razorpay_signals(ln, index, pack=pack)}
         if _RZP_LEANING_SIGNALS & sigs:
             candidates.append(ln)
             sig_by_key[ln.key] = sigs
@@ -461,7 +462,7 @@ def reconstruct_splits(
             continue
         if any(per_key[c.key] != 1 or c.key in poisoned for c in sub):
             continue
-        if not any(_STRONG_RZP_SIGNALS & sig_by_key[c.key] for c in sub):
+        if not any(_STRONG_RZP_SIGNALS & sig_by_key.get(c.key, set()) for c in sub):
             continue
         residual = sum(c.amount_paise for c in sub) - index.settlement_net[sid]
         for c in sub:
@@ -481,8 +482,9 @@ def reconstruct_splits(
             )]
             # A split leg is a MACHINE Razorpay verdict, so it goes through the same adversarial gate.
             out.append(_finalize_razorpay(
-                ln, index, ev, narration_rail_signals(ln), _SPLIT_CONFIDENCE, Tier.C, margin_threshold,
-                audit=audit,  # Qodo #10: split Razorpay verdicts must carry the challenger audit too
+                ln, index, ev, narration_rail_signals(ln, pack=pack), _SPLIT_CONFIDENCE, Tier.C, margin_threshold,
+                audit=audit,
+                pack=pack,
             ))
         else:
             out.append(a)
@@ -499,22 +501,23 @@ def attribute_all(
     global_solver: bool = False,
     solver_result_out: dict | None = None,
     audit_challenger: bool = False,
+    pack: NarrationEvidencePack | None = None,
 ) -> list[RailAttribution]:
     base = [
-        attribute_line(ln, index, threshold, margin_threshold=margin_threshold, audit=audit_challenger)
+        attribute_line(ln, index, threshold, margin_threshold=margin_threshold, audit=audit_challenger, pack=pack)
         for ln in lines
     ]
     if global_solver:
         from engine.solver import run_global_solver
 
         base, solver_res = run_global_solver(
-            lines, index, base, threshold=threshold, margin_threshold=margin_threshold
+            lines, index, base, threshold=threshold, margin_threshold=margin_threshold, pack=pack
         )
         if solver_result_out is not None:
             solver_result_out["solver_result"] = solver_res
     else:
         base = reconstruct_splits(
-            lines, index, base, threshold, margin_threshold=margin_threshold, audit=audit_challenger
+            lines, index, base, threshold, margin_threshold=margin_threshold, audit=audit_challenger, pack=pack
         )
     if not rules:
         return base
