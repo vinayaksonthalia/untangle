@@ -208,3 +208,8 @@ def upload_page() -> str:
 def verify_page() -> str:
     """Return the pre-built verify page (self-hosted fonts + compiled CSS)."""
     return _load_template("verify.html")
+
+
+def dashboard_page() -> str:
+    """Return the pre-built dashboard (its JS fetches live figures from /api/presentation)."""
+    return _load_template("dashboard.html")
