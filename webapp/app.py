@@ -10,6 +10,7 @@ are never persisted to an application database. Read-only toward money. The dete
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import mimetypes
@@ -20,6 +21,7 @@ import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
+from functools import lru_cache
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -30,7 +32,7 @@ from engine.certificate import issue_certificate, verify_certificate
 from engine.ingest import InputError, load_bank, load_bank_bytes
 from engine.service import reconcile, reconcile_bytes
 from ui.dashboard import render as render_dashboard
-from webapp.pages import landing_page, upload_page, verify_page
+from webapp.pages import dashboard_page, landing_page, upload_page, verify_page
 
 # The public /mcp endpoint must be sandboxed so an unauthenticated remote caller cannot open arbitrary
 # server files. FAIL CLOSED: force the flag on (never `setdefault`, which would leave an inherited `0`
@@ -725,18 +727,58 @@ async def api_verify(request: Request) -> JSONResponse:
     return JSONResponse(verify_certificate(payload))
 
 
+_SAMPLE_FILES = ("bank_statement.csv", "recon_report.json", "order_ledger.csv")
+_SAMPLE_CACHE_LOCK = threading.Lock()  # single-flight: coalesce concurrent cache misses
+
+
+def _sample_fingerprint() -> tuple:
+    """Identity of everything the cached result depends on: the sample inputs (path, size,
+    mtime) AND the signing-key context (issue_certificate signs with $UNTANGLE_SIGNING_KEY).
+
+    Keying on the signing key too means rotating/removing it busts the cache, so the endpoint
+    can never serve a certificate the current verification key would reject. Caller must
+    _ensure_sample() first. The key value itself is hashed, never stored in the key.
+    """
+    files = tuple(
+        (name, (st := os.stat(os.path.join(_SAMPLE, name))).st_size, st.st_mtime_ns)
+        for name in _SAMPLE_FILES
+    )
+    pem = os.environ.get("UNTANGLE_SIGNING_KEY", "")  # engine.certificate._SIGNING_KEY_ENV
+    key_id = hashlib.sha256(pem.encode()).hexdigest()[:16] if pem else "unsigned"
+    return files + (("signing_key", key_id),)
+
+
+@lru_cache(maxsize=2)
+def _sample_report_and_cert(fingerprint: tuple):
+    """Reconcile the bundled sample once PER INPUT VERSION and cache the report + certificate.
+
+    Keyed on the sample files' identity (`fingerprint`), NOT on process history: if the sample
+    artifacts change (regenerated → new size/mtime), the key changes and we recompute, so a stale
+    financial result can never be served. The expensive reconciliation + certificate build must not
+    run on every request either — GET /api/presentation/sample is hit on every dashboard load and
+    is exempt from rate-limit/capacity admission, so re-running the full pipeline per request would
+    be a cheap unauthenticated DoS. Pagination stays per-request (cheap).
+    """
+    report = reconcile(
+        os.path.join(_SAMPLE, "bank_statement.csv"),
+        os.path.join(_SAMPLE, "recon_report.json"),
+        os.path.join(_SAMPLE, "order_ledger.csv"),
+    )
+    return report, issue_certificate(report)
+
+
 @app.get("/api/presentation/sample")
 def api_presentation_sample(limit: int = 100, offset: int = 0) -> JSONResponse:
     """Presentation contract for the bundled sample run — safe, read-only UI data. Nothing stored."""
     from webapp.presentation import PresentationSchemaError, build_presentation_payload
 
     _ensure_sample()
-    report = reconcile(
-        os.path.join(_SAMPLE, "bank_statement.csv"),
-        os.path.join(_SAMPLE, "recon_report.json"),
-        os.path.join(_SAMPLE, "order_ledger.csv"),
-    )
-    cert = issue_certificate(report)
+    # expensive part cached per input version (fingerprint); only paginate per request.
+    # The lock is single-flight: on a cache miss only one thread reconciles while the rest
+    # wait for its cached result, so a cold-start / post-update burst can't saturate the
+    # worker pool with duplicate reconciliations (this GET bypasses capacity admission).
+    with _SAMPLE_CACHE_LOCK:
+        report, cert = _sample_report_and_cert(_sample_fingerprint())
     try:
         presentation = build_presentation_payload(report, certificate=cert, limit=limit, offset=offset)
     except PresentationSchemaError as exc:
@@ -798,6 +840,11 @@ def api_evaluation_sealed() -> JSONResponse:
             status_code=503,
         )
     return JSONResponse(eval_payload)
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard() -> str:
+    return dashboard_page()
 
 
 @app.get("/verify", response_class=HTMLResponse)
