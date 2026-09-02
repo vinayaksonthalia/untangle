@@ -22,7 +22,8 @@ Run the relevant focused tests while developing, then run the repository gates b
 review:
 
 ```bash
-python -m pytest
+python -m pytest --cov --cov-report=term-missing
+python -m coverage json
 python scripts/branch_coverage_gate.py
 python -m ruff check .
 python -m ruff format --check .

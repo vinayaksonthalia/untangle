@@ -14,7 +14,8 @@
 <!-- List the exact commands and results. -->
 
 - [ ] Focused tests
-- [ ] `python -m pytest`
+- [ ] `python -m pytest --cov --cov-report=term-missing`
+- [ ] `python -m coverage json`
 - [ ] `python scripts/branch_coverage_gate.py`
 - [ ] `python -m ruff check .`
 - [ ] `python -m ruff format --check .`

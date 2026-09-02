@@ -46,7 +46,8 @@ abstention or an actionable unsupported-input error over a guessed financial res
 Run focused tests while developing, then the applicable repository checks before requesting review:
 
 ```bash
-python -m pytest
+python -m pytest --cov --cov-report=term-missing
+python -m coverage json
 python scripts/branch_coverage_gate.py
 python -m ruff check .
 python -m ruff format --check .
