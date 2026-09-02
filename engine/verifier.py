@@ -432,6 +432,13 @@ def verify_report(report: dict) -> list[VerificationResult]:
             and isinstance(ep.get("version"), str)
             and isinstance(ep.get("schema_version"), str)
         )
+        if ep_ok:
+            from engine.packs import get_pack, PackError
+            try:
+                resolved = get_pack(f"{ep['pack_id']}@{ep['version']}")
+                ep_ok = ep["schema_version"] == resolved.schema_version
+            except PackError:
+                ep_ok = False
         detail = (
             f"Evidence pack provenance verified: {ep.get('pack_id')}@{ep.get('version')} (schema {ep.get('schema_version')})"
             if ep_ok

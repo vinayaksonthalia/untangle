@@ -199,6 +199,7 @@ def verify_certificate(payload: dict) -> dict:
                 pack_valid = False
 
             results = verify_report(embedded_report)
+            report_binding_valid = report_binding_valid and all(r.ok for r in results)
             pkt = [r for r in results if not r.packet_line_key.startswith("report:")]
             packets_verified = len(pkt)
             packets_passed = sum(1 for r in pkt if r.ok)
@@ -286,7 +287,9 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
     seed = config.get("seed", 42)
     audit_root = report.get("audit_root", "")
     evidence_pack = config.get("evidence_pack")
-    cert_schema = config.get("report_schema_version", "1.1.0")
+    # Preserve legacy reports as legacy certificates; do not add schema/provenance claims
+    # that were absent from the input report.
+    cert_schema = config.get("report_schema_version")
 
     generated_from_hashes = {
         "audit_root": audit_root,

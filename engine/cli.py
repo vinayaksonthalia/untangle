@@ -150,9 +150,9 @@ def build_report(cfg, lines, recon_rows, index, attributions, order_ledger=None,
 
     # Additive post-pass: computed only when enabled, so a report built with_recovery=False is byte-identical
     # to the pre-Feature-005 report (the additivity property test relies on this to compare both builds).
-    recovery_plan = build_recovery_plan(lines, attributions, index, exceptions) if with_recovery else None
+    recovery_plan = build_recovery_plan(lines, attributions, index, exceptions, pack=pack) if with_recovery else None
     proof_packets = build_proof_packets(
-        lines, attributions, reconciliations, recon_rows, feegst, rejected_matches=rejected_matches
+        lines, attributions, reconciliations, recon_rows, feegst, rejected_matches=rejected_matches, pack=pack
     )
     from engine.journal import build_journal_entries, to_journal_json
     journal = to_journal_json(build_journal_entries(reconciliations, recon_rows))
