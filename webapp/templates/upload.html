@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Upload your files — untangle</title>
+<meta name="description" content="Upload your bank statement, Razorpay settlement report, and order ledger. untangle reconciles them in memory and returns your results — nothing is stored."/>
+<link rel="stylesheet" href="/static/upload.css"/>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { overscroll-behavior: none; }
+  ::-webkit-scrollbar { display: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-in-up { animation: fadeInUp 0.5s cubic-bezier(0.16,1,0.3,1) forwards; opacity: 0; }
+  }
+  :focus-visible { outline: 2px solid #0f172a; outline-offset: 2px; }
+</style>
+</head>
+<body class="bg-background font-body-md text-on-background">
+<header class="sticky top-0 z-50 w-full bg-surface-container-lowest/90 backdrop-blur-xl border-b border-outline-variant">
+<div class="max-w-[1400px] mx-auto px-container-padding h-16 flex items-center justify-between gap-4">
+<a href="/" class="font-headline-md text-headline-md tracking-tight" aria-label="untangle — home"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></a>
+<nav aria-label="Primary" class="hidden md:flex items-center gap-8 font-body-md text-on-surface-variant">
+<a class="hover:text-on-surface transition-colors" href="/dashboard">Dashboard</a>
+<a class="text-on-surface font-semibold" aria-current="page" href="/app">Upload</a>
+<a class="hover:text-on-surface transition-colors" href="/verify">Verify</a>
+<a class="hover:text-on-surface transition-colors" href="/#how">How it works</a>
+</nav>
+<a href="/try-sample" class="inline-flex h-10 items-center px-4 bg-surface text-primary border border-outline-variant font-data-tabular text-data-tabular rounded hover:bg-surface-container-low transition-colors">Try sample instead</a>
+</div>
+</header>
+
+<main class="relative">
+<div class="max-w-[1400px] mx-auto px-container-padding py-10 grid grid-cols-1 lg:grid-cols-12 gap-8">
+<div class="lg:col-span-8">
+<h1 class="font-display-lg text-display-lg text-on-background mb-3 tracking-tight">Upload your files</h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-2xl leading-relaxed mb-8">
+Three files: your bank statement, the Razorpay settlement report, and your order ledger.
+They're sent to untangle's <code>/reconcile</code> endpoint, processed <strong>in memory</strong>,
+and discarded when your report renders — never written to disk or stored, and never sent to any
+third party.
+</p>
+
+<form action="/reconcile" method="post" enctype="multipart/form-data" id="upload-form">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<!-- Bank statement (CSV) -->
+<div class="animate-fade-in-up" style="animation-delay:0ms">
+<div class="bg-surface rounded-xl p-6 h-full flex flex-col shadow-sm border border-outline-variant">
+<div class="flex justify-between items-start mb-5">
+<div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[22px]"><path d="M200-280v-280h80v280h-80Zm240 0v-280h80v280h-80ZM80-120v-80h800v80H80Zm600-160v-280h80v280h-80ZM80-640v-80l400-200 400 200v80H80Zm178-80h444-444Zm0 0h444L480-830 258-720Z"/></svg></div>
+<span class="bg-surface-container px-2 py-1 rounded text-on-surface-variant font-label-caps text-label-caps">REQUIRED</span>
+</div>
+<h3 class="font-title-sm text-title-sm text-on-surface mb-2">Bank statement</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-4 flex-1">Credits from your current account, as a <strong>CSV</strong>.</p>
+<label for="file-bank" class="drop border-2 border-dashed border-outline-variant rounded-lg p-6 text-center cursor-pointer hover:border-primary hover:bg-surface-container-lowest transition-all block" data-slot="bank">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline mb-2 text-[28px]" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg>
+<p class="font-body-sm text-body-sm text-primary font-medium">Browse files</p>
+<p class="font-body-sm text-[12px] text-on-surface-variant mt-1">or drag and drop · CSV</p>
+</label>
+<input type="file" id="file-bank" name="bank" accept=".csv,text/csv" required class="sr-only"/>
+<div class="hidden mt-4 bg-surface-container-lowest rounded-lg p-3 border border-outline-variant" data-status="bank">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2 overflow-hidden">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px] text-secondary" aria-hidden="true"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
+<span class="font-body-sm text-body-sm text-on-surface truncate" data-name="bank"></span>
+</div>
+<button type="button" class="clear text-on-surface-variant hover:text-error transition-colors" data-slot="bank" aria-label="Remove bank statement"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]" aria-hidden="true"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg></button>
+</div>
+</div>
+</div>
+</div>
+<!-- Razorpay settlement report (JSON) -->
+<div class="animate-fade-in-up" style="animation-delay:70ms">
+<div class="bg-surface rounded-xl p-6 h-full flex flex-col shadow-sm border border-outline-variant">
+<div class="flex justify-between items-start mb-5">
+<div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[22px]"><path d="M560-440q-50 0-85-35t-35-85q0-50 35-85t85-35q50 0 85 35t35 85q0 50-35 85t-85 35ZM280-320q-33 0-56.5-23.5T200-400v-320q0-33 23.5-56.5T280-800h560q33 0 56.5 23.5T920-720v320q0 33-23.5 56.5T840-320H280Zm80-80h400q0-33 23.5-56.5T840-480v-160q-33 0-56.5-23.5T760-720H360q0 33-23.5 56.5T280-640v160q33 0 56.5 23.5T360-400Zm440 240H120q-33 0-56.5-23.5T40-240v-440h80v440h680v80ZM280-400v-320 320Z"/></svg></div>
+<span class="bg-surface-container px-2 py-1 rounded text-on-surface-variant font-label-caps text-label-caps">REQUIRED</span>
+</div>
+<h3 class="font-title-sm text-title-sm text-on-surface mb-2">Razorpay settlement report</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-4 flex-1">The settlement recon report, as <strong>JSON</strong> (entity_id, fee, tax, settlement_utr…).</p>
+<label for="file-recon" class="drop border-2 border-dashed border-outline-variant rounded-lg p-6 text-center cursor-pointer hover:border-primary hover:bg-surface-container-lowest transition-all block" data-slot="recon">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline mb-2 text-[28px]" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg>
+<p class="font-body-sm text-body-sm text-primary font-medium">Browse files</p>
+<p class="font-body-sm text-[12px] text-on-surface-variant mt-1">or drag and drop · JSON</p>
+</label>
+<input type="file" id="file-recon" name="recon" accept=".json,application/json" required class="sr-only"/>
+<div class="hidden mt-4 bg-surface-container-lowest rounded-lg p-3 border border-outline-variant" data-status="recon">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2 overflow-hidden">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px] text-secondary" aria-hidden="true"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
+<span class="font-body-sm text-body-sm text-on-surface truncate" data-name="recon"></span>
+</div>
+<button type="button" class="clear text-on-surface-variant hover:text-error transition-colors" data-slot="recon" aria-label="Remove settlement report"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]" aria-hidden="true"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg></button>
+</div>
+</div>
+</div>
+</div>
+<!-- Order ledger (CSV) -->
+<div class="animate-fade-in-up" style="animation-delay:140ms">
+<div class="bg-surface rounded-xl p-6 h-full flex flex-col shadow-sm border border-outline-variant">
+<div class="flex justify-between items-start mb-5">
+<div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[22px]"><path d="M348.5-291.5Q360-303 360-320t-11.5-28.5Q337-360 320-360t-28.5 11.5Q280-337 280-320t11.5 28.5Q303-280 320-280t28.5-11.5Zm0-160Q360-463 360-480t-11.5-28.5Q337-520 320-520t-28.5 11.5Q280-497 280-480t11.5 28.5Q303-440 320-440t28.5-11.5Zm0-160Q360-623 360-640t-11.5-28.5Q337-680 320-680t-28.5 11.5Q280-657 280-640t11.5 28.5Q303-600 320-600t28.5-11.5ZM440-280h240v-80H440v80Zm0-160h240v-80H440v80Zm0-160h240v-80H440v80ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg></div>
+<span class="bg-surface-container px-2 py-1 rounded text-on-surface-variant font-label-caps text-label-caps">REQUIRED</span>
+</div>
+<h3 class="font-title-sm text-title-sm text-on-surface mb-2">Order ledger</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-4 flex-1">Your order manifest (order_id, amount, status), as a <strong>CSV</strong>.</p>
+<label for="file-ledger" class="drop border-2 border-dashed border-outline-variant rounded-lg p-6 text-center cursor-pointer hover:border-primary hover:bg-surface-container-lowest transition-all block" data-slot="ledger">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline mb-2 text-[28px]" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg>
+<p class="font-body-sm text-body-sm text-primary font-medium">Browse files</p>
+<p class="font-body-sm text-[12px] text-on-surface-variant mt-1">or drag and drop · CSV</p>
+</label>
+<input type="file" id="file-ledger" name="ledger" accept=".csv,text/csv" required class="sr-only"/>
+<div class="hidden mt-4 bg-surface-container-lowest rounded-lg p-3 border border-outline-variant" data-status="ledger">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2 overflow-hidden">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px] text-secondary" aria-hidden="true"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
+<span class="font-body-sm text-body-sm text-on-surface truncate" data-name="ledger"></span>
+</div>
+<button type="button" class="clear text-on-surface-variant hover:text-error transition-colors" data-slot="ledger" aria-label="Remove order ledger"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]" aria-hidden="true"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg></button>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-8 mt-8 border-t border-outline-variant">
+<a href="/try-sample" class="flex items-center gap-2 text-primary font-body-sm text-body-sm hover:underline">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[18px]" aria-hidden="true"><path d="M200-120q-51 0-72.5-45.5T138-250l222-270v-240h-40q-17 0-28.5-11.5T280-800q0-17 11.5-28.5T320-840h320q17 0 28.5 11.5T680-800q0 17-11.5 28.5T640-760h-40v240l222 270q32 39 10.5 84.5T760-120H200Zm0-80h560L520-492v-268h-80v268L200-200Zm280-280Z"/></svg> Don't have files? Run the bundled sample
+</a>
+<button type="submit" id="submit-btn" disabled class="bg-primary text-on-primary px-6 h-row-height-standard rounded-lg font-body-md text-body-md font-medium opacity-50 cursor-not-allowed transition-all flex items-center gap-2">
+Begin reconciliation <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" aria-hidden="true"><path d="M647-440H160v-80h487L423-744l57-56 320 320-320 320-57-56 224-224Z"/></svg>
+</button>
+</div>
+<p id="submit-note" class="font-body-sm text-body-sm text-on-surface-variant mt-3">Select all three files to begin.</p>
+</form>
+</div>
+
+<!-- Side panel: real selection log + honest privacy -->
+<aside class="lg:col-span-4">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-6 h-full flex flex-col">
+<h4 class="font-label-caps text-label-caps text-on-surface-variant mb-6 tracking-widest">Selected files</h4>
+<ul id="file-log" class="flex-1 space-y-3 font-body-sm text-body-sm text-on-surface-variant">
+<li class="italic">Nothing selected yet.</li>
+</ul>
+<div class="mt-6 pt-6 border-t border-outline-variant flex items-start gap-3 bg-surface-container-low p-4 rounded-lg">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-secondary text-[24px]" aria-hidden="true"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Zm-80 160h160q17 0 28.5-11.5T600-360v-120q0-17-11.5-28.5T560-520v-40q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560v40q-17 0-28.5 11.5T360-480v120q0 17 11.5 28.5T400-320Zm40-200v-40q0-17 11.5-28.5T480-600q17 0 28.5 11.5T520-560v40h-80Z"/></svg>
+<div>
+<p class="font-body-sm text-body-sm font-semibold text-on-surface">Processed in memory, then discarded</p>
+<p class="font-body-sm text-[12px] text-on-surface-variant">Your files are reconciled server-side in memory and never written to disk, stored, or shared.</p>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</main>
+
+<script>
+  const SLOTS = ['bank', 'recon', 'ledger'];
+  const LABEL = { bank: 'Bank statement', recon: 'Settlement report', ledger: 'Order ledger' };
+  const $ = (s, r = document) => r.querySelector(s);
+
+  function refresh() {
+    const chosen = SLOTS.filter((s) => document.getElementById('file-' + s).files.length > 0);
+    const btn = document.getElementById('submit-btn');
+    const ready = chosen.length === SLOTS.length;
+    btn.disabled = !ready;
+    btn.classList.toggle('opacity-50', !ready);
+    btn.classList.toggle('cursor-not-allowed', !ready);
+    btn.classList.toggle('hover:bg-audit-blue', ready);
+    document.getElementById('submit-note').textContent = ready
+      ? 'Ready — your files will be reconciled in memory.'
+      : `Select all three files to begin (${chosen.length}/3 selected).`;
+    // real selection log
+    const log = document.getElementById('file-log');
+    if (!chosen.length) { log.innerHTML = '<li class="italic">Nothing selected yet.</li>'; return; }
+    log.innerHTML = SLOTS.map((s) => {
+      const f = document.getElementById('file-' + s).files[0];
+      if (!f) return `<li class="flex items-center gap-2 opacity-50"><span aria-hidden="true">○</span>${LABEL[s]} — awaiting</li>`;
+      const kb = (f.size / 1024).toFixed(0);
+      return `<li class="flex items-center gap-2 text-on-surface"><span class="text-secondary" aria-hidden="true">✓</span><span class="truncate">${LABEL[s]}: <span class="font-data-tabular">${f.name}</span> · ${kb} KB</span></li>`;
+    }).join('');
+  }
+
+  function bindSlot(slot) {
+    const input = document.getElementById('file-' + slot);
+    const drop = document.querySelector(`.drop[data-slot="${slot}"]`);
+    const status = document.querySelector(`[data-status="${slot}"]`);
+    const nameEl = document.querySelector(`[data-name="${slot}"]`);
+    function show() {
+      const f = input.files[0];
+      if (f) { nameEl.textContent = f.name; status.classList.remove('hidden'); drop.classList.add('hidden'); }
+      else { status.classList.add('hidden'); drop.classList.remove('hidden'); }
+      refresh();
+    }
+    input.addEventListener('change', show);
+    document.querySelector(`.clear[data-slot="${slot}"]`).addEventListener('click', () => { input.value = ''; show(); });
+    ['dragover', 'dragenter'].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add('border-primary'); }));
+    ['dragleave', 'drop'].forEach((e) => drop.addEventListener(e, () => drop.classList.remove('border-primary')));
+    drop.addEventListener('drop', (ev) => {
+      ev.preventDefault();
+      if (ev.dataTransfer.files.length) { input.files = ev.dataTransfer.files; show(); }
+    });
+  }
+  SLOTS.forEach(bindSlot);
+  refresh();
+</script>
+</body>
+</html>
