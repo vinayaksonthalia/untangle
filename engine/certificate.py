@@ -173,8 +173,9 @@ def verify_certificate(payload: dict) -> dict:
             and isinstance(cert_pack.get("schema_version"), str)
         )
     else:
-        # Legacy/unbound certificate: valid if no invalid pack dict is supplied
-        pack_valid = cert_pack is None or (isinstance(cert_pack, dict) and "pack_id" in cert_pack)
+        # Legacy is strictly unbound. Any pack metadata makes this a partial migration and
+        # therefore invalid rather than silently accepting unverifiable proof packets.
+        pack_valid = cert_schema is None and cert_pack is None
 
     if report_present and embedded_report is None:
         report_binding_valid = False
@@ -194,6 +195,12 @@ def verify_certificate(payload: dict) -> dict:
             # Guardrail: attached report's evidence-pack identity MUST match certificate's evidence-pack identity
             report_cfg = embedded_report.get("config", {}) if isinstance(embedded_report, dict) else {}
             report_pack = report_cfg.get("evidence_pack")
+            report_schema = report_cfg.get("report_schema_version")
+            # Schema-less reports are legacy only when genuinely unbound. Hybrid metadata must
+            # not bypass modern proof-packet and provenance checks.
+            if (report_schema is None) != (report_pack is None):
+                report_binding_valid = False
+                pack_valid = False
             if cert_pack != report_pack:
                 report_binding_valid = False
                 pack_valid = False
@@ -201,7 +208,7 @@ def verify_certificate(payload: dict) -> dict:
             results = verify_report(embedded_report)
             # Modern schema reports are fully verified, while legacy reports retain their
             # historical binding contract (they lack the metadata needed for these checks).
-            if report_cfg.get("report_schema_version") == "1.1.0":
+            if report_schema == "1.1.0":
                 report_binding_valid = report_binding_valid and all(r.ok for r in results)
             pkt = [r for r in results if not r.packet_line_key.startswith("report:")]
             packets_verified = len(pkt)
@@ -295,6 +302,10 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
     cert_schema = config.get("report_schema_version")
     if cert_schema is not None and cert_schema != "1.1.0":
         raise ValueError(f"Unsupported report schema version: {cert_schema!r}")
+    if cert_schema == "1.1.0" and not isinstance(evidence_pack, dict):
+        raise ValueError("Schema 1.1.0 report must carry evidence-pack provenance")
+    if cert_schema is None and evidence_pack is not None:
+        raise ValueError("Schema-less report cannot carry evidence-pack provenance")
 
     generated_from_hashes = {
         "audit_root": audit_root,
