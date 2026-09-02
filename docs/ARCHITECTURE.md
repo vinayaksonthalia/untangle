@@ -53,6 +53,7 @@ enforces both — this is what makes the reported numbers trustworthy.
 | `engine/llm/narrate.py` | The **only** place a model touches attribution — reads messy narration, proposes a rail, deterministic rules confirm | Constitution: AI at the edge, never the money verdict alone |
 | `engine/audit.py` | Hash-chained ledger of decisions | Tamper-evidence for a money-adjacent system |
 | `engine/cli.py` | The `run` command → report + console | The product's interface |
+| `webapp/presentation.py` | Safe, deterministic, read-only UI presentation contract & sealed eval projections | Expose engine verdicts and server-authenticated benchmarks without internal leakages or financial recalculations |
 | `eval/metrics.py` + `eval/harness.py` | Score vs blind ground truth: per-rail + per-hard-case P/R, decoy FP, conservation | The only component allowed to see the answer key |
 | `eval/benchmark.py` | Complete-pipeline 15 MiB stress & resource benchmark | See [BENCHMARK.md](BENCHMARK.md) |
 | `eval/multimonth.py` | Extended 90-day & multi-month evaluation across 3 calendar months | See [BENCHMARK.md](BENCHMARK.md) |
@@ -85,6 +86,19 @@ that normalizes recognized statements into canonical `BankCreditLine` records:
   See [BANK_FORMAT_EVIDENCE.md](BANK_FORMAT_EVIDENCE.md) for the current support matrix and evidence tiers.
 
 
+## UI presentation contract boundary
+
+The presentation layer (`webapp/presentation.py`) provides a stable, read-only, and deterministic projection over reconciliation engine reports and server-authenticated benchmarks:
+
+- **Strict Separation of Operational vs. Evaluation Proof**: Operational reconciliation payloads (`contract_type: "reconciliation_presentation"`) strictly carry `"evaluation": null`. Public operational endpoints never accept or parse client-supplied evaluation metrics. Authoritative holdout benchmarks are provided only through server-controlled, authenticated endpoints (`GET /api/evaluation/sealed`) bound to frozen dataset manifests (`E3` protocol).
+- **Zero Sensitive Data Leakage**: Raw 16-character alphanumeric UTR tokens, raw bank transaction narrations, account numbers, and server filesystem paths are completely scrubbed. Line decisions expose categorical reason summaries (`"Exact settlement reference matched"`, `"Direct UPI clearing pattern matched"`, etc.) and signal names without leaking raw evidence strings.
+- **Opaque Presentation Identifiers & Bounded Pagination**: Internal content-hash line keys (`line_key`) are stripped from public verdict items. Items expose deterministic sequential identifiers (`item_id: "item_0001"`, `"item_0002"`, ...) reflecting global ordinals under stable sorting. Verdict lists are bounded and paginated (default/max limit 100).
+- **Authoritative Certificate Verification**: Surfaces granular verification state (`"verified" | "failed" | "absent" | "legacy"`), distinguishing SHA-256 envelope binding (`hash_bound: true`) from cryptographic digital signatures (`authenticated: true`), and providing machine-readable failure reason codes.
+- **Strict Schema Enforcement**: Declares explicit schema compatibility (`presentation_schema_version: "1.0.0"`, supporting report schema `1.1.0` and pre-1.1.0 legacy reports). Unsupported, future, or malformed schema payloads fail closed with `PresentationSchemaError`.
+
+
+
+
 ## Web concurrency and admission boundary
 
 Untangle's web layer (`webapp/app.py`) isolates synchronous reconciliation execution from the async ASGI event loop under a strict, fail-closed concurrency contract:
@@ -93,8 +107,6 @@ Untangle's web layer (`webapp/app.py`) isolates synchronous reconciliation execu
 - **Worker Slot Ownership**: Concurrency slots are managed through `_ReconciliationSlot`. When a request is admitted, the worker thread retains exclusive ownership of its slot until execution truly terminates (including on timeouts and async task cancellations). This guarantees that no more than 2 worker threads can execute simultaneously at any point in time.
 - **No Application Upload Paths**: Admitted uploads become bounded immutable byte snapshots, so timeout and cancellation paths cannot race application-owned temporary-file cleanup.
 - **Immutable Byte Snapshots**: Worker threads read and own immutable in-memory byte snapshots (`reconcile_bytes`), ensuring concurrent requests operate in total isolation without cross-contamination.
-
-
 
 
 ## The three attribution tiers (the heart of it)

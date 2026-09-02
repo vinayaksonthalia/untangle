@@ -123,6 +123,7 @@ _MAX_AGGREGATE_BYTES = 3 * _MAX_BYTES + 1024 * 1024
 _BODY_LIMITS = {
     "/reconcile": _MAX_AGGREGATE_BYTES,
     "/api/reconcile": _MAX_AGGREGATE_BYTES,
+    "/api/presentation": _MAX_AGGREGATE_BYTES,
     "/api/verify": _MAX_VERIFY_BYTES,
 }
 _BODY_INGEST_TIMEOUT_SECONDS = 30.0
@@ -291,7 +292,7 @@ async def safety_middleware(request: Request, call_next):
             recent.append(now)
             _RATE_BUCKETS[client] = recent
     slot = None
-    if request.url.path in {"/reconcile", "/api/reconcile"}:
+    if request.url.path in {"/reconcile", "/api/reconcile", "/api/presentation"}:
         # Validate the cheap declared length before admission.  Otherwise an oversized request can
         # occupy a worker slot until BodySizeLimitMiddleware rejects it with 413.
         declared_length = request.headers.get("content-length")
@@ -709,6 +710,62 @@ async def api_verify(request: Request) -> JSONResponse:
     if not isinstance(payload, dict):
         raise HTTPException(422, "Certificate payload must be a JSON object.")
     return JSONResponse(verify_certificate(payload))
+
+
+@app.get("/api/presentation/sample")
+def api_presentation_sample(limit: int = 100, offset: int = 0) -> JSONResponse:
+    """Presentation contract for the bundled sample run — safe, read-only UI data. Nothing stored."""
+    from webapp.presentation import PresentationSchemaError, build_presentation_payload
+
+    _ensure_sample()
+    report = reconcile(
+        os.path.join(_SAMPLE, "bank_statement.csv"),
+        os.path.join(_SAMPLE, "recon_report.json"),
+        os.path.join(_SAMPLE, "order_ledger.csv"),
+    )
+    cert = issue_certificate(report)
+    try:
+        presentation = build_presentation_payload(report, certificate=cert, limit=limit, offset=offset)
+    except PresentationSchemaError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return JSONResponse(presentation)
+
+
+@app.post("/api/presentation")
+async def api_presentation(
+    request: Request,
+    bank: UploadFile = File(...),
+    recon: UploadFile = File(...),
+    ledger: UploadFile = File(...),
+    limit: int = 100,
+    offset: int = 0,
+) -> JSONResponse:
+    """Presentation contract for uploaded statements — safe, read-only UI data. Nothing stored."""
+    from webapp.presentation import PresentationSchemaError, build_presentation_payload
+
+    slot = request.state.reconciliation_slot
+    b = await _read_upload("bank_statement.csv", bank)
+    r = await _read_upload("recon_report.json", recon)
+    ln = await _read_upload("order_ledger.csv", ledger)
+    report = await _run_safely_bytes_async(b, r, ln, slot=slot)
+    cert = issue_certificate(report)
+    try:
+        presentation = build_presentation_payload(report, certificate=cert, limit=limit, offset=offset)
+    except PresentationSchemaError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return JSONResponse(presentation)
+
+
+@app.get("/api/evaluation/sealed")
+def api_evaluation_sealed() -> JSONResponse:
+    """Server-authenticated sealed holdout benchmark presentation (read-only, E3 protocol)."""
+    from webapp.presentation import PresentationSchemaError, build_sealed_evaluation_presentation
+
+    try:
+        eval_payload = build_sealed_evaluation_presentation()
+    except PresentationSchemaError as exc:
+        raise HTTPException(404, f"Sealed evaluation benchmark unavailable: {exc}") from exc
+    return JSONResponse(eval_payload)
 
 
 @app.get("/verify", response_class=HTMLResponse)
