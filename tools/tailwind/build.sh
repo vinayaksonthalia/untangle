@@ -12,7 +12,6 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 TW_VERSION="3.4.17"
-SRC="tools/tailwind/stitch_source.html"
 REFRESH_FONTS=0
 [ "${1:-}" = "--refresh-fonts" ] && REFRESH_FONTS=1
 
@@ -24,14 +23,10 @@ else
   [ -f tools/tailwind/fonts.css ] || { echo "ERROR: tools/tailwind/fonts.css missing; run with --refresh-fonts"; exit 1; }
 fi
 
-if [ -f "$SRC" ]; then
-  echo "==> rebuilding landing.html from Stitch source"
-  python3 tools/tailwind/build_landing.py
-else
-  echo "==> $SRC not present — skipping landing HTML rebuild (using committed landing.html)"
-fi
-
-echo "==> inlining icons in verify.html (idempotent)"
+# landing.html, verify.html, etc. are the hand-authored source of truth. The icon
+# inliner is idempotent (converts any remaining material-symbols spans to inline SVG).
+echo "==> inlining icons (idempotent)"
+python3 tools/tailwind/inline_icons.py webapp/templates/landing.html
 python3 tools/tailwind/inline_icons.py webapp/templates/verify.html
 python3 tools/tailwind/inline_icons.py webapp/templates/dashboard.html
 python3 tools/tailwind/inline_icons.py webapp/templates/upload.html
