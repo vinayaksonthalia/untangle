@@ -26,7 +26,7 @@ def test_dashboard_route_serves_template(client):
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
     assert r.text == dashboard_page()
-    assert "<title>Reconciliation dashboard" in r.text
+    assert "<title>Settlement close" in r.text
 
 
 def test_dashboard_local_assets_only(client):
