@@ -48,3 +48,5 @@ def dashboard_page() -> str:
 def investigate_page() -> str:
     """Return the investigate screen (its JS fetches cases from /api/investigations/sample)."""
     return _load_template("investigate.html")
+
+
