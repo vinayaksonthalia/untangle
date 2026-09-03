@@ -50,3 +50,8 @@ def investigate_page() -> str:
     return _load_template("investigate.html")
 
 
+def certificate_page() -> str:
+    """Return the printable close-certificate document (its JS fetches the active run)."""
+    return _load_template("certificate.html")
+
+

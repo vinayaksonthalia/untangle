@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Close certificate — untangle</title>
+<meta name="description" content="A printable untangle close certificate for the active reconciliation run: reconciled-to-paise figures plus the content SHA-256 and audit root that make it independently re-verifiable."/>
+<style>
+  :root { --ink:#0b1c30; --muted:#5f6b7a; --line:#dfe3e8; --brand:#2b5edb; --green:#0b7a43; --paper:#f4f6f8; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; }
+  body { background: var(--paper); color: var(--ink); font-family: "Hanken Grotesk", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; }
+  .wrap { max-width: 820px; margin: 32px auto; padding: 0 20px; }
+  .toolbar { display:flex; gap:10px; justify-content:flex-end; margin-bottom:16px; }
+  .btn { font: 500 13px/1 "JetBrains Mono", monospace; padding:10px 14px; border-radius:6px; border:1px solid var(--line); background:#fff; color:var(--ink); cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
+  .btn.primary { background: var(--ink); color:#fff; border-color: var(--ink); }
+  .doc { background:#fff; border:1px solid var(--line); border-radius:10px; padding:48px 56px; box-shadow: 0 1px 2px rgba(11,28,48,.04); }
+  .brand { display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid var(--ink); padding-bottom:16px; }
+  .word { font-size:26px; font-weight:700; letter-spacing:-.02em; }
+  .word .b { color: var(--brand); }
+  .kicker { font:600 11px/1.4 "JetBrains Mono", monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }
+  h1 { font-size:30px; letter-spacing:-.02em; margin:28px 0 4px; }
+  .sub { color:var(--muted); font-size:14px; margin:0 0 28px; }
+  .badge { display:inline-flex; align-items:center; gap:6px; font:600 11px/1 "JetBrains Mono", monospace; text-transform:uppercase; letter-spacing:.08em; padding:5px 10px; border-radius:999px; }
+  .badge.demo { background:#fdf3e0; color:#8a5a00; }
+  .badge.run { background:#e7f6ee; color:var(--green); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:8px; overflow:hidden; margin:8px 0 28px; }
+  .cell { background:#fff; padding:16px 18px; }
+  .cell .l { font:600 10px/1.4 "JetBrains Mono", monospace; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+  .cell .v { font-family:"JetBrains Mono", monospace; font-size:22px; font-weight:600; margin-top:4px; font-variant-numeric: tabular-nums; }
+  .cell .v.green { color:var(--green); }
+  .seal { border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin-bottom:24px; }
+  .seal h2 { font:600 11px/1.4 "JetBrains Mono", monospace; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:0 0 12px; }
+  .row { display:flex; justify-content:space-between; gap:16px; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .row:last-child { border-bottom:0; }
+  .row .k { color:var(--muted); }
+  .row .val { font-family:"JetBrains Mono", monospace; word-break:break-all; text-align:right; }
+  .note { font-size:12px; color:var(--muted); line-height:1.6; border-top:1px solid var(--line); padding-top:16px; }
+  .empty { text-align:center; padding:64px 0; }
+  .empty a { color:var(--brand); }
+  @media print {
+    body { background:#fff; }
+    .wrap { margin:0; max-width:none; padding:0; }
+    .toolbar { display:none; }
+    .doc { border:0; box-shadow:none; border-radius:0; padding:24px 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="toolbar" id="toolbar" hidden>
+<a class="btn" href="/dashboard">← Back</a>
+<a class="btn" id="dl-json" href="/api/certificate/current" download="untangle-close-certificate.json">Download JSON</a>
+<a class="btn" href="/verify">Verify independently</a>
+<button class="btn primary" onclick="window.print()">Save as PDF / Print</button>
+</div>
+
+<div class="doc" id="doc">
+<div class="empty" id="empty" hidden>
+<h1>No active run</h1>
+<p class="sub">There is no reconciliation to certify yet. <a href="/app">Reconcile your files</a> or <a href="/try-sample">load the sample</a> first.</p>
+</div>
+
+<div id="body" hidden>
+<div class="brand">
+<div class="word"><span>un</span><span class="b">tangle</span></div>
+<span class="kicker">Close certificate</span>
+</div>
+
+<h1>Settlement close certificate</h1>
+<p class="sub" id="sub">—</p>
+<span class="badge" id="mode-badge">—</span>
+
+<div class="grid" id="figures"></div>
+
+<div class="seal">
+<h2>Cryptographic seal</h2>
+<div class="row"><span class="k">Certificate content hash (SHA-256)</span><span class="val mono" id="c-sha">—</span></div>
+<div class="row"><span class="k">Audit root</span><span class="val mono" id="c-audit">—</span></div>
+<div class="row"><span class="k">Report binding</span><span class="val" id="c-binding">—</span></div>
+<div class="row"><span class="k">Proof packets</span><span class="val" id="c-packets">—</span></div>
+<div class="row"><span class="k">Signature</span><span class="val" id="c-sig">—</span></div>
+<div class="row"><span class="k">Engine</span><span class="val mono" id="c-engine">—</span></div>
+</div>
+
+<p class="note">This certificate attests the internal mathematical and cryptographic consistency of the reconciliation named above: re-derive the SHA-256 content hash and re-run the proof-packet checks against the bound report to confirm nothing was altered. It does not alter statutory accounting responsibility or entity representations. The attached JSON is the machine-verifiable original; this document is its human-readable rendering. untangle is read-only toward money and never posts entries.</p>
+</div>
+</div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const inr = (p) => (typeof p === 'number' && Number.isSafeInteger(p)) ? '₹' + (p/100).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+  const pct = (n) => Number.isFinite(n) ? (n*100).toFixed(1)+'%' : '—';
+
+  (async function(){
+    let p;
+    try { const r = await fetch('/api/presentation/current'); p = r.ok ? await r.json() : {mode:'empty'}; }
+    catch(e) { p = {mode:'empty'}; }
+    $('toolbar').hidden = false;
+    if (!p || p.mode === 'empty') { $('empty').hidden = false; $('dl-json').style.display='none'; return; }
+    $('body').hidden = false;
+
+    const s = p.summary || {}, cert = p.certificate_status || {}, ri = p.run_identity || {};
+    const isDemo = p.mode !== 'your_run';
+    $('mode-badge').textContent = isDemo ? 'Demo data' : 'Your run';
+    $('mode-badge').className = 'badge ' + (isDemo ? 'demo' : 'run');
+    const now = new Date();
+    $('sub').textContent = 'Issued ' + now.toISOString().slice(0,10) + ' · ' + (isDemo ? 'bundled sample reconciliation' : 'your uploaded reconciliation');
+
+    const cov = s.n_bank_lines ? s.attributed_count/s.n_bank_lines : 0;
+    const fig = [
+      ['Reconciled to the paise', inr(s.reconciled_paise), 'green'],
+      ['Residual on proven slice', '₹0.00', 'green'],
+      ['Attribution coverage', pct(cov) + ' (' + (s.attributed_count||0) + ' of ' + (s.n_bank_lines||0) + ')', ''],
+      ['Recoverable fee GST', inr(s.fee_gst_recoverable_paise), ''],
+    ];
+    const g = $('figures'); g.replaceChildren();
+    fig.forEach(([l,v,cls])=>{ const c=document.createElement('div'); c.className='cell';
+      const el1=document.createElement('div'); el1.className='l'; el1.textContent=l;
+      const el2=document.createElement('div'); el2.className='v '+cls; el2.textContent=v;
+      c.append(el1,el2); g.append(c); });
+
+    const short = (h)=> h ? (h.slice(0,24)+'…'+h.slice(-8)) : '—';
+    $('c-sha').textContent = cert.content_sha256 || '—';
+    $('c-audit').textContent = short(ri.audit_root);
+    $('c-binding').textContent = cert.report_binding_valid ? 'valid' : (cert.report_binding_valid === false ? 'FAILED' : '—');
+    $('c-packets').textContent = (cert.packets_passed ?? 0) + ' / ' + (cert.packets_verified ?? 0) + ' passed';
+    $('c-sig').textContent = cert.authenticated ? 'ECDSA P-256 · signed' : 'hash-bound (unsigned)';
+    $('c-engine').textContent = (ri.engine_version || '?');
+  })();
+</script>
+</body>
+</html>

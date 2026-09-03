@@ -87,17 +87,20 @@ def test_phase5_gate_readme_leads_with_finance_loop_and_stays_honest():
 
 
 def test_phase5_gate_one_click_demo_reproduction(client):
-    """Gate 3: One-click demo-data reproduction works without upload."""
-    r = client.get("/try-sample")
+    """Gate 3: One-click demo-data reproduction works without upload.
+
+    /try-sample now loads the seed-42 sample as the active DEMO run and redirects into the
+    console; the reproducible demo (826 bank credits) is served from the live presentation API.
+    """
+    r = client.get("/try-sample")  # TestClient follows the 303 into /dashboard
     assert r.status_code == 200
-    text = r.text
-    assert "Attribution &amp; Calibrated Abstention" in text or "Attribution & Calibrated Abstention" in text
-    assert "Proven Slice Only" in text
-    assert "<b>826</b> bank credits" in text  # multi-month demo (Apr–Jun 2026), reproducible from seed 42
-    assert "Exception queue" in text
-    # The multi-month demo drives the exception-queue month filter (Apr/May/Jun chips).
-    assert "All months" in text
-    assert "Apr 2026" in text and "May 2026" in text and "Jun 2026" in text
+    assert "Settlement close" in r.text
+    pres = client.get("/api/presentation/current").json()
+    assert pres.get("mode") == "demo"
+    assert pres["summary"]["n_bank_lines"] == 826  # multi-month demo, reproducible from seed 42
+    # the demo also drives the Investigate queue (curated: 6 resolved + 1 honest abstention)
+    inv = client.get("/api/investigations/current").json()
+    assert inv.get("mode") == "demo" and inv["summary"]["resolved"] == 6
 
 
 def test_phase5_gate_zero_storage_and_kind_errors(client):
