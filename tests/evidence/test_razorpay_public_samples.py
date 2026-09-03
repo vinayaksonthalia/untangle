@@ -94,6 +94,17 @@ def _paise(v: str | None, *, required: bool = False, field: str = "value") -> in
     return int(scaled)
 
 
+@pytest.mark.parametrize("value", [None, ""])
+def test_required_money_fields_fail_closed(value: str | None) -> None:
+    with pytest.raises(ValueError, match="required money field missing"):
+        _paise(value, required=True, field="amount")
+
+
+def test_money_parser_rejects_fractional_paise_without_float_rounding() -> None:
+    with pytest.raises(ValueError, match="non-integer paise"):
+        _paise("1.001", required=True, field="amount")
+
+
 def _load_recon_rows() -> list[ReconRow]:
     """Map Razorpay's published recon columns onto untangle's own ReconRow model.
 
