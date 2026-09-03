@@ -110,7 +110,7 @@ def build_demo_dataset(cfg: Config) -> tuple[list[dict], list[dict], list[dict]]
                     "settlement_id": sid,
                     "settlement_utr": utr,
                     "order_id": oid,
-                    "method": "upi" if "upi" in label else "card",
+                    "method": "upi" if "upi" in label else ("netbanking" if "netbanking" in label else "card"),
                 }
             )
             rows.append(row)
@@ -123,7 +123,7 @@ def build_demo_dataset(cfg: Config) -> tuple[list[dict], list[dict], list[dict]]
                     "status": "paid",
                     "created_at": settled_at,
                     "receipt": f"demo-{label}-{j}",
-                    "payment_method": "upi" if "upi" in label else "card",
+                    "payment_method": "upi" if "upi" in label else ("netbanking" if "netbanking" in label else "card"),
                 }
             )
         bank.append(
