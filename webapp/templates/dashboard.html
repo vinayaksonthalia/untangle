@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Reconciliation dashboard — untangle</title>
+<title>Settlement close — untangle</title>
 <meta name="description" content="untangle reconciliation dashboard: attribution coverage, unresolved value, recoverable GST, the evidence case file behind each verdict, and a balanced journal ready for Tally."/>
 <link rel="stylesheet" href="/static/dashboard.css"/>
 <style>
@@ -23,9 +23,9 @@
 <a href="/" class="font-headline-md text-headline-md tracking-tight" aria-label="untangle — home"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></a>
 <nav aria-label="Primary" class="hidden md:flex items-center gap-8 font-body-md text-on-surface-variant">
 <a class="text-on-surface font-semibold" aria-current="page" href="/dashboard">Dashboard</a>
+<a class="hover:text-on-surface transition-colors" href="/investigate">Investigate</a>
 <a class="hover:text-on-surface transition-colors" href="/app">Upload</a>
 <a class="hover:text-on-surface transition-colors" href="/verify">Verify</a>
-<a class="hover:text-on-surface transition-colors" href="/#how">How it works</a>
 </nav>
 <div class="flex items-center gap-3">
 <span class="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-surface-container-low rounded-full border border-outline-variant">
@@ -40,9 +40,13 @@
 <main class="relative">
 <div class="max-w-[1400px] mx-auto px-container-padding py-8 flex flex-col gap-gutter">
 
-<div class="flex items-baseline justify-between flex-wrap gap-2">
-<h1 class="font-display-lg text-display-lg text-on-surface">Reconciliation dashboard</h1>
-<p class="font-body-sm text-on-surface-variant" id="run-identity">Loading live figures…</p>
+<div class="flex items-end justify-between flex-wrap gap-4">
+<div class="max-w-2xl">
+<h1 class="font-display-lg text-display-lg text-on-surface">Settlement close</h1>
+<p class="font-body-md text-on-surface-variant mt-2">A read-only view of attributed credits, reconciled settlements, recoverable fee GST, and the exceptions that still need evidence for this run.</p>
+<p class="font-body-sm text-on-surface-variant mt-1" id="run-identity">Loading live figures…</p>
+</div>
+<a href="/investigate" class="inline-flex h-10 items-center px-4 bg-primary text-on-primary font-data-tabular text-data-tabular rounded hover:bg-audit-blue transition-colors shadow-sm shrink-0">Investigate exceptions</a>
 </div>
 
 <!-- Top metrics (real: summary.*) -->
@@ -73,7 +77,7 @@
 <div class="bg-surface p-6 rounded-xl border border-outline-variant flex flex-col justify-between relative overflow-hidden">
 <div class="absolute right-0 top-0 w-32 h-32 bg-secondary-container rounded-full blur-3xl opacity-20 transform translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
 <div class="flex justify-between items-start mb-4 relative z-10">
-<span class="font-label-caps text-on-surface-variant text-label-caps">GST ON FEES</span>
+<span class="font-label-caps text-on-surface-variant text-label-caps">RECOVERABLE FEE GST</span>
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-secondary"><path d="M200-280v-280h80v280h-80Zm240 0v-280h80v280h-80ZM80-120v-80h800v80H80Zm600-160v-280h80v280h-80ZM80-640v-80l400-200 400 200v80H80Zm178-80h444-444Zm0 0h444L480-830 258-720Z"/></svg>
 </div>
 <div class="relative z-10">
@@ -99,9 +103,12 @@
 <div class="bg-surface flex-1 rounded-xl border border-outline-variant overflow-hidden flex flex-col animate-fade-rise">
 <div class="p-6 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
 <h3 class="font-title-sm text-on-surface flex items-center gap-2">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-error"><path d="M348.5-291.5Q360-303 360-320t-11.5-28.5Q337-360 320-360t-28.5 11.5Q280-337 280-320t11.5 28.5Q303-280 320-280t28.5-11.5Zm0-160Q360-463 360-480t-11.5-28.5Q337-520 320-520t-28.5 11.5Q280-497 280-480t11.5 28.5Q303-440 320-440t28.5-11.5Zm0-160Q360-623 360-640t-11.5-28.5Q337-680 320-680t-28.5 11.5Q280-657 280-640t11.5 28.5Q303-600 320-600t28.5-11.5ZM440-280h240v-80H440v80Zm0-160h240v-80H440v80Zm0-160h240v-80H440v80ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg> Exception taxonomy
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-error"><path d="M348.5-291.5Q360-303 360-320t-11.5-28.5Q337-360 320-360t-28.5 11.5Q280-337 280-320t11.5 28.5Q303-280 320-280t28.5-11.5Zm0-160Q360-463 360-480t-11.5-28.5Q337-520 320-520t-28.5 11.5Q280-497 280-480t11.5 28.5Q303-440 320-440t28.5-11.5Zm0-160Q360-623 360-640t-11.5-28.5Q337-680 320-680t-28.5 11.5Q280-657 280-640t11.5 28.5Q303-600 320-600t28.5-11.5ZM440-280h240v-80H440v80Zm0-160h240v-80H440v80Zm0-160h240v-80H440v80ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg> Exceptions requiring evidence
 </h3>
+<div class="flex items-center gap-3">
 <span class="bg-surface-container text-on-surface-variant px-3 py-1 rounded-full font-label-caps text-[10px]" id="exc-count">—</span>
+<a href="/investigate" class="font-label-caps text-[10px] text-secondary hover:underline">Investigate →</a>
+</div>
 </div>
 <div class="overflow-x-auto">
 <table class="w-full text-left border-collapse">
