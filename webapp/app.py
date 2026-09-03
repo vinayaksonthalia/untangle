@@ -123,7 +123,20 @@ mimetypes.add_type("font/woff2", ".woff2")
 _STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 if not _STATIC_DIR.is_dir():  # fail loudly at import rather than 404 silently in prod
     raise RuntimeError(f"static assets directory missing: {_STATIC_DIR}")
-app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+class _RevalidatingStatic(StaticFiles):
+    """Serve static assets with `Cache-Control: no-cache` so browsers always revalidate.
+
+    StaticFiles still emits an ETag, so an unchanged file returns a cheap 304 — but a rebuilt
+    stylesheet is picked up on the very next load instead of being served stale from cache.
+    """
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", _RevalidatingStatic(directory=_STATIC_DIR), name="static")
 
 # This is deliberately process-local: the public demo has no shared state store.  It protects a
 # single instance from accidental refresh storms without pretending to be production auth/quotas.
