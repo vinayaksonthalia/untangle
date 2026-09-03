@@ -11,58 +11,84 @@
   body { overscroll-behavior: none; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-thumb { background: #c6c6cd; border-radius: 9999px; }
-  @media (prefers-reduced-motion: no-preference) {
-    @keyframes fadeRise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-    .animate-fade-rise { animation: fadeRise 0.4s cubic-bezier(0.16,1,0.3,1) forwards; }
-  }
   :focus-visible { outline: 2px solid #0f172a; outline-offset: 2px; }
-  .case-btn[aria-current="true"] { background: #eff4ff; border-color: #0f172a; }
+  .qpill[aria-current="true"] { background: #0b1c30; color: #fff; border-color: #0b1c30; }
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .tl-item { animation: fadeInUp 0.4s cubic-bezier(0.16,1,0.3,1) forwards; }
+  }
 </style>
 </head>
-<body class="bg-background font-body-md text-on-background tabular-nums">
-<header class="sticky top-0 z-50 w-full bg-surface-container-lowest/90 backdrop-blur-xl border-b border-outline-variant">
-<div class="max-w-[1280px] mx-auto px-container-padding h-16 flex items-center justify-between gap-4">
-<a href="/" class="font-headline-md text-headline-md tracking-tight" aria-label="untangle — home"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></a>
-<nav aria-label="Primary" class="hidden md:flex items-center gap-8 font-body-md text-on-surface-variant">
-<a class="hover:text-on-surface transition-colors" href="/dashboard">Dashboard</a>
-<a class="text-on-surface font-semibold" aria-current="page" href="/investigate">Investigate</a>
-<a class="hover:text-on-surface transition-colors" href="/app">Upload</a>
-<a class="hover:text-on-surface transition-colors" href="/verify">Verify</a>
+<body class="bg-background text-on-background font-body-md min-h-screen flex">
+
+<!-- Sidebar app shell -->
+<aside class="fixed left-0 top-0 h-full w-60 bg-surface border-r border-outline-variant flex flex-col py-6 z-20">
+<a href="/" class="px-6 mb-8 flex items-center gap-3" aria-label="untangle — home">
+<div class="w-8 h-8 bg-primary rounded flex items-center justify-center text-on-primary font-bold">u</div>
+<div>
+<div class="font-headline-md text-[20px] leading-6 font-bold"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></div>
+<div class="font-label-caps text-[10px] text-on-surface-variant">Audit Engine v1.0</div>
+</div>
+</a>
+<nav class="flex-1 px-4 space-y-1" aria-label="Primary">
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/dashboard">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="dashboard"><path d="M520-600v-240h320v240H520ZM120-440v-400h320v400H120Zm400 320v-400h320v400H520Zm-400 0v-240h320v240H120Zm80-400h160v-240H200v240Zm400 320h160v-240H600v240Zm0-480h160v-80H600v80ZM200-200h160v-80H200v80Zm160-320Zm240-160Zm0 240ZM360-280Z"/></svg><span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-primary font-semibold bg-surface-container-low border-r-2 border-primary rounded" aria-current="page" href="/investigate">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="search"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg><span>Investigate</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/app">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="upload_file"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg><span>Upload</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/verify">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="verified_user"><path d="m438-338 226-226-57-57-169 169-84-84-57 57 141 141Zm42 258q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z"/></svg><span>Verify</span>
+</a>
 </nav>
-<a href="/dashboard" class="inline-flex h-10 items-center px-4 bg-primary text-on-primary font-data-tabular text-data-tabular rounded hover:bg-audit-blue transition-colors shadow-sm">Back to dashboard</a>
+<div class="px-4 mt-auto">
+<div class="px-3 py-2 font-label-caps text-[10px] text-on-surface-variant flex items-center gap-2">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]" data-icon="security"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q97-30 162-118.5T718-480H480v-315l-240 90v207q0 7 2 18h238v316Z"/></svg>
+Deterministic core
 </div>
-</header>
-
-<main class="relative">
-<div class="max-w-[1280px] mx-auto px-container-padding py-12 flex flex-col gap-8">
-
-<!-- Title — one hero idea: what explains this variance -->
-<div class="flex items-end justify-between flex-wrap gap-6">
-<div class="max-w-2xl">
-<p class="font-label-caps text-label-caps text-on-surface-variant mb-2">ROOT-CAUSE INVESTIGATION</p>
-<h1 class="font-display-lg text-display-lg text-on-surface">Investigate variance</h1>
-<p class="font-body-md text-on-surface-variant mt-3">untangle checks deterministic hypotheses against the supplied settlement evidence. It does not use an LLM to decide the root cause or move money.</p>
-</div>
-<div class="flex items-center gap-3" id="summary-chips" aria-live="polite"></div>
-</div>
-
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-
-<!-- Left rail: exceptions requiring evidence -->
-<aside class="lg:col-span-4 flex flex-col gap-3" aria-label="Exceptions requiring evidence">
-<h2 class="font-label-caps text-label-caps text-on-surface-variant px-1">EXCEPTIONS REQUIRING EVIDENCE</h2>
-<div class="flex flex-col gap-2" id="case-list">
-<div class="font-body-sm text-on-surface-variant py-6 text-center">Loading investigations…</div>
 </div>
 </aside>
 
-<!-- Main: the selected variance file -->
-<section class="lg:col-span-8 flex flex-col gap-6" id="case-file" aria-live="polite">
-<div class="bg-surface rounded-xl border border-outline-variant p-10 text-center text-on-surface-variant font-body-sm">Select a variance to open its investigation.</div>
-</section>
+<!-- Main -->
+<main class="ml-60 flex-1 flex flex-col min-w-0">
+<header class="h-16 border-b border-outline-variant bg-surface flex items-center justify-between px-8 sticky top-0 z-10">
+<div class="flex items-center gap-4">
+<span class="font-label-caps text-[10px] text-on-surface-variant bg-surface-container px-2 py-1 rounded">CREDIT_ID</span>
+<span class="font-data-tabular text-data-tabular text-on-surface" id="credit-id-text">—</span>
+</div>
+<div class="font-label-caps text-[10px] text-on-surface-variant" id="queue-count">—</div>
+</header>
+
+<div class="p-8 flex-1 overflow-auto">
+
+<!-- Investigation queue selector -->
+<div class="mb-6">
+<div class="font-label-caps text-[10px] text-on-surface-variant mb-2">INVESTIGATION QUEUE</div>
+<div class="flex flex-wrap gap-2" id="queue" role="tablist" aria-label="Investigation queue"></div>
 </div>
 
-<p class="font-body-sm text-error text-center" id="load-error" hidden></p>
+<!-- Header strip: the variance under investigation -->
+<div class="bg-surface border border-outline-variant rounded-lg mb-6 p-4 flex flex-wrap items-center justify-between gap-4" id="strip"></div>
+
+<!-- Two columns -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+<section>
+<h2 class="font-title-sm text-title-sm mb-4">Agent reasoning trace</h2>
+<div class="relative ml-1 space-y-5 pb-2" id="trace"></div>
+</section>
+<div class="space-y-6" id="cards"></div>
+</div>
+
+<!-- Reassurance -->
+<div class="mt-10 pt-4 border-t border-outline-variant text-center font-label-caps text-[10px] text-outline flex items-center justify-center gap-2">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px]" data-icon="security"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q97-30 162-118.5T718-480H480v-315l-240 90v207q0 7 2 18h238v316Z"/></svg>
+Deterministic core · the LLM writes the explanation, never the numbers. Every step above is reproducible.
+</div>
+
+<p class="font-body-sm text-error text-center mt-6" id="load-error" hidden></p>
 </div>
 </main>
 
@@ -75,250 +101,167 @@
   const signed = (p) => (typeof p === 'number' && Number.isSafeInteger(p) && p !== 0)
     ? (p < 0 ? '−' : '+') + inrPaise(p) : inrPaise(p);
 
-  const _ROOT_LABEL = {
-    mdr_fee_drift: 'MDR fee drift', cross_cycle_refund_lag: 'Cross-cycle refund lag',
-    on_hold_release: 'On-hold release', dispute_deduction: 'Dispute deduction',
-    partial_capture: 'Partial capture', rolling_reserve: 'Rolling reserve',
-    bank_charge_or_rounding: 'Bank charge or rounding', unexplained: 'Unexplained',
-  };
-
   let CASES = [];
   const matched = (c) => (c.candidates_tried || []).find((x) => x.matched) || null;
 
-  // ---- left rail: one row per exception -----------------------------------------
-  function renderList() {
-    const list = $('case-list');
-    list.replaceChildren();
+  // ---- queue selector -----------------------------------------------------------
+  function renderQueue() {
+    const q = $('queue');
+    q.replaceChildren();
     CASES.forEach((c, i) => {
-      const accent = c.resolved ? 'border-l-secondary' : 'border-l-tertiary-fixed-dim';
-      const btn = el('button', `case-btn text-left w-full bg-surface rounded-xl border border-outline-variant border-l-4 ${accent} p-4 flex flex-col gap-2 transition-colors hover:bg-surface-container-low`);
-      btn.type = 'button';
-      btn.setAttribute('aria-current', i === 0 ? 'true' : 'false');
-      btn.addEventListener('click', () => select(i));
-
-      const top = el('div', 'flex items-center justify-between gap-2');
-      top.append(el('span', 'font-title-sm text-on-surface', c.root_cause_label));
-      top.append(statusBadge(c, true));
-      btn.append(top);
-
-      const bottom = el('div', 'flex items-center justify-between gap-2');
-      bottom.append(el('span', 'font-data-tabular text-data-tabular text-on-surface', 'Variance ' + signed(c.variance_paise)));
-      btn.append(bottom);
-      list.append(btn);
+      const dot = c.resolved ? 'bg-secondary' : 'bg-tertiary-fixed-dim';
+      const b = el('button', 'qpill inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-outline-variant bg-surface font-data-tabular text-[13px] text-on-surface-variant transition-colors hover:bg-surface-container-low');
+      b.type = 'button';
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-current', i === 0 ? 'true' : 'false');
+      b.append(el('span', `w-2 h-2 rounded-full ${dot}`));
+      b.append(el('span', null, c.root_cause_label));
+      b.addEventListener('click', () => select(i));
+      q.append(b);
     });
   }
 
-  // status badge: colour + icon + text, never colour alone
-  function statusBadge(c, compact) {
-    const cls = compact ? 'font-label-caps text-[10px] px-2 py-0.5' : 'font-label-caps text-label-caps px-3 py-1';
-    if (c.resolved) {
-      const b = el('span', `${cls} rounded-full bg-secondary/10 text-secondary inline-flex items-center gap-1`);
-      b.append(el('span', null, '✓')); b.append(el('span', null, 'Reconciled'));
-      return b;
-    }
-    const b = el('span', `${cls} rounded-full bg-tertiary-fixed-dim/25 text-on-tertiary-container inline-flex items-center gap-1`);
-    b.append(el('span', null, '⚠')); b.append(el('span', null, 'Needs evidence'));
-    return b;
-  }
-
-  // ---- the three-stat triad: bank credit / expected net / variance --------------
-  function triad(c) {
-    const grid = el('div', 'grid grid-cols-3 gap-px bg-outline-variant rounded-lg overflow-hidden mt-5');
-    const cell = (label, value, valueCls) => {
-      const d = el('div', 'bg-surface p-4 flex flex-col gap-2');
-      d.append(el('span', 'font-label-caps text-[10px] text-on-surface-variant', label));
-      d.append(el('span', 'font-data-tabular text-headline-md leading-none ' + (valueCls || 'text-on-surface'), value));
+  // ---- header strip -------------------------------------------------------------
+  function renderStrip(c) {
+    const strip = $('strip');
+    strip.replaceChildren();
+    const left = el('div', 'flex items-center gap-6 flex-wrap');
+    const stat = (label, value, valueCls) => {
+      const d = el('div');
+      d.append(el('div', 'font-label-caps text-[10px] text-on-surface-variant', label));
+      d.append(el('div', 'font-data-tabular text-data-tabular tabular-nums ' + (valueCls || 'text-on-surface'), value));
       return d;
     };
-    grid.append(cell('BANK CREDIT', inrPaise(c.bank_credit_paise)));
-    grid.append(cell('EXPECTED SETTLEMENT NET', inrPaise(c.expected_net_paise)));
-    grid.append(cell('VARIANCE', signed(c.variance_paise), c.resolved ? 'text-on-surface' : 'text-on-tertiary-container'));
-    return grid;
+    const div = () => el('div', 'h-8 w-px bg-outline-variant');
+    left.append(stat('ROOT CAUSE', c.root_cause_label, c.resolved ? 'text-on-surface' : 'text-on-tertiary-container'));
+    left.append(div());
+    left.append(stat('BANK CREDIT', inrPaise(c.bank_credit_paise)));
+    left.append(div());
+    left.append(stat('EXPECTED SETTLEMENT', inrPaise(c.expected_net_paise)));
+    strip.append(left);
+
+    const right = el('div', 'flex items-center gap-4 flex-wrap');
+    right.append(el('div', 'font-headline-md text-headline-md tabular-nums text-[#F59E0B]', 'Variance ' + signed(c.variance_paise)));
+    if (c.resolved) {
+      const badge = el('div', 'bg-secondary/10 text-secondary font-label-caps text-label-caps px-3 py-1 rounded-full border border-secondary/20 inline-flex items-center gap-2');
+      badge.append(el('span', null, '✓')); badge.append(el('span', null, 'Root cause found · deterministic'));
+      right.append(badge);
+    } else {
+      const badge = el('div', 'bg-tertiary-fixed-dim/25 text-on-tertiary-container font-label-caps text-label-caps px-3 py-1 rounded-full border border-tertiary-fixed-dim/40 inline-flex items-center gap-2');
+      badge.append(el('span', null, '⚠')); badge.append(el('span', null, 'No supported cause · abstained'));
+      right.append(badge);
+    }
+    strip.append(right);
   }
 
-  // ---- gap bar: visual evidence of what closes the variance ---------------------
-  function gapBar(c) {
-    const wrap = el('div', 'mt-4');
+  // ---- reasoning trace timeline -------------------------------------------------
+  function dotColor(step) {
+    const s = step.toLowerCase();
+    if (s.includes('match:')) return 'bg-secondary';
+    if (s.includes('drafted') || s.includes('proposal')) return 'bg-primary';
+    if (s.includes('delta') || s.includes('variance')) return 'bg-tertiary-fixed-dim';
+    return 'bg-outline-variant';
+  }
+  function boxTone(step) {
+    const s = step.toLowerCase();
+    if (s.includes('match:')) return 'bg-secondary/10 border-secondary text-on-surface';
+    if (s.includes('drafted') || s.includes('proposal')) return 'bg-primary/5 border-primary/20 text-on-surface';
+    if (s.includes('delta') || s.includes('variance')) return 'bg-tertiary-fixed-dim/10 border-tertiary-fixed-dim/30 text-on-surface';
+    return 'bg-surface border-outline-variant text-on-surface';
+  }
+  function renderTrace(c) {
+    const t = $('trace');
+    t.replaceChildren();
+    const line = el('div', 'absolute left-0 top-2 bottom-2 w-px bg-outline-variant');
+    t.append(line);
+    (c.reasoning_trace || []).forEach((step, i) => {
+      const item = el('div', 'tl-item relative pl-6');
+      item.style.animationDelay = (i * 0.08) + 's';
+      item.append(el('span', `absolute -left-[5px] top-2 w-2.5 h-2.5 rounded-full ring-2 ring-background ${dotColor(step)}`));
+      const label = (step.match(/^(Step\s+\d+)/i) || [])[1] || ('Step ' + (i + 1));
+      item.append(el('div', 'font-label-caps text-[10px] text-on-surface-variant mb-1', label.toUpperCase()));
+      const body = step.replace(/^Step\s+\d+:\s*/i, '');
+      item.append(el('div', 'font-body-sm text-body-sm p-3 rounded-lg border ' + boxTone(step), body));
+      t.append(item);
+    });
+  }
+
+  // ---- right column cards -------------------------------------------------------
+  function renderCards(c) {
+    const cards = $('cards');
+    cards.replaceChildren();
     const m = matched(c);
-    const variance = Math.abs(c.variance_paise || 0);
-    const residual = c.resolved && m ? Math.abs(m.unexplained_residual_paise || 0) : variance;
-    const explained = Math.max(variance - residual, 0);
-    const track = el('div', 'flex h-2.5 rounded-full overflow-hidden bg-surface-container');
-    if (variance > 0) {
-      if (explained > 0) { const g = el('div', 'bg-secondary h-full'); g.style.width = (explained / variance * 100) + '%'; track.append(g); }
-      if (residual > 0) { const r = el('div', 'bg-tertiary-fixed-dim h-full'); r.style.width = (residual / variance * 100) + '%'; track.append(r); }
-    }
-    wrap.append(track);
-    const legend = el('div', 'flex items-center justify-between mt-2 font-label-caps text-[10px]');
-    legend.append(el('span', 'text-on-surface-variant', (c.resolved ? 'EXPLAINED ' : 'UNEXPLAINED ') + inrPaise(c.resolved ? explained : variance)));
-    legend.append(el('span', c.resolved ? 'text-secondary' : 'text-on-tertiary-container', 'RESIDUAL ' + inrPaise(residual)));
-    wrap.append(legend);
-    return wrap;
-  }
 
-  // ---- candidates checked (the negative space) ----------------------------------
-  function candidates(c) {
-    const card = el('div', 'bg-surface rounded-xl border border-outline-variant overflow-hidden');
-    const head = el('div', 'p-5 border-b border-outline-variant bg-surface-container-low');
-    head.append(el('h3', 'font-title-sm text-on-surface', 'Candidates checked'));
-    head.append(el('p', 'font-body-sm text-on-surface-variant mt-0.5', 'Every hypothesis tested against the evidence — what was ruled out, and why.'));
-    card.append(head);
-
-    const body = el('div', 'p-5 flex flex-col gap-2');
-    (c.candidates_tried || []).forEach((x) => {
-      const isMatch = x.matched;
-      const row = el('div', 'flex items-start gap-3 rounded-lg border p-3 ' + (isMatch ? 'border-secondary bg-secondary/5' : 'border-outline-variant'));
-      const mark = el('span', 'shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[12px] ' + (isMatch ? 'bg-secondary text-on-primary' : 'bg-surface-container text-on-surface-variant'), isMatch ? '✓' : '✗');
-      row.append(mark);
-      const txt = el('div', 'flex-1 min-w-0');
-      const nameRow = el('div', 'flex items-center gap-2 flex-wrap');
-      nameRow.append(el('span', 'font-data-tabular text-data-tabular ' + (isMatch ? 'text-on-surface font-semibold' : 'text-on-surface-variant'), _ROOT_LABEL[x.root_cause] || x.root_cause));
-      nameRow.append(el('span', 'font-label-caps text-[10px] px-2 py-0.5 rounded-full ' + (isMatch ? 'bg-secondary/10 text-secondary' : 'bg-surface-container text-on-surface-variant'), isMatch ? 'Matched' : 'Did not close variance'));
-      txt.append(nameRow);
-      txt.append(el('div', 'font-body-sm text-on-surface-variant mt-1', x.reason || ''));
-      txt.append(el('div', 'font-label-caps text-[10px] mt-1 ' + (isMatch ? 'text-secondary' : 'text-on-surface-variant'),
-        isMatch ? ('CLOSES ' + inrPaise(x.delta_paise) + ' · RESIDUAL ' + inrPaise(x.unexplained_residual_paise))
-                : ('RESIDUAL ' + inrPaise(x.unexplained_residual_paise))));
-      row.append(txt);
-      body.append(row);
-    });
-    card.append(body);
-    return card;
-  }
-
-  // ---- proposed corrective voucher (two-sided ledger) ---------------------------
-  function voucher(c) {
-    const ce = c.corrective_entry;
-    const card = el('div', 'bg-surface rounded-xl border border-outline-variant overflow-hidden');
-    const head = el('div', 'bg-primary text-on-primary p-4 flex items-center justify-between gap-3 flex-wrap');
-    head.append(el('h3', 'font-title-sm', 'Proposed corrective voucher'));
-    if (ce && (ce.lines || []).length) {
-      head.append(el('span', 'font-label-caps text-[10px] bg-on-primary/20 px-2 py-1 rounded', 'Proposal only · Balanced · Not posted'));
-    }
-    card.append(head);
-
-    if (!ce || !(ce.lines || []).length) {
-      const empty = el('div', 'p-6 text-center');
-      empty.append(el('p', 'font-body-sm text-on-surface-variant', 'No corrective voucher was drafted. No supported hypothesis closed this variance, so untangle abstained rather than guess.'));
-      card.append(empty);
-      return card;
-    }
-
-    const meta = el('div', 'px-5 pt-4 flex flex-wrap items-center gap-x-6 gap-y-1 font-label-caps text-[10px] text-on-surface-variant');
-    if (ce.ref) meta.append(el('span', null, 'REF ' + ce.ref));
-    if (ce.date) meta.append(el('span', null, 'DATE ' + ce.date));
-    card.append(meta);
-
-    const tblWrap = el('div', 'p-5 pt-3 overflow-x-auto');
-    const tbl = el('table', 'w-full text-left border-collapse font-data-tabular text-sm');
-    const thead = el('thead');
-    const htr = el('tr', 'border-b border-outline-variant');
-    htr.append(el('th', 'font-label-caps text-on-surface-variant py-2 pr-4 font-semibold', 'LEDGER'));
-    htr.append(el('th', 'font-label-caps text-on-surface-variant py-2 px-4 font-semibold text-right', 'DEBIT'));
-    htr.append(el('th', 'font-label-caps text-on-surface-variant py-2 pl-4 font-semibold text-right', 'CREDIT'));
-    thead.append(htr); tbl.append(thead);
-    const tb = el('tbody');
-    let dr = 0, cr = 0;
-    (ce.lines || []).forEach((ln) => {
-      const tr = el('tr', 'border-b border-outline-variant/60');
-      tr.append(el('td', 'py-2 pr-4 text-on-surface', ln.ledger || ''));
-      tr.append(el('td', 'py-2 px-4 text-right text-on-surface', ln.debit_inr && ln.debit_inr !== '0.00' ? '₹' + ln.debit_inr : '—'));
-      tr.append(el('td', 'py-2 pl-4 text-right text-on-surface', ln.credit_inr && ln.credit_inr !== '0.00' ? '₹' + ln.credit_inr : '—'));
-      tb.append(tr);
-      dr += Math.round(parseFloat(ln.debit_inr || '0') * 100);
-      cr += Math.round(parseFloat(ln.credit_inr || '0') * 100);
-    });
-    tbl.append(tb);
-    const tf = el('tfoot');
-    const ftr = el('tr', 'border-t-2 border-outline-variant font-semibold bg-surface-container-low');
-    ftr.append(el('td', 'py-2 px-4 text-on-surface rounded-l-lg', 'Total'));
-    ftr.append(el('td', 'py-2 px-4 text-right text-on-surface', inrPaise(dr)));
-    ftr.append(el('td', 'py-2 px-4 pl-4 text-right text-on-surface rounded-r-lg', inrPaise(cr)));
-    tf.append(ftr); tbl.append(tf);
-    tblWrap.append(tbl);
-    card.append(tblWrap);
-
-    const foot = el('div', 'px-5 pb-5 flex items-center gap-2');
-    foot.append(el('span', 'inline-flex items-center gap-1 font-label-caps text-[10px] ' + (ce.balanced ? 'text-secondary' : 'text-error')));
-    foot.lastChild.append(el('span', null, ce.balanced ? '✓' : '✗'));
-    foot.lastChild.append(el('span', null, ce.balanced ? 'Balanced · debits equal credits' : 'Unbalanced'));
-    card.append(foot);
-    return card;
-  }
-
-  // ---- recommended next action --------------------------------------------------
-  function nextAction(c) {
-    const card = el('div', 'bg-surface-container-low rounded-xl border border-outline-variant p-5 flex items-start gap-3');
-    card.append(el('span', 'shrink-0 w-2 h-2 rounded-full mt-2 ' + (c.resolved ? 'bg-secondary' : 'bg-tertiary-fixed-dim')));
-    const txt = el('div');
-    txt.append(el('h3', 'font-label-caps text-label-caps text-on-surface-variant', 'RECOMMENDED NEXT ACTION'));
-    txt.append(el('p', 'font-body-md text-on-surface mt-1', c.next_action || ''));
-    card.append(txt);
-    return card;
-  }
-
-  // ---- reasoning trace (progressive disclosure) ---------------------------------
-  function trace(c) {
-    const d = el('details', 'bg-surface rounded-xl border border-outline-variant overflow-hidden');
-    const s = el('summary', 'p-4 cursor-pointer font-title-sm text-on-surface flex items-center justify-between select-none');
-    s.append(el('span', null, 'Reasoning trace'));
-    s.append(el('span', 'font-label-caps text-[10px] text-on-surface-variant', (c.reasoning_trace || []).length + ' steps'));
-    d.append(s);
-    const ol = el('ol', 'px-6 pb-5 pt-1 flex flex-col gap-3');
-    (c.reasoning_trace || []).forEach((step) => {
-      const li = el('li', 'relative pl-5 border-l-2 border-outline-variant font-body-sm text-on-surface-variant');
-      li.append(el('span', 'absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-surface-tint'));
-      li.append(document.createTextNode(step));
-      ol.append(li);
-    });
-    d.append(ol);
-    return d;
-  }
-
-  // ---- assemble the variance file ----------------------------------------------
-  function renderFile(c) {
-    const root = $('case-file');
-    root.replaceChildren();
-
-    const hero = el('div', 'bg-surface rounded-xl border border-outline-variant p-6 animate-fade-rise');
-    const heading = c.resolved ? ('Evidence supports: ' + c.root_cause_label) : 'No supported explanation closes this variance';
-    const topRow = el('div', 'flex items-start justify-between gap-3 flex-wrap');
-    const htext = el('div', 'max-w-lg');
-    htext.append(el('h2', 'font-title-sm text-on-surface', heading));
-    htext.append(el('p', 'font-body-sm text-on-surface-variant mt-1',
+    // Root cause card
+    const rc = el('div', 'bg-surface border border-outline-variant rounded-lg p-6 relative overflow-hidden');
+    rc.append(el('div', 'absolute left-0 top-0 bottom-0 w-1 ' + (c.resolved ? 'bg-secondary' : 'bg-tertiary-fixed-dim')));
+    const rcHead = el('div', 'flex items-center justify-between gap-2 mb-2');
+    rcHead.append(el('h3', 'font-title-sm text-title-sm', 'Root cause'));
+    rcHead.append(el('span', 'font-label-caps text-[10px] px-2 py-1 rounded ' + (c.resolved ? 'bg-secondary/10 text-secondary' : 'bg-tertiary-fixed-dim/25 text-on-tertiary-container'), c.root_cause));
+    rc.append(rcHead);
+    rc.append(el('p', 'font-body-md text-on-surface-variant mb-4',
       c.resolved
-        ? 'The variance is fully accounted for by supported evidence.'
-        : 'untangle checked the available hypotheses and abstained. No corrective voucher was drafted.'));
-    topRow.append(htext);
-    topRow.append(statusBadge(c, false));
-    hero.append(topRow);
-    hero.append(triad(c));
-    hero.append(gapBar(c));
-    root.append(hero);
+        ? (m ? m.reason : 'Supported evidence accounts for the full variance.')
+        : 'untangle checked the available hypotheses and none closed this variance. It abstained rather than guess; no corrective voucher was drafted.'));
+    rc.append(el('div', 'font-label-caps text-[10px] text-outline', '⌾ narrated by LLM · decided by rules'));
+    cards.append(rc);
 
-    root.append(candidates(c));
-    root.append(voucher(c));
-    root.append(nextAction(c));
-    root.append(trace(c));
+    // Candidates checked (the negative space, compact)
+    const cc = el('div', 'bg-surface border border-outline-variant rounded-lg overflow-hidden');
+    cc.append(el('div', 'p-4 border-b border-outline-variant font-title-sm text-title-sm', 'Candidates checked'));
+    const list = el('div', 'p-4 flex flex-col gap-2');
+    (c.candidates_tried || []).forEach((x) => {
+      const row = el('div', 'flex items-center gap-3');
+      row.append(el('span', 'shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[11px] ' + (x.matched ? 'bg-secondary text-on-primary' : 'bg-surface-container text-on-surface-variant'), x.matched ? '✓' : '✗'));
+      const nm = el('span', 'flex-1 min-w-0 font-data-tabular text-[13px] ' + (x.matched ? 'text-on-surface font-semibold' : 'text-on-surface-variant'), (window._RL && window._RL[x.root_cause]) || x.root_cause);
+      row.append(nm);
+      row.append(el('span', 'font-label-caps text-[10px] ' + (x.matched ? 'text-secondary' : 'text-on-surface-variant'), x.matched ? 'Matched' : 'Ruled out'));
+      list.append(row);
+    });
+    cc.append(list);
+    cards.append(cc);
+
+    // Proposed corrective entry
+    const ce = c.corrective_entry;
+    const vc = el('div', 'bg-surface border border-outline-variant rounded-lg overflow-hidden');
+    vc.append(el('div', 'p-4 border-b border-outline-variant bg-surface-container-lowest font-title-sm text-title-sm', 'Proposed corrective entry'));
+    if (ce && (ce.lines || []).length) {
+      const rows = el('div', 'p-4 bg-surface-container-low font-data-tabular text-[13px]');
+      (ce.lines || []).forEach((ln, i) => {
+        const dr = ln.debit_inr && ln.debit_inr !== '0.00';
+        const r = el('div', 'flex justify-between py-2 ' + (i < ce.lines.length - 1 ? 'border-b border-outline-variant/50 ' : '') + (dr ? 'text-on-surface' : 'text-on-surface-variant pl-4'));
+        r.append(el('span', null, (dr ? 'Debit ' : 'Credit ') + (ln.ledger || '')));
+        r.append(el('span', 'tabular-nums text-right', dr ? '₹' + ln.debit_inr : '₹' + ln.credit_inr));
+        rows.append(r);
+      });
+      vc.append(rows);
+      const foot = el('div', 'p-4 border-t border-outline-variant flex flex-col gap-3');
+      foot.append(el('div', 'text-center font-label-caps text-[10px] text-outline', (ce.balanced ? 'balances to ₹0 · ' : '') + 'proposal only, not posted'));
+      const btns = el('div', 'flex gap-3 justify-end');
+      const copy = el('button', 'px-4 py-2 font-body-sm bg-primary text-on-primary rounded hover:bg-audit-blue transition-colors', 'Copy voucher');
+      copy.type = 'button';
+      copy.addEventListener('click', () => {
+        const text = (ce.lines || []).map((l) => `${l.debit_inr !== '0.00' ? 'Debit' : 'Credit'} ${l.ledger}\t${l.debit_inr !== '0.00' ? '₹' + l.debit_inr : '₹' + l.credit_inr}`).join('\n');
+        navigator.clipboard?.writeText(`${ce.ref || ''}\n${text}`.trim());
+        copy.textContent = 'Copied ✓';
+        setTimeout(() => { copy.textContent = 'Copy voucher'; }, 1500);
+      });
+      btns.append(copy);
+      foot.append(btns);
+      vc.append(foot);
+    } else {
+      vc.append(el('div', 'p-6 text-center font-body-sm text-on-surface-variant', 'No corrective voucher was drafted. No supported hypothesis closed this variance, so untangle abstained rather than guess.'));
+    }
+    cards.append(vc);
   }
 
   function select(i) {
-    document.querySelectorAll('.case-btn').forEach((b, j) => b.setAttribute('aria-current', j === i ? 'true' : 'false'));
-    renderFile(CASES[i]);
-  }
-
-  function renderSummary(s) {
-    const wrap = $('summary-chips');
-    wrap.replaceChildren();
-    const chip = (n, label, cls) => {
-      const c = el('div', 'flex flex-col items-center px-4 py-2 rounded-xl border border-outline-variant bg-surface');
-      c.append(el('span', 'font-data-tabular text-title-sm ' + cls, String(n)));
-      c.append(el('span', 'font-label-caps text-[10px] text-on-surface-variant', label));
-      return c;
-    };
-    wrap.append(chip(s.resolved, 'RECONCILED', 'text-secondary'));
-    wrap.append(chip(s.abstained, 'NEEDS EVIDENCE', 'text-on-tertiary-container'));
-    wrap.append(chip(s.total, 'TOTAL', 'text-on-surface'));
+    document.querySelectorAll('.qpill').forEach((b, j) => b.setAttribute('aria-current', j === i ? 'true' : 'false'));
+    const c = CASES[i];
+    $('credit-id-text').textContent = c.line_key || '—';
+    renderStrip(c);
+    renderTrace(c);
+    renderCards(c);
   }
 
   async function load() {
@@ -327,15 +270,15 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const p = await r.json();
       CASES = p.cases || [];
-      renderSummary(p.summary || { resolved: 0, abstained: 0, total: 0 });
+      window._RL = {}; CASES.forEach((c) => { window._RL[c.root_cause] = c.root_cause_label; });
+      const s = p.summary || {};
+      $('queue-count').textContent = (s.resolved ?? 0) + ' reconciled · ' + (s.abstained ?? 0) + ' need evidence · ' + (s.total ?? 0) + ' total';
       if (!CASES.length) throw new Error('no investigations returned');
-      renderList();
-      renderFile(CASES[0]);
+      renderQueue();
+      select(0);
     } catch (e) {
       const err = $('load-error'); err.hidden = false;
       err.textContent = 'Could not load investigations (' + e.message + ').';
-      $('case-list').replaceChildren();
-      $('case-file').replaceChildren();
     }
   }
   load();
