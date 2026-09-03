@@ -684,11 +684,12 @@ def _run_certificate(run: dict) -> dict:
     is configured) is randomized, so re-issuing per request would otherwise yield a
     different signature each time for the same underlying report.
     """
-    cert = run.get("cert")
-    if cert is None:
-        cert = issue_certificate(run["report"])
-        run["cert"] = cert
-    return cert
+    with _RUNS_LOCK:
+        cert = run.get("cert")
+        if cert is None:
+            cert = issue_certificate(run["report"])
+            run["cert"] = cert
+        return cert
 
 
 def _set_run_cookie(resp: Response, run_id: str, request: Request) -> None:
