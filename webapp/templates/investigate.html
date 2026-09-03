@@ -125,9 +125,9 @@
   function triad(c) {
     const grid = el('div', 'grid grid-cols-3 gap-px bg-outline-variant rounded-lg overflow-hidden mt-5');
     const cell = (label, value, valueCls) => {
-      const d = el('div', 'bg-surface p-4 flex flex-col gap-1');
+      const d = el('div', 'bg-surface p-4 flex flex-col gap-2');
       d.append(el('span', 'font-label-caps text-[10px] text-on-surface-variant', label));
-      d.append(el('span', 'font-data-tabular text-title-sm ' + (valueCls || 'text-on-surface'), value));
+      d.append(el('span', 'font-data-tabular text-headline-md leading-none ' + (valueCls || 'text-on-surface'), value));
       return d;
     };
     grid.append(cell('BANK CREDIT', inrPaise(c.bank_credit_paise)));
@@ -230,10 +230,10 @@
     });
     tbl.append(tb);
     const tf = el('tfoot');
-    const ftr = el('tr', 'border-t-2 border-outline-variant font-semibold');
-    ftr.append(el('td', 'py-2 pr-4 text-on-surface', 'Total'));
+    const ftr = el('tr', 'border-t-2 border-outline-variant font-semibold bg-surface-container-low');
+    ftr.append(el('td', 'py-2 px-4 text-on-surface rounded-l-lg', 'Total'));
     ftr.append(el('td', 'py-2 px-4 text-right text-on-surface', inrPaise(dr)));
-    ftr.append(el('td', 'py-2 pl-4 text-right text-on-surface', inrPaise(cr)));
+    ftr.append(el('td', 'py-2 px-4 pl-4 text-right text-on-surface rounded-r-lg', inrPaise(cr)));
     tf.append(ftr); tbl.append(tf);
     tblWrap.append(tbl);
     card.append(tblWrap);
