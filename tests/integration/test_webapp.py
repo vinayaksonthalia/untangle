@@ -27,7 +27,7 @@ def _files(**over):
 
 
 def test_pages_render():
-    for path, marker in [("/", "with proof, not guesses."), ("/app", "Upload your files"),
+    for path, marker in [("/", "Close your Razorpay settlement books"), ("/app", "Upload your files"),
                          ("/dashboard", "Settlement close")]:
         r = client.get(path)
         assert r.status_code == 200 and marker in r.text, path
