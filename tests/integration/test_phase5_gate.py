@@ -97,7 +97,10 @@ def test_phase5_gate_one_click_demo_reproduction(client):
     assert "Settlement close" in r.text
     pres = client.get("/api/presentation/current").json()
     assert pres.get("mode") == "demo"
-    assert pres["summary"]["n_bank_lines"] == 826  # multi-month demo, reproducible from seed 42
+    # One coherent demo dataset (clean reconciliations + the root-cause investigation cases),
+    # so Dashboard, Investigate and Certificate all describe the SAME report.
+    assert pres["summary"]["n_bank_lines"] == 15  # 8 clean settlements + 7 investigation cases
+    assert pres["summary"]["reconciled_paise"] > 0  # the clean settlements give real reconciled value
     # the demo also drives the Investigate queue (curated: 6 resolved + 1 honest abstention)
     inv = client.get("/api/investigations/current").json()
     assert inv.get("mode") == "demo" and inv["summary"]["resolved"] == 6

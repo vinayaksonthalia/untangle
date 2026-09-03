@@ -6,7 +6,7 @@
 <title>Close certificate — untangle</title>
 <meta name="description" content="A printable untangle close certificate for the active reconciliation run: reconciled-to-paise figures plus the content SHA-256 and audit root that make it independently re-verifiable."/>
 <style>
-  :root { --ink:#0b1c30; --muted:#5f6b7a; --line:#dfe3e8; --brand:#2b5edb; --green:#0b7a43; --paper:#f4f6f8; }
+  :root { --ink:#0b1c30; --muted:#5f6b7a; --line:#dfe3e8; --brand:#2b5edb; --green:#0b7a43; --amber:#b06000; --paper:#f4f6f8; }
   * { box-sizing: border-box; }
   html, body { margin:0; padding:0; }
   body { background: var(--paper); color: var(--ink); font-family: "Hanken Grotesk", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
@@ -30,6 +30,7 @@
   .cell .l { font:600 10px/1.4 "JetBrains Mono", monospace; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
   .cell .v { font-family:"JetBrains Mono", monospace; font-size:22px; font-weight:600; margin-top:4px; font-variant-numeric: tabular-nums; }
   .cell .v.green { color:var(--green); }
+  .cell .v.amber { color:var(--amber); }
   .seal { border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin-bottom:24px; }
   .seal h2 { font:600 11px/1.4 "JetBrains Mono", monospace; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:0 0 12px; }
   .row { display:flex; justify-content:space-between; gap:16px; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
@@ -91,7 +92,10 @@
 
 <script>
   const $ = (id) => document.getElementById(id);
-  const inr = (p) => (typeof p === 'number' && Number.isSafeInteger(p)) ? '₹' + (p/100).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+  // Integer minor-unit formatting: split paise into rupees and paise with integer ops, never float division.
+  const inr = (p) => { if (typeof p !== 'number' || !Number.isSafeInteger(p)) return '—';
+    const s = p < 0 ? '−' : '', a = Math.abs(p);
+    return '₹' + s + Math.trunc(a/100).toLocaleString('en-IN') + '.' + String(a%100).padStart(2,'0'); };
   const pct = (n) => Number.isFinite(n) ? (n*100).toFixed(1)+'%' : '—';
 
   (async function(){
@@ -106,13 +110,14 @@
     const isDemo = p.mode !== 'your_run';
     $('mode-badge').textContent = isDemo ? 'Demo data' : 'Your run';
     $('mode-badge').className = 'badge ' + (isDemo ? 'demo' : 'run');
-    const now = new Date();
-    $('sub').textContent = 'Issued ' + now.toISOString().slice(0,10) + ' · ' + (isDemo ? 'bundled sample reconciliation' : 'your uploaded reconciliation');
+    // No browser clock: the certificate is reproducible, so its subtitle carries no viewing-date.
+    $('sub').textContent = isDemo ? 'Bundled sample reconciliation' : 'Your uploaded reconciliation';
 
     const cov = s.n_bank_lines ? s.attributed_count/s.n_bank_lines : 0;
+    const residual = Number.isSafeInteger(s.unresolved_paise) ? s.unresolved_paise : 0;
     const fig = [
       ['Reconciled to the paise', inr(s.reconciled_paise), 'green'],
-      ['Residual on proven slice', '₹0.00', 'green'],
+      ['Residual on proven slice', inr(residual), residual === 0 ? 'green' : 'amber'],
       ['Attribution coverage', pct(cov) + ' (' + (s.attributed_count||0) + ' of ' + (s.n_bank_lines||0) + ')', ''],
       ['Recoverable fee GST', inr(s.fee_gst_recoverable_paise), ''],
     ];

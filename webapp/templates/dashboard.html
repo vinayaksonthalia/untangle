@@ -214,7 +214,7 @@
 <div class="flex justify-between border-t border-outline-variant pt-2 mt-2"><span class="text-on-surface-variant">Close certificate</span><span class="text-secondary font-semibold" id="j-cert">—</span></div>
 </div>
 <div class="flex flex-col gap-2">
-<a href="/api/journal/sample.tally.xml" class="w-full bg-primary text-on-primary h-row-height-standard rounded-lg font-label-caps flex items-center justify-center gap-2 hover:bg-audit-blue transition-colors">
+<a href="/api/journal/current.tally.xml" class="w-full bg-primary text-on-primary h-row-height-standard rounded-lg font-label-caps flex items-center justify-center gap-2 hover:bg-audit-blue transition-colors">
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]"><path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg> Download Tally XML
 </a>
 <a href="/certificate" class="w-full border border-outline-variant text-on-surface h-row-height-standard rounded-lg font-label-caps flex items-center justify-center gap-2 hover:bg-surface-container-low transition-colors">
@@ -236,10 +236,12 @@
   const $ = (id) => document.getElementById(id);
   // Money is integer paise. Reject anything that isn't a finite safe integer (null,
   // undefined, booleans, NaN, floats) rather than coercing it into a fabricated ₹0.
-  const inr = (paise) =>
-    (typeof paise === 'number' && Number.isSafeInteger(paise))
-      ? '₹' + (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-      : '—';
+  // Integer minor-unit formatting: rupees and paise split with integer ops, never float division.
+  const inr = (paise) => {
+    if (typeof paise !== 'number' || !Number.isSafeInteger(paise)) return '—';
+    const sign = paise < 0 ? '−' : '', a = Math.abs(paise);
+    return '₹' + sign + Math.trunc(a / 100).toLocaleString('en-IN') + '.' + String(a % 100).padStart(2, '0');
+  };
   const pct = (n) => (Number.isFinite(n) ? (n * 100).toFixed(1) + '%' : '—');
 
   // buckets for "where the money came from" — mapped from real rails + summary
