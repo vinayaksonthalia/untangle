@@ -41,6 +41,13 @@ def test_try_sample_loads_demo_run():
     assert pres.status_code == 200 and pres.json().get("mode") == "demo"
 
 
+def test_try_sample_redirect_contract():
+    r = client.get("/try-sample", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/dashboard"
+    assert "untangle_run=" in r.headers["set-cookie"]
+
+
 def test_api_reconcile_happy_path():
     r = client.post("/api/reconcile", files=_files())
     assert r.status_code == 200
@@ -54,6 +61,20 @@ def test_browser_reconcile_redirects_to_your_run():
     assert r.status_code == 200 and "Settlement close" in r.text
     pres = client.get("/api/presentation/current")
     assert pres.status_code == 200 and pres.json().get("mode") == "your_run"
+
+
+def test_browser_reconcile_redirect_contract():
+    r = client.post("/reconcile", files=_files(), follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/dashboard"
+    assert "untangle_run=" in r.headers["set-cookie"]
+
+
+def test_static_landing_css_revalidates_without_losing_body():
+    r = client.get("/static/landing.css")
+    assert r.status_code == 200
+    assert r.headers["cache-control"] == "no-cache"
+    assert r.content
 
 
 @pytest.mark.parametrize("name,payload", [
