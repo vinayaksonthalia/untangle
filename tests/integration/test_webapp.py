@@ -28,9 +28,17 @@ def _files(**over):
 
 def test_pages_render():
     for path, marker in [("/", "with proof, not guesses."), ("/app", "Upload your files"),
-                         ("/try-sample", "Exception queue")]:
+                         ("/dashboard", "Settlement close")]:
         r = client.get(path)
         assert r.status_code == 200 and marker in r.text, path
+
+
+def test_try_sample_loads_demo_run():
+    # /try-sample now loads the sample as the active DEMO run and redirects into the console
+    r = client.get("/try-sample")  # TestClient follows the 303 to /dashboard
+    assert r.status_code == 200 and "Settlement close" in r.text
+    pres = client.get("/api/presentation/current")
+    assert pres.status_code == 200 and pres.json().get("mode") == "demo"
 
 
 def test_api_reconcile_happy_path():
@@ -40,9 +48,12 @@ def test_api_reconcile_happy_path():
     assert t["reconciled_count"] > 0 and t["fee_gst_recoverable_paise"] > 0
 
 
-def test_browser_reconcile_returns_dashboard():
-    r = client.post("/reconcile", files=_files())
-    assert r.status_code == 200 and "Exception queue" in r.text
+def test_browser_reconcile_redirects_to_your_run():
+    # an upload becomes the active YOUR-RUN session and redirects into the console
+    r = client.post("/reconcile", files=_files())  # TestClient follows the 303 to /dashboard
+    assert r.status_code == 200 and "Settlement close" in r.text
+    pres = client.get("/api/presentation/current")
+    assert pres.status_code == 200 and pres.json().get("mode") == "your_run"
 
 
 @pytest.mark.parametrize("name,payload", [

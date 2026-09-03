@@ -24,15 +24,15 @@ from contextlib import asynccontextmanager
 from functools import lru_cache
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
 from engine.certificate import issue_certificate, verify_certificate
 from engine.ingest import InputError, load_bank, load_bank_bytes
 from engine.service import reconcile, reconcile_bytes
-from ui.dashboard import render as render_dashboard
 from webapp.pages import (
+    certificate_page,
     dashboard_page,
     investigate_page,
     landing_page,
@@ -639,6 +639,119 @@ def _ensure_sample() -> None:
             shutil.rmtree(staging, ignore_errors=True)
 
 
+# ---- Ephemeral per-viewer runs -------------------------------------------------
+# A reconciliation the viewer just ran (their upload, or the sample) is held in memory
+# only, keyed by an opaque cookie, with a short TTL and a hard cap. Nothing is written to
+# disk or a database — this is the privacy contract ("processed in memory, then discarded")
+# extended so a run can flow across Dashboard → Investigate → Verify within one session.
+_RUN_TTL_S = 60 * 30
+_RUN_CAP = 200
+_RUN_COOKIE = "untangle_run"
+_RUNS: dict[str, dict] = {}
+_RUNS_LOCK = threading.Lock()
+
+
+def _store_run(report: dict, bank_credit_by_key: dict, mode: str) -> str:
+    run_id = uuid.uuid4().hex
+    now = time.time()
+    with _RUNS_LOCK:
+        for k in [k for k, v in _RUNS.items() if now - v["created"] > _RUN_TTL_S]:
+            _RUNS.pop(k, None)
+        if len(_RUNS) >= _RUN_CAP:  # evict oldest to bound memory
+            for k in sorted(_RUNS, key=lambda k: _RUNS[k]["created"])[: len(_RUNS) - _RUN_CAP + 1]:
+                _RUNS.pop(k, None)
+        _RUNS[run_id] = {"report": report, "bank": bank_credit_by_key, "mode": mode, "created": now}
+    return run_id
+
+
+def _current_run(request: Request) -> dict | None:
+    rid = request.cookies.get(_RUN_COOKIE)
+    if not rid:
+        return None
+    with _RUNS_LOCK:
+        run = _RUNS.get(rid)
+        if run and time.time() - run["created"] > _RUN_TTL_S:
+            _RUNS.pop(rid, None)
+            return None
+    return run
+
+
+def _set_run_cookie(resp: Response, run_id: str) -> None:
+    resp.set_cookie(_RUN_COOKIE, run_id, max_age=_RUN_TTL_S, httponly=True, samesite="lax")
+
+
+def _shape_investigations_payload(report: dict, bank_credit_by_key: dict) -> dict:
+    """Build the read-only Investigate payload from any report + its bank-credit map."""
+    cases = []
+    for inv in report.get("investigations") or []:
+        rc = inv.get("root_cause", "unexplained")
+        resolved = rc != "unexplained"
+        variance = inv.get("variance_paise", 0)
+        bank_credit = bank_credit_by_key.get(inv.get("line_key"))
+        expected_net = bank_credit - variance if isinstance(bank_credit, int) else None
+        cases.append({
+            "line_key": inv.get("line_key"), "root_cause": rc,
+            "root_cause_label": _ROOT_CAUSE_LABELS.get(rc, rc), "resolved": resolved,
+            "confidence": inv.get("confidence", 0.0), "bank_credit_paise": bank_credit,
+            "expected_net_paise": expected_net, "variance_paise": variance,
+            "variance_inr": inv.get("variance_inr", "0.00"),
+            "reasoning_trace": inv.get("reasoning_trace") or [],
+            "candidates_tried": inv.get("candidates_tried") or [],
+            "corrective_entry": inv.get("corrective_entry"),
+            "next_action": ("Review the proposed voucher and post it in your ledger if the evidence is correct."
+                            if resolved else "Assign to a reviewer for manual investigation. No corrective voucher was drafted."),
+        })
+    resolved = sum(1 for c in cases if c["resolved"])
+    return {"run_identity": report.get("run_identity") or {},
+            "summary": {"total": len(cases), "resolved": resolved, "abstained": len(cases) - resolved},
+            "cases": cases}
+
+
+@app.get("/api/presentation/current")
+def api_presentation_current(request: Request, limit: int = 100, offset: int = 0) -> JSONResponse:
+    """The active viewer run (their upload or the sample) as read-only UI data, or an empty marker."""
+    from webapp.presentation import PresentationSchemaError, build_presentation_payload
+
+    run = _current_run(request)
+    if not run:
+        return JSONResponse({"mode": "empty"})
+    cert = issue_certificate(run["report"])
+    try:
+        payload = build_presentation_payload(run["report"], certificate=cert, limit=limit, offset=offset)
+    except PresentationSchemaError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    payload["mode"] = run["mode"]
+    return JSONResponse(payload)
+
+
+@app.get("/api/investigations/current")
+def api_investigations_current(request: Request) -> JSONResponse:
+    """Investigations for the active run: the curated benchmark for the demo, the user's own otherwise."""
+    run = _current_run(request)
+    if not run:
+        return JSONResponse({"mode": "empty", "summary": {"total": 0, "resolved": 0, "abstained": 0}, "cases": []})
+    if run["mode"] == "demo":
+        payload = dict(_get_cached_investigations())
+    else:
+        payload = _shape_investigations_payload(run["report"], run["bank"])
+    payload["mode"] = run["mode"]
+    return JSONResponse(payload)
+
+
+@app.get("/api/certificate/current")
+def api_certificate_current(request: Request) -> JSONResponse:
+    """The signed (or hash-bound) close certificate for the active run — portable + re-verifiable."""
+    run = _current_run(request)
+    if not run:
+        return JSONResponse({"mode": "empty"}, status_code=404)
+    return JSONResponse(issue_certificate(run["report"]))
+
+
+@app.get("/certificate", response_class=HTMLResponse)
+def certificate() -> str:
+    return certificate_page()
+
+
 @app.get("/", response_class=HTMLResponse)
 def landing() -> str:
     return landing_page()
@@ -649,8 +762,9 @@ def app_page() -> str:
     return upload_page()
 
 
-@app.get("/try-sample", response_class=HTMLResponse)
-def try_sample() -> str:
+@app.get("/try-sample")
+def try_sample() -> RedirectResponse:
+    """Load the bundled sample as the active DEMO run, then open the console."""
     _ensure_sample()
     bank = os.path.join(_SAMPLE, "bank_statement.csv")
     report = reconcile(
@@ -658,23 +772,30 @@ def try_sample() -> str:
         os.path.join(_SAMPLE, "recon_report.json"),
         os.path.join(_SAMPLE, "order_ledger.csv"),
     )
-    return render_dashboard(report, _months_by_key(bank))
+    bank_credit = {ln.key: ln.amount_paise for ln in load_bank(bank)}
+    run_id = _store_run(report, bank_credit, "demo")
+    resp = RedirectResponse(url="/dashboard", status_code=303)
+    _set_run_cookie(resp, run_id)
+    return resp
 
 
-@app.post("/reconcile", response_class=HTMLResponse)
+@app.post("/reconcile")
 async def reconcile_upload(
     request: Request,
     bank: UploadFile = File(...),
     recon: UploadFile = File(...),
     ledger: UploadFile = File(...),
-) -> str:
+) -> RedirectResponse:
     slot = request.state.reconciliation_slot
     b = await _read_upload("bank_statement.csv", bank)
     r = await _read_upload("recon_report.json", recon)
     ln = await _read_upload("order_ledger.csv", ledger)
     report = await _run_safely_bytes_async(b, r, ln, slot=slot)
-    months = {line.key: line.value_date.strftime("%Y-%m") for line in load_bank_bytes(b)}
-    return render_dashboard(report, months)
+    bank_credit = {line.key: line.amount_paise for line in load_bank_bytes(b)}
+    run_id = _store_run(report, bank_credit, "your_run")
+    resp = RedirectResponse(url="/dashboard", status_code=303)
+    _set_run_cookie(resp, run_id)
+    return resp
 
 
 @app.post("/api/reconcile")

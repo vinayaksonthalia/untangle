@@ -48,7 +48,7 @@ def test_dashboard_csp_unchanged(client):
 
 def test_dashboard_wires_real_endpoint_not_mock_numbers(client):
     html = client.get("/dashboard").text
-    assert "/api/presentation/sample" in html  # live data, not hardcoded
+    assert "/api/presentation/current" in html  # live data, not hardcoded
     # none of the Stitch mock's fabricated values/persona survive
     for bad in ("94.2%", "1,42,850.50", "12,430.20", "TRX-8919", "SET-4492",
                 "Audit Officer", "PREMIUM ACCESS", "Integrity Level"):

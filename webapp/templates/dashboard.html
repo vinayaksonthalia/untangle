@@ -15,10 +15,11 @@
     .animate-fade-rise { animation: fadeRise 0.5s cubic-bezier(0.16,1,0.3,1) forwards; opacity: 0; }
   }
   :focus-visible { outline: 2px solid #0f172a; outline-offset: 2px; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body class="bg-background font-body-md text-on-background tabular-nums min-h-screen flex">
-<aside class="fixed left-0 top-0 h-full w-60 bg-surface border-r border-outline-variant flex flex-col py-6 z-20">
+<aside class="fixed left-0 top-0 h-full w-60 bg-surface border-r border-outline-variant hidden md:flex flex-col py-6 z-20">
 <a href="/" class="px-6 mb-8 flex items-center gap-3" aria-label="untangle — home">
 <div class="w-8 h-8 bg-primary rounded flex items-center justify-center text-on-primary font-bold">u</div>
 <div>
@@ -47,7 +48,14 @@
 </div>
 </aside>
 
-<main class="ml-60 flex-1 flex flex-col min-w-0">
+<main class="md:ml-60 flex-1 flex flex-col min-w-0">
+<div class="md:hidden flex items-center gap-1 border-b border-outline-variant bg-surface px-3 h-12 overflow-x-auto shrink-0">
+<a href="/" class="font-headline-md text-[16px] font-bold mr-2 shrink-0"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></a>
+<a href="/dashboard" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Dashboard</a>
+<a href="/investigate" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Investigate</a>
+<a href="/app" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Upload</a>
+<a href="/verify" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Verify</a>
+</div>
 <header class="h-16 border-b border-outline-variant bg-surface flex items-center justify-between px-8 sticky top-0 z-10">
 <span class="flex items-center gap-2 px-3 py-1.5 bg-surface-container-low rounded-full border border-outline-variant">
 <span class="w-2 h-2 rounded-full bg-secondary-fixed-dim"></span>
@@ -57,7 +65,20 @@
 </header>
 
 <div class="p-8 flex-1 overflow-auto">
-<div class="max-w-[1400px] mx-auto flex flex-col gap-gutter">
+<div id="dash-empty" hidden class="max-w-[1400px] mx-auto">
+<div class="bg-surface rounded-xl border border-outline-variant p-12 text-center flex flex-col items-center gap-4">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" class="text-[48px] text-outline-variant" data-icon="dashboard"><path d="M520-600v-240h320v240H520ZM120-440v-400h320v400H120Zm400 320v-400h320v400H520Zm-400 0v-240h320v240H120Zm80-400h160v-240H200v240Zm400 320h160v-240H600v240Zm0-480h160v-80H600v80ZM200-200h160v-80H200v80Z"/></svg>
+<div>
+<h2 class="font-display-lg text-display-lg text-on-surface">No active run</h2>
+<p class="font-body-md text-on-surface-variant mt-2 max-w-md">untangle holds nothing by default. Reconcile your own three files, or load the bundled sample to see how a close runs end-to-end.</p>
+</div>
+<div class="flex items-center gap-3 mt-2">
+<a href="/app" class="inline-flex h-10 items-center px-5 bg-primary text-on-primary font-data-tabular text-data-tabular rounded hover:bg-audit-blue transition-colors shadow-sm">Reconcile your files</a>
+<a href="/try-sample" class="inline-flex h-10 items-center px-5 bg-surface-container-low text-on-surface border border-outline-variant font-data-tabular text-data-tabular rounded hover:bg-surface-container transition-colors">See the sample</a>
+</div>
+</div>
+</div>
+<div id="dash-content" class="max-w-[1400px] mx-auto flex flex-col gap-gutter">
 
 <div class="flex items-end justify-between flex-wrap gap-4">
 <div class="max-w-2xl">
@@ -66,6 +87,16 @@
 <p class="font-body-sm text-on-surface-variant mt-1" id="run-identity">Loading live figures…</p>
 </div>
 <a href="/investigate" class="inline-flex h-10 items-center px-4 bg-primary text-on-primary font-data-tabular text-data-tabular rounded hover:bg-audit-blue transition-colors shadow-sm shrink-0">Investigate exceptions</a>
+</div>
+
+<!-- Business-value headline: ₹ to act on this run (honest "up to / review to confirm") -->
+<div class="bg-primary text-on-primary rounded-xl px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+<div class="flex items-baseline gap-3 flex-wrap">
+<span class="font-label-caps text-label-caps text-on-primary/80">UP TO</span>
+<span class="font-data-tabular text-display-lg tabular-nums" id="h-atstake">—</span>
+<span class="font-body-sm text-on-primary/85" id="h-atstake-breakdown">to act on this run</span>
+</div>
+<span class="font-body-sm text-on-primary/70">Review to confirm · untangle proposes, never posts</span>
 </div>
 
 <!-- Top metrics (real: summary.*) -->
@@ -186,6 +217,8 @@
 <a href="/api/journal/sample.tally.xml" class="w-full bg-primary text-on-primary h-row-height-standard rounded-lg font-label-caps flex items-center justify-center gap-2 hover:bg-audit-blue transition-colors">
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]"><path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg> Download Tally XML
 </a>
+<a href="/certificate" class="w-full border border-outline-variant text-on-surface h-row-height-standard rounded-lg font-label-caps flex items-center justify-center gap-2 hover:bg-surface-container-low transition-colors">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Z"/></svg> View close certificate</a>
 <a href="/verify" class="w-full border border-outline-variant text-on-surface h-row-height-standard rounded-lg font-label-caps flex items-center justify-center gap-2 hover:bg-surface-container-low transition-colors">
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]"><path d="m438-338 226-226-57-57-169 169-84-84-57 57 141 141Zm42 258q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z"/></svg> Verify the certificate
 </a>
@@ -222,7 +255,7 @@
   async function load() {
     let p;
     try {
-      const r = await fetch('/api/presentation/sample');
+      const r = await fetch('/api/presentation/current');
       if (!r.ok) throw new Error('HTTP ' + r.status);
       p = await r.json();
     } catch (e) {
@@ -230,7 +263,25 @@
       el.textContent = 'Could not load reconciliation figures (' + e.message + ').';
       return;
     }
+    // Default is empty — untangle holds no run until you upload or load the sample.
+    if (!p || p.mode === 'empty') {
+      $('dash-content').hidden = true;
+      $('dash-empty').hidden = false;
+      const chip = $('run-scope'); if (chip) chip.textContent = 'No active run';
+      return;
+    }
+    $('dash-empty').hidden = true;
+    $('dash-content').hidden = false;
+    const chip = $('run-scope');
+    if (chip) chip.textContent = p.mode === 'your_run' ? 'Your run' : 'Demo data';
     const s = p.summary || {};
+
+    // ₹ to act on this run = unresolved Razorpay slice + recoverable fee-GST (honest "up to")
+    const unresolved = Number.isSafeInteger(s.unresolved_paise) ? s.unresolved_paise : 0;
+    const recoverable = Number.isSafeInteger(s.fee_gst_recoverable_paise) ? s.fee_gst_recoverable_paise : 0;
+    $('h-atstake').textContent = inr(unresolved + recoverable);
+    $('h-atstake-breakdown').textContent =
+      inr(unresolved) + ' unresolved cash + ' + inr(recoverable) + ' recoverable fee-GST';
     $('run-identity').textContent =
       'engine ' + (p.run_identity?.engine_version || '?') + ' · audit ' +
       (p.run_identity?.audit_root || '').slice(0, 12) + '… · seed ' + (p.methodology?.seed ?? '?');
