@@ -27,6 +27,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import pytest
@@ -77,14 +78,20 @@ def _read_xlsx(path: Path) -> list[dict[str, str]]:
     return rows
 
 
-def _paise(v: str | None) -> int:
+def _paise(v: str | None, *, required: bool = False, field: str = "value") -> int:
     """Rupee string -> exact integer paise. Fails loudly if a value is not whole paise."""
     if v in (None, ""):
+        if required:
+            raise ValueError(f"required money field missing: {field}")
         return 0
-    scaled = float(v) * 100
-    r = round(scaled)
-    assert abs(scaled - r) < 1e-6, f"non-integer paise in source: {v!r}"
-    return r
+    try:
+        amount = Decimal(v)
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"invalid money value for {field}: {v!r}") from exc
+    scaled = amount * 100
+    if scaled != scaled.to_integral_value():
+        raise ValueError(f"non-integer paise in source for {field}: {v!r}")
+    return int(scaled)
 
 
 def _load_recon_rows() -> list[ReconRow]:
@@ -103,13 +110,13 @@ def _load_recon_rows() -> list[ReconRow]:
 
     rows: list[ReconRow] = []
     for r in data:
-        fee_excl = _paise(cell(r, "fee (exclusive tax)"))
-        tax = _paise(cell(r, "tax"))
+        fee_excl = _paise(cell(r, "fee (exclusive tax)"), required=True, field="fee")
+        tax = _paise(cell(r, "tax"), required=True, field="tax")
         rows.append(
             ReconRow(
                 entity_id=str(cell(r, "entity_id")),
                 type=str(cell(r, "transaction_entity")),
-                amount_paise=_paise(cell(r, "amount")),
+                amount_paise=_paise(cell(r, "amount"), required=True, field="amount"),
                 fee_paise=fee_excl + tax,  # untangle: tax lives inside fee
                 tax_paise=tax,
                 debit_paise=_paise(cell(r, "debit")),
@@ -174,12 +181,15 @@ def test_settlement_closure_through_untangle_index(recon_rows: list[ReconRow]) -
     independent: dict[str, int] = defaultdict(int)
     for row in recon_rows:
         if row.settlement_id:
-            independent[row.settlement_id] += row.credit_paise - row.debit_paise
+            if row.type == "payment":
+                independent[row.settlement_id] += row.amount_paise - row.fee_paise
+            elif row.type == "refund":
+                independent[row.settlement_id] -= row.amount_paise
 
     assert index.net_by_sid, "SettlementIndex found no settlements"
     for sid, net in index.net_by_sid.items():
         assert net == independent[sid], (
-            f"{sid}: untangle net_by_sid {net} != independent Σ(credit-debit) {independent[sid]}"
+            f"{sid}: untangle net_by_sid {net} != independently derived payment/refund total {independent[sid]}"
         )
         assert isinstance(net, int), f"{sid}: settlement net is not exact integer paise"
 

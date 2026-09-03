@@ -68,9 +68,9 @@ def test_dashboard_css_and_data_endpoints(client):
 
 def test_dashboard_download_and_verify_links_resolve(client):
     html = client.get("/dashboard").text
-    assert 'href="/api/journal/sample.tally.xml"' in html
+    assert 'href="/certificate"' in html
     assert 'href="/verify"' in html
-    assert client.get("/api/journal/sample.tally.xml").status_code == 200
+    assert client.get("/certificate").status_code == 200
 
 
 def test_money_is_validated_not_coerced(client):

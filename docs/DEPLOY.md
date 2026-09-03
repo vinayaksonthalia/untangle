@@ -30,6 +30,10 @@ per minute). This is suitable for the single-instance demo only; multiple worker
 rate limiting and concurrency control. The MCP transport remains separately mounted with its protocol
 and CORS behavior.
 
+The hosted demo must run as a single instance with one worker: active runs are held in the process-local
+`_RUNS` store. Shared multi-worker storage is out of scope for this demo. This is the same limitation as
+the existing “single-instance demo only” deployment boundary above.
+
 ## Any Docker host (Fly.io, Cloud Run, a VM)
 
 ```bash
@@ -55,6 +59,9 @@ uvicorn webapp.app:app --port 8080       # -> http://localhost:8080
 | `/app` | Upload the three files and reconcile |
 | `/try-sample` | Run the seeded sample end-to-end (no upload needed) |
 | `/api/docs` | OpenAPI docs |
+
+`/try-sample` and `/reconcile` return `303 See Other` to `/dashboard` and set an active-run cookie; callers
+that do not follow redirects must request the dashboard explicitly.
 
 ## Verification status
 
