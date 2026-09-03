@@ -78,6 +78,8 @@ Deterministic core
 <div class="flex flex-wrap gap-2" id="queue" role="tablist" aria-label="Investigation queue"></div>
 </div>
 
+<!-- Case file: the strip + reasoning columns + reassurance. Replaced wholesale by the empty state. -->
+<div id="case-file">
 <!-- Header strip: the variance under investigation -->
 <div class="bg-surface border border-outline-variant rounded-lg mb-6 p-4 flex flex-wrap items-center justify-between gap-4" id="strip"></div>
 
@@ -95,6 +97,7 @@ Deterministic core
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px]" data-icon="security"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q97-30 162-118.5T718-480H480v-315l-240 90v207q0 7 2 18h238v316Z"/></svg>
 Deterministic core · the LLM writes the explanation, never the numbers. Every step above is reproducible.
 </div>
+</div>
 
 <p class="font-body-sm text-error text-center mt-6" id="load-error" hidden></p>
 </div>
@@ -104,8 +107,9 @@ Deterministic core · the LLM writes the explanation, never the numbers. Every s
 <script>
   const $ = (id) => document.getElementById(id);
   const el = (tag, cls, txt) => { const n = document.createElement(tag); if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
+  // Magnitude in rupees, integer minor-unit math (no float division); signed() adds the sign.
   const inrPaise = (p) => (typeof p === 'number' && Number.isSafeInteger(p))
-    ? '₹' + (Math.abs(p) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    ? '₹' + Math.trunc(Math.abs(p) / 100).toLocaleString('en-IN') + '.' + String(Math.abs(p) % 100).padStart(2, '0')
     : '—';
   const signed = (p) => (typeof p === 'number' && Number.isSafeInteger(p) && p !== 0)
     ? (p < 0 ? '−' : '+') + inrPaise(p) : inrPaise(p);

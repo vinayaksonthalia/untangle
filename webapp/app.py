@@ -676,8 +676,29 @@ def _current_run(request: Request) -> dict | None:
     return run
 
 
-def _set_run_cookie(resp: Response, run_id: str) -> None:
-    resp.set_cookie(_RUN_COOKIE, run_id, max_age=_RUN_TTL_S, httponly=True, samesite="lax")
+def _run_certificate(run: dict) -> dict:
+    """Issue the run's close certificate exactly once and reuse it.
+
+    Certificates are cached on the run so repeated Dashboard/Investigate/Certificate
+    fetches for one session return a byte-identical envelope. ECDSA signing (when a key
+    is configured) is randomized, so re-issuing per request would otherwise yield a
+    different signature each time for the same underlying report.
+    """
+    cert = run.get("cert")
+    if cert is None:
+        cert = issue_certificate(run["report"])
+        run["cert"] = cert
+    return cert
+
+
+def _set_run_cookie(resp: Response, run_id: str, request: Request) -> None:
+    # Secure only over HTTPS so the opaque bearer cookie is never sent in cleartext on a
+    # real deployment, while local HTTP development and the test client still work. Behind a
+    # TLS-terminating proxy (e.g. Render) run uvicorn with --proxy-headers so the scheme is https.
+    secure = request.url.scheme == "https"
+    resp.set_cookie(
+        _RUN_COOKIE, run_id, max_age=_RUN_TTL_S, httponly=True, samesite="lax", secure=secure
+    )
 
 
 def _shape_investigations_payload(report: dict, bank_credit_by_key: dict) -> dict:
@@ -715,7 +736,7 @@ def api_presentation_current(request: Request, limit: int = 100, offset: int = 0
     run = _current_run(request)
     if not run:
         return JSONResponse({"mode": "empty"})
-    cert = issue_certificate(run["report"])
+    cert = _run_certificate(run)
     try:
         payload = build_presentation_payload(run["report"], certificate=cert, limit=limit, offset=offset)
     except PresentationSchemaError as exc:
@@ -726,14 +747,13 @@ def api_presentation_current(request: Request, limit: int = 100, offset: int = 0
 
 @app.get("/api/investigations/current")
 def api_investigations_current(request: Request) -> JSONResponse:
-    """Investigations for the active run: the curated benchmark for the demo, the user's own otherwise."""
+    """Investigations for the cookie-selected active run — the same report Dashboard and
+    Certificate describe. Demo and upload both derive from their own stored report, so all
+    three surfaces stay consistent."""
     run = _current_run(request)
     if not run:
         return JSONResponse({"mode": "empty", "summary": {"total": 0, "resolved": 0, "abstained": 0}, "cases": []})
-    if run["mode"] == "demo":
-        payload = dict(_get_cached_investigations())
-    else:
-        payload = _shape_investigations_payload(run["report"], run["bank"])
+    payload = _shape_investigations_payload(run["report"], run["bank"])
     payload["mode"] = run["mode"]
     return JSONResponse(payload)
 
@@ -744,7 +764,24 @@ def api_certificate_current(request: Request) -> JSONResponse:
     run = _current_run(request)
     if not run:
         return JSONResponse({"mode": "empty"}, status_code=404)
-    return JSONResponse(issue_certificate(run["report"]))
+    return JSONResponse(_run_certificate(run))
+
+
+@app.get("/api/journal/current.tally.xml")
+def api_journal_current(request: Request) -> Response:
+    """The active run's balanced journal as Tally XML — the figures shown on the viewer's own
+    dashboard, never the bundled sample. 404 if the session holds no run."""
+    from engine.journal import journal_json_to_tally_xml
+
+    run = _current_run(request)
+    if not run:
+        return JSONResponse({"mode": "empty"}, status_code=404)
+    xml = journal_json_to_tally_xml(run["report"].get("journal") or [], company="Your Company Name")
+    return Response(
+        content=xml,
+        media_type="application/xml",
+        headers={"Content-Disposition": 'attachment; filename="untangle-journal.tally.xml"'},
+    )
 
 
 @app.get("/certificate", response_class=HTMLResponse)
@@ -762,20 +799,49 @@ def app_page() -> str:
     return upload_page()
 
 
+_DEMO_CACHE: tuple[dict, dict] | None = None
+_DEMO_LOCK = threading.Lock()
+
+
+def _demo_run_data() -> tuple[dict, dict]:
+    """The single, coherent demo run (reconciled once, cached): rich clean reconciliation +
+    the root-cause investigation cases in ONE report, so Dashboard, Investigate and the
+    Certificate all describe the same deterministic run. Nothing is persisted to disk."""
+    global _DEMO_CACHE
+    if _DEMO_CACHE is not None:
+        return _DEMO_CACHE
+    with _DEMO_LOCK:
+        if _DEMO_CACHE is not None:
+            return _DEMO_CACHE
+        import tempfile
+
+        from generator.config import Config
+        from generator.demo_dataset import write_demo_dataset
+
+        work = tempfile.mkdtemp(prefix="untangle_demo_")
+        try:
+            base = write_demo_dataset(work, Config())
+            with open(os.path.join(base, "bank_statement.csv"), "rb") as fh:
+                bank = fh.read()
+            with open(os.path.join(base, "recon_report.json"), "rb") as fh:
+                recon = fh.read()
+            with open(os.path.join(base, "order_ledger.csv"), "rb") as fh:
+                ledger = fh.read()
+            report = reconcile_bytes(bank, recon, ledger)
+            bank_credit = {ln.key: ln.amount_paise for ln in load_bank_bytes(bank)}
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        _DEMO_CACHE = (report, bank_credit)
+        return _DEMO_CACHE
+
+
 @app.get("/try-sample")
-def try_sample() -> RedirectResponse:
-    """Load the bundled sample as the active DEMO run, then open the console."""
-    _ensure_sample()
-    bank = os.path.join(_SAMPLE, "bank_statement.csv")
-    report = reconcile(
-        bank,
-        os.path.join(_SAMPLE, "recon_report.json"),
-        os.path.join(_SAMPLE, "order_ledger.csv"),
-    )
-    bank_credit = {ln.key: ln.amount_paise for ln in load_bank(bank)}
+def try_sample(request: Request) -> RedirectResponse:
+    """Load the coherent sample as the active DEMO run, then open the console."""
+    report, bank_credit = _demo_run_data()
     run_id = _store_run(report, bank_credit, "demo")
     resp = RedirectResponse(url="/dashboard", status_code=303)
-    _set_run_cookie(resp, run_id)
+    _set_run_cookie(resp, run_id, request)
     return resp
 
 
@@ -794,7 +860,7 @@ async def reconcile_upload(
     bank_credit = {line.key: line.amount_paise for line in load_bank_bytes(b)}
     run_id = _store_run(report, bank_credit, "your_run")
     resp = RedirectResponse(url="/dashboard", status_code=303)
-    _set_run_cookie(resp, run_id)
+    _set_run_cookie(resp, run_id, request)
     return resp
 
 
