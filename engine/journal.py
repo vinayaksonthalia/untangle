@@ -215,6 +215,14 @@ def to_journal_json(entries: list[JournalEntry]) -> list[dict]:
 def journal_json_to_tally_xml(journal: list[dict], *, company: str = "Your Company Name") -> str:
     """Serialize the report's journal JSON (as emitted by to_journal_json / report['journal']) to Tally
     XML, so the web layer can offer a download from the report dict alone."""
+    def paise(value: object) -> int:
+        text = str(value or "0").strip()
+        if not re.fullmatch(r"-?\d+(?:\.\d{1,2})?", text):
+            raise ValueError(f"invalid INR amount: {value!r}")
+        sign = -1 if text.startswith("-") else 1
+        whole, _, frac = text.lstrip("-").partition(".")
+        return sign * (int(whole) * 100 + int((frac + "00")[:2]))
+
     entries = [
         JournalEntry(
             ref=str(e.get("ref", "")), date=str(e.get("date", "")), utr=str(e.get("utr", "")),
@@ -222,8 +230,8 @@ def journal_json_to_tally_xml(journal: list[dict], *, company: str = "Your Compa
             lines=tuple(
                 JournalLine(
                     ln["ledger"],
-                    debit_paise=round(float(ln.get("debit_inr", "0") or 0) * 100),
-                    credit_paise=round(float(ln.get("credit_inr", "0") or 0) * 100),
+                    debit_paise=paise(ln.get("debit_inr", "0")),
+                    credit_paise=paise(ln.get("credit_inr", "0")),
                 )
                 for ln in e.get("lines", [])
             ),

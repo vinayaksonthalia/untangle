@@ -114,10 +114,11 @@
     $('sub').textContent = isDemo ? 'Bundled sample reconciliation' : 'Your uploaded reconciliation';
 
     const cov = s.n_bank_lines ? s.attributed_count/s.n_bank_lines : 0;
-    const residual = Number.isSafeInteger(s.unresolved_paise) ? s.unresolved_paise : 0;
+    const residualAvailable = Number.isSafeInteger(s.unresolved_paise);
+    const residual = residualAvailable ? s.unresolved_paise : null;
     const fig = [
       ['Reconciled to the paise', inr(s.reconciled_paise), 'green'],
-      ['Residual on proven slice', inr(residual), residual === 0 ? 'green' : 'amber'],
+      ['Residual on proven slice', residualAvailable ? inr(residual) : 'Unavailable', residualAvailable && residual === 0 ? 'green' : 'amber'],
       ['Attribution coverage', pct(cov) + ' (' + (s.attributed_count||0) + ' of ' + (s.n_bank_lines||0) + ')', ''],
       ['Recoverable fee GST', inr(s.fee_gst_recoverable_paise), ''],
     ];
