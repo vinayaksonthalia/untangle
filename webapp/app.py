@@ -888,24 +888,39 @@ def _build_investigations_payload() -> dict:
         with open(os.path.join(base, "order_ledger.csv"), "rb") as fh:
             ledger = fh.read()
         report = reconcile_bytes(bank, recon, ledger)
+        # Bank credit per line — the honest source for the "Bank credit / Expected net / Variance"
+        # triad. Expected net is derived exactly: expected = bank_credit − variance (variance is
+        # defined bank − expected by the engine). No text parsing, no browser-side money math.
+        bank_credit_by_key = {ln.key: ln.amount_paise for ln in load_bank_bytes(bank)}
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
     cases = []
     for inv in report.get("investigations") or []:
         rc = inv.get("root_cause", "unexplained")
+        resolved = rc != "unexplained"
+        variance = inv.get("variance_paise", 0)
+        bank_credit = bank_credit_by_key.get(inv.get("line_key"))
+        expected_net = bank_credit - variance if isinstance(bank_credit, int) else None
         cases.append(
             {
                 "line_key": inv.get("line_key"),
                 "root_cause": rc,
                 "root_cause_label": _ROOT_CAUSE_LABELS.get(rc, rc),
-                "resolved": rc != "unexplained",
+                "resolved": resolved,
                 "confidence": inv.get("confidence", 0.0),
-                "variance_paise": inv.get("variance_paise", 0),
+                "bank_credit_paise": bank_credit,
+                "expected_net_paise": expected_net,
+                "variance_paise": variance,
                 "variance_inr": inv.get("variance_inr", "0.00"),
                 "reasoning_trace": inv.get("reasoning_trace") or [],
                 "candidates_tried": inv.get("candidates_tried") or [],
                 "corrective_entry": inv.get("corrective_entry"),
+                "next_action": (
+                    "Review the proposed voucher and post it in your ledger if the evidence is correct."
+                    if resolved
+                    else "Assign to a reviewer for manual investigation. No corrective voucher was drafted."
+                ),
             }
         )
     resolved = sum(1 for c in cases if c["resolved"])
