@@ -54,7 +54,7 @@
 <a class="btn" href="/dashboard">← Back</a>
 <a class="btn" id="dl-json" href="/api/certificate/current" download="untangle-close-certificate.json">Download JSON</a>
 <a class="btn" href="/verify">Verify independently</a>
-<button class="btn primary" onclick="window.print()">Save as PDF / Print</button>
+<button class="btn primary" id="print" disabled onclick="window.print()">Save as PDF / Print</button>
 </div>
 
 <div class="doc" id="doc">
@@ -99,28 +99,41 @@
   const pct = (n) => Number.isFinite(n) ? (n*100).toFixed(1)+'%' : '—';
 
   (async function(){
-    let p;
-    try { const r = await untangleFetch('/api/presentation/current'); p = r.ok ? await r.json() : {mode:'empty'}; }
-    catch(e) { p = {mode:'empty'}; }
+    const envelope = window.untangleTabBundle()?.certificate;
     $('toolbar').hidden = false;
-    if (!p || p.mode === 'empty') { $('empty').hidden = false; $('dl-json').style.display='none'; return; }
+    $('dl-json').style.display='none';
+    if (!envelope) { $('empty').hidden = false; return; }
+    let checked;
+    try {
+      const response = await fetch('/api/verify', {method:'POST',
+        headers:{'Content-Type':'application/json'}, body:JSON.stringify(envelope)});
+      if (!response.ok) throw new Error('Verification unavailable');
+      checked = await response.json();
+      if (checked.ok !== true || checked.hash_matches !== true) throw new Error('Invalid certificate');
+    } catch (_) {
+      $('empty').hidden=false;
+      $('empty').querySelector('h1').textContent='Certificate could not be verified';
+      $('empty').querySelector('p').textContent='No certified figures are shown. Verify the original JSON or reconcile again.';
+      return;
+    }
+    const cert = envelope.certificate;
+    const downloadURL = URL.createObjectURL(new Blob([JSON.stringify(envelope, null, 2)], {type:'application/json'}));
+    $('dl-json').href=downloadURL; $('dl-json').style.display='';
+    window.addEventListener('pagehide',()=>URL.revokeObjectURL(downloadURL));
+    $('print').disabled=false;
     $('body').hidden = false;
-
-    const s = p.summary || {}, cert = p.certificate_status || {}, ri = p.run_identity || {};
-    const isDemo = p.mode !== 'your_run';
-    $('mode-badge').textContent = isDemo ? 'Demo data' : 'Your run';
-    $('mode-badge').className = 'badge ' + (isDemo ? 'demo' : 'run');
+    $('mode-badge').textContent = checked.authenticated ? 'Issuer signature verified' : 'Unsigned · content hash verified';
+    $('mode-badge').className = 'badge demo';
     // No browser clock: the certificate is reproducible, so its subtitle carries no viewing-date.
-    $('sub').textContent = isDemo ? 'Bundled sample reconciliation' : 'Your uploaded reconciliation';
+    $('sub').textContent = cert.summary || 'Certificate summary unavailable';
 
-    const cov = s.n_bank_lines ? s.attributed_count/s.n_bank_lines : 0;
-    const residualAvailable = Number.isSafeInteger(s.unresolved_paise);
-    const residual = residualAvailable ? s.unresolved_paise : null;
+    // Exact bound strings: never substitute mutable presentation totals or re-round money.
+    const amount = value => typeof value === 'string' && /^₹-?[\d,]+\.\d{2}$/.test(value) ? value : 'Unavailable';
     const fig = [
-      ['Reconciled to the paise', inr(s.reconciled_paise), 'green'],
-      ['Residual on proven slice', residualAvailable ? inr(residual) : 'Unavailable', residualAvailable && residual === 0 ? 'green' : 'amber'],
-      ['Attribution coverage', pct(cov) + ' (' + (s.attributed_count||0) + ' of ' + (s.n_bank_lines||0) + ')', ''],
-      ['Recoverable fee GST', inr(s.fee_gst_recoverable_paise), ''],
+      ['Reconciled to the paise', amount(cert.reconciled_inr), ''],
+      ['Residual on proven slice', amount(cert.unresolved_inr), cert.unresolved_inr === '₹0.00' ? 'green' : 'amber'],
+      ['Proven Razorpay credits', String(cert.proven_razorpay_count ?? 'Unavailable') + ' of ' + String(cert.period_records ?? 'Unavailable'), ''],
+      ['Recoverable fee GST', amount(cert.fee_gst_recoverable_inr), ''],
     ];
     const g = $('figures'); g.replaceChildren();
     fig.forEach(([l,v,cls])=>{ const c=document.createElement('div'); c.className='cell';
@@ -129,12 +142,12 @@
       c.append(el1,el2); g.append(c); });
 
     const short = (h)=> h ? (h.slice(0,24)+'…'+h.slice(-8)) : '—';
-    $('c-sha').textContent = cert.content_sha256 || '—';
-    $('c-audit').textContent = short(ri.audit_root);
-    $('c-binding').textContent = cert.report_binding_valid ? 'valid' : (cert.report_binding_valid === false ? 'FAILED' : '—');
-    $('c-packets').textContent = (cert.packets_passed ?? 0) + ' / ' + (cert.packets_verified ?? 0) + ' passed';
-    $('c-sig').textContent = cert.authenticated ? 'ECDSA P-256 · signed' : 'hash-bound (unsigned)';
-    $('c-engine').textContent = (ri.engine_version || '?');
+    $('c-sha').textContent = checked.content_hash;
+    $('c-audit').textContent = short(cert.audit_root);
+    $('c-binding').textContent = checked.report_binding_valid === true ? 'verified against attached report' : 'Report digest bound; source report not rechecked';
+    $('c-packets').textContent = (cert.verification?.packets_passed ?? '—') + ' / ' + (cert.verification?.packets_verified ?? '—') + ' passed at issuance (not rerun here)';
+    $('c-sig').textContent = checked.authenticated ? 'ECDSA P-256 · signed' : 'hash-bound (unsigned; issuer not authenticated)';
+    $('c-engine').textContent = (cert.engine_version || '?');
   })();
 </script>
 </body>

@@ -657,19 +657,30 @@ def _tab_bundle(report: dict, bank: dict, mode: str) -> dict:
         "presentation": {**presentation, "mode": mode},
         "investigations": {**_shape_investigations_payload(report, bank), "mode": mode},
         "certificate": cert,
-        "journal": report.get("journal") or [],
         "journal_tally_xml": journal_json_to_tally_xml(report.get("journal") or [], company="Your Company Name"),
     }
 
 
-def _bundle_response(bundle: dict) -> HTMLResponse:
+def _bundle_response(bundle: dict) -> Response:
     encoded = json.dumps(bundle, separators=(",", ":"), ensure_ascii=False).replace("<", "\\u003c")
     if len(encoded.encode("utf-8")) > 4 * 1024 * 1024:
-        raise HTTPException(413, "Result bundle is too large for browser tab storage.")
+        return Response(
+            encoded,
+            media_type="application/json",
+            headers={"cache-control": "no-store",
+                     "content-disposition": 'attachment; filename="untangle-results.json"'},
+        )
     response = HTMLResponse(f"""<!doctype html><meta charset=utf-8><title>Processing complete</title>
 <p>Results processed in memory and kept only in this browser tab. Redirecting…</p>
 <script>try {{ sessionStorage.removeItem('untangle_results'); sessionStorage.setItem('untangle_results', {json.dumps(encoded)}); location.replace('/dashboard'); }}
-catch (_) {{ document.body.textContent='This browser blocked session storage. Please enable it and retry.'; }}</script>""")
+catch (_) {{
+ document.body.textContent='Results are complete, but browser storage is unavailable. Download them below.';
+ const a=document.createElement('a');
+ const url=URL.createObjectURL(new Blob([{json.dumps(encoded)}], {{type:'application/json'}}));
+ a.href=url; a.download='untangle-results.json'; a.textContent='Download complete results';
+ document.body.appendChild(a);
+ window.addEventListener('pagehide',()=>URL.revokeObjectURL(url));
+ }}</script>""")
     response.headers["cache-control"] = "no-store"
     return response
 
@@ -776,7 +787,7 @@ def _demo_run_data() -> tuple[dict, dict]:
 
 
 @app.get("/try-sample")
-def try_sample(request: Request) -> HTMLResponse:
+def try_sample(request: Request) -> Response:
     """Process the coherent sample and bootstrap its result bundle into the browser tab."""
     report, bank_credit = _demo_run_data()
     return _bundle_response(_tab_bundle(report, bank_credit, "demo"))
@@ -788,7 +799,7 @@ async def reconcile_upload(
     bank: UploadFile = File(...),
     recon: UploadFile = File(...),
     ledger: UploadFile = File(...),
-) -> HTMLResponse:
+) -> Response:
     slot = request.state.reconciliation_slot
     b = await _read_upload("bank_statement.csv", bank)
     r = await _read_upload("recon_report.json", recon)

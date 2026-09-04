@@ -66,6 +66,13 @@ browser-tab `sessionStorage` and then navigates to `/dashboard`. Refreshes prese
 tab close clears it, though browser session restore and duplicated tabs may retain or copy it. The UI's
 Clear action removes it explicitly. Legacy `/api/*/current` endpoints return `410 Gone`.
 
+The 4 MiB limit is a tab-storage threshold, not a reconciliation rejection: larger completed
+bundles are returned as a no-store `untangle-results.json` download containing presentation,
+investigations, certificate and Tally XML. If browser storage rejects a smaller bundle, the
+completion page offers the same download. Large bundles are not loaded into the dashboard.
+The printable certificate independently verifies its envelope and renders only fields from
+that certificate, never editable presentation totals. Unsigned hashes do not authenticate an issuer.
+
 This is a breaking browser-route migration from `303` plus a run cookie to `200` HTML plus
 JavaScript navigation. Non-browser integrations should use `/api/reconcile` for report JSON;
 requesting `/dashboard` alone does not populate results. Stored browser data is display data,

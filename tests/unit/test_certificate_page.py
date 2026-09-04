@@ -31,9 +31,11 @@ def test_certificate_residual_rendering_distinguishes_unavailable_zero_and_nonze
     html = client.get("/certificate").text
     # Keep all three safety branches present: unavailable is not silently rendered as zero,
     # and only a proven zero receives the green status.
-    assert "Number.isSafeInteger(s.unresolved_paise)" in html
-    assert "residualAvailable ? inr(residual) : 'Unavailable'" in html
-    assert "residualAvailable && residual === 0 ? 'green' : 'amber'" in html
+    assert "amount(cert.unresolved_inr)" in html
+    assert "cert.unresolved_inr === '₹0.00' ? 'green' : 'amber'" in html
+    assert "'Unavailable'" in html
+    assert "p.summary" not in html
+    assert "checked.hash_matches !== true" in html
 
 
 def test_certificate_csp_unchanged(client):
