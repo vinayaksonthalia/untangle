@@ -31,8 +31,14 @@ from starlette.staticfiles import StaticFiles
 from engine.certificate import issue_certificate, verify_certificate
 from engine.ingest import InputError, load_bank, load_bank_bytes
 from engine.service import reconcile, reconcile_bytes
-from ui.dashboard import render as render_dashboard
-from webapp.pages import dashboard_page, landing_page, upload_page, verify_page
+from webapp.pages import (
+    certificate_page,
+    dashboard_page,
+    investigate_page,
+    landing_page,
+    upload_page,
+    verify_page,
+)
 
 # The public /mcp endpoint must be sandboxed so an unauthenticated remote caller cannot open arbitrary
 # server files. FAIL CLOSED: force the flag on (never `setdefault`, which would leave an inherited `0`
@@ -117,7 +123,20 @@ mimetypes.add_type("font/woff2", ".woff2")
 _STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 if not _STATIC_DIR.is_dir():  # fail loudly at import rather than 404 silently in prod
     raise RuntimeError(f"static assets directory missing: {_STATIC_DIR}")
-app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+class _RevalidatingStatic(StaticFiles):
+    """Serve static assets with `Cache-Control: no-cache` so browsers always revalidate.
+
+    StaticFiles still emits an ETag, so an unchanged file returns a cheap 304 — but a rebuilt
+    stylesheet is picked up on the very next load instead of being served stale from cache.
+    """
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", _RevalidatingStatic(directory=_STATIC_DIR), name="static")
 
 # This is deliberately process-local: the public demo has no shared state store.  It protects a
 # single instance from accidental refresh storms without pretending to be production auth/quotas.
@@ -620,6 +639,107 @@ def _ensure_sample() -> None:
             shutil.rmtree(staging, ignore_errors=True)
 
 
+# ---- Browser-tab result bundle ----------------------------------------------
+
+def _tab_bundle(report: dict, bank: dict, mode: str) -> dict:
+    """Serialize one bounded result bundle for the requesting tab; no private server retention."""
+    from engine.journal import journal_json_to_tally_xml
+    from webapp.presentation import PresentationSchemaError, build_presentation_payload
+
+    cert = issue_certificate(report)
+    try:
+        presentation = build_presentation_payload(report, certificate=cert)
+    except PresentationSchemaError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {
+        "version": 1,
+        "mode": mode,
+        "presentation": {**presentation, "mode": mode},
+        "investigations": {**_shape_investigations_payload(report, bank), "mode": mode},
+        "certificate": cert,
+        "journal_tally_xml": journal_json_to_tally_xml(report.get("journal") or [], company="Your Company Name"),
+    }
+
+
+def _bundle_response(bundle: dict) -> Response:
+    encoded = json.dumps(bundle, separators=(",", ":"), ensure_ascii=False).replace("<", "\\u003c")
+    if len(encoded.encode("utf-8")) > 4 * 1024 * 1024:
+        return Response(
+            encoded,
+            media_type="application/json",
+            headers={"cache-control": "no-store",
+                     "content-disposition": 'attachment; filename="untangle-results.json"'},
+        )
+    response = HTMLResponse(f"""<!doctype html><meta charset=utf-8><title>Processing complete</title>
+<p>Results processed in memory and kept only in this browser tab. Redirecting…</p>
+<script>try {{ sessionStorage.removeItem('untangle_results'); sessionStorage.setItem('untangle_results', {json.dumps(encoded)}); location.replace('/dashboard'); }}
+catch (_) {{
+ document.body.textContent='Results are complete, but browser storage is unavailable. Download them below.';
+ const a=document.createElement('a');
+ const url=URL.createObjectURL(new Blob([{json.dumps(encoded)}], {{type:'application/json'}}));
+ a.href=url; a.download='untangle-results.json'; a.textContent='Download complete results';
+ document.body.appendChild(a);
+ window.addEventListener('pagehide',()=>URL.revokeObjectURL(url));
+ }}</script>""")
+    response.headers["cache-control"] = "no-store"
+    return response
+
+
+def _shape_investigations_payload(report: dict, bank_credit_by_key: dict) -> dict:
+    """Build the read-only Investigate payload from any report + its bank-credit map."""
+    cases = []
+    for inv in report.get("investigations") or []:
+        rc = inv.get("root_cause", "unexplained")
+        resolved = rc != "unexplained"
+        variance = inv.get("variance_paise", 0)
+        bank_credit = bank_credit_by_key.get(inv.get("line_key"))
+        expected_net = bank_credit - variance if isinstance(bank_credit, int) else None
+        cases.append({
+            "line_key": inv.get("line_key"), "root_cause": rc,
+            "root_cause_label": _ROOT_CAUSE_LABELS.get(rc, rc), "resolved": resolved,
+            "confidence": inv.get("confidence", 0.0), "bank_credit_paise": bank_credit,
+            "expected_net_paise": expected_net, "variance_paise": variance,
+            "variance_inr": inv.get("variance_inr", "0.00"),
+            "reasoning_trace": inv.get("reasoning_trace") or [],
+            "candidates_tried": inv.get("candidates_tried") or [],
+            "corrective_entry": inv.get("corrective_entry"),
+            "next_action": ("Review the proposed voucher and post it in your ledger if the evidence is correct."
+                            if resolved else "Assign to a reviewer for manual investigation. No corrective voucher was drafted."),
+        })
+    resolved = sum(1 for c in cases if c["resolved"])
+    return {"run_identity": report.get("run_identity") or {},
+            "summary": {"total": len(cases), "resolved": resolved, "abstained": len(cases) - resolved},
+            "cases": cases}
+
+
+@app.get("/api/presentation/current")
+def api_presentation_current(request: Request, limit: int = 100, offset: int = 0) -> JSONResponse:
+    return JSONResponse({"detail": "This legacy endpoint was removed; read the tab-local result bundle."}, status_code=410)
+
+
+@app.get("/api/investigations/current")
+def api_investigations_current(request: Request) -> JSONResponse:
+    """Removed legacy endpoint; the browser reads investigations from its tab-local bundle."""
+    return JSONResponse({"detail": "This legacy endpoint was removed; read the tab-local result bundle."}, status_code=410)
+
+
+@app.get("/api/certificate/current")
+def api_certificate_current(request: Request) -> JSONResponse:
+    """Removed legacy endpoint; the browser reads the certificate from its tab-local bundle."""
+    return JSONResponse({"detail": "This legacy endpoint was removed; read the tab-local result bundle."}, status_code=410)
+
+
+@app.get("/api/journal/current.tally.xml")
+def api_journal_current(request: Request) -> Response:
+    """Removed legacy endpoint; the browser downloads Tally XML from its tab-local bundle."""
+    return JSONResponse({"detail": "This legacy endpoint was removed; download from the tab-local result bundle."}, status_code=410)
+
+
+@app.get("/certificate", response_class=HTMLResponse)
+def certificate() -> str:
+    return certificate_page()
+
+
 @app.get("/", response_class=HTMLResponse)
 def landing() -> str:
     return landing_page()
@@ -630,32 +750,63 @@ def app_page() -> str:
     return upload_page()
 
 
-@app.get("/try-sample", response_class=HTMLResponse)
-def try_sample() -> str:
-    _ensure_sample()
-    bank = os.path.join(_SAMPLE, "bank_statement.csv")
-    report = reconcile(
-        bank,
-        os.path.join(_SAMPLE, "recon_report.json"),
-        os.path.join(_SAMPLE, "order_ledger.csv"),
-    )
-    return render_dashboard(report, _months_by_key(bank))
+_DEMO_CACHE: tuple[dict, dict] | None = None
+_DEMO_LOCK = threading.Lock()
 
 
-@app.post("/reconcile", response_class=HTMLResponse)
+def _demo_run_data() -> tuple[dict, dict]:
+    """The single, coherent demo run (reconciled once, cached): rich clean reconciliation +
+    the root-cause investigation cases in ONE report, so Dashboard, Investigate and the
+    Certificate all describe the same deterministic run. Nothing is persisted to disk."""
+    global _DEMO_CACHE
+    if _DEMO_CACHE is not None:
+        return _DEMO_CACHE
+    with _DEMO_LOCK:
+        if _DEMO_CACHE is not None:
+            return _DEMO_CACHE
+        import tempfile
+
+        from generator.config import Config
+        from generator.demo_dataset import write_demo_dataset
+
+        work = tempfile.mkdtemp(prefix="untangle_demo_")
+        try:
+            base = write_demo_dataset(work, Config())
+            with open(os.path.join(base, "bank_statement.csv"), "rb") as fh:
+                bank = fh.read()
+            with open(os.path.join(base, "recon_report.json"), "rb") as fh:
+                recon = fh.read()
+            with open(os.path.join(base, "order_ledger.csv"), "rb") as fh:
+                ledger = fh.read()
+            report = reconcile_bytes(bank, recon, ledger)
+            bank_credit = {ln.key: ln.amount_paise for ln in load_bank_bytes(bank)}
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        _DEMO_CACHE = (report, bank_credit)
+        return _DEMO_CACHE
+
+
+@app.get("/try-sample")
+def try_sample(request: Request) -> Response:
+    """Process the coherent sample and bootstrap its result bundle into the browser tab."""
+    report, bank_credit = _demo_run_data()
+    return _bundle_response(_tab_bundle(report, bank_credit, "demo"))
+
+
+@app.post("/reconcile")
 async def reconcile_upload(
     request: Request,
     bank: UploadFile = File(...),
     recon: UploadFile = File(...),
     ledger: UploadFile = File(...),
-) -> str:
+) -> Response:
     slot = request.state.reconciliation_slot
     b = await _read_upload("bank_statement.csv", bank)
     r = await _read_upload("recon_report.json", recon)
     ln = await _read_upload("order_ledger.csv", ledger)
     report = await _run_safely_bytes_async(b, r, ln, slot=slot)
-    months = {line.key: line.value_date.strftime("%Y-%m") for line in load_bank_bytes(b)}
-    return render_dashboard(report, months)
+    bank_credit = {line.key: line.amount_paise for line in load_bank_bytes(b)}
+    return _bundle_response(_tab_bundle(report, bank_credit, "your_run"))
 
 
 @app.post("/api/reconcile")
@@ -840,6 +991,123 @@ def api_evaluation_sealed() -> JSONResponse:
             status_code=503,
         )
     return JSONResponse(eval_payload)
+
+
+_INVESTIGATIONS_CACHE: dict | None = None
+_INVESTIGATIONS_LOCK = threading.Lock()
+
+# Root-cause labels + the accounting family each belongs to. Kept server-side so the UI renders
+# a human label and a colour family without re-deriving finance semantics in the browser.
+_ROOT_CAUSE_LABELS = {
+    "mdr_fee_drift": "MDR fee drift",
+    "cross_cycle_refund_lag": "Cross-cycle refund lag",
+    "on_hold_release": "On-hold release",
+    "dispute_deduction": "Dispute deduction",
+    "partial_capture": "Partial capture",
+    "rolling_reserve": "Rolling reserve",
+    "bank_charge_or_rounding": "Bank charge / rounding",
+    "unexplained": "Unexplained",
+}
+
+
+def _build_investigations_payload() -> dict:
+    """Run the deterministic investigation benchmark once and shape a read-only UI payload.
+
+    Uses the seed-42 investigation benchmark (one settlement per root cause + one genuinely
+    ambiguous control that the engine abstains on). Everything here is derived, synthetic and
+    safe to expose; nothing is persisted. The heavy generate+reconcile runs once and is cached.
+    """
+    import tempfile
+
+    from generator.config import Config
+    from generator.investigation_cases import write_investigation_benchmark
+
+    work = tempfile.mkdtemp(prefix="untangle_inv_")
+    try:
+        write_investigation_benchmark(work, Config())
+        base = os.path.join(work, "investigation")
+        with open(os.path.join(base, "bank_statement.csv"), "rb") as fh:
+            bank = fh.read()
+        with open(os.path.join(base, "recon_report.json"), "rb") as fh:
+            recon = fh.read()
+        with open(os.path.join(base, "order_ledger.csv"), "rb") as fh:
+            ledger = fh.read()
+        report = reconcile_bytes(bank, recon, ledger)
+        # Bank credit per line — the honest source for the "Bank credit / Expected net / Variance"
+        # triad. Expected net is derived exactly: expected = bank_credit − variance (variance is
+        # defined bank − expected by the engine). No text parsing, no browser-side money math.
+        bank_credit_by_key = {ln.key: ln.amount_paise for ln in load_bank_bytes(bank)}
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+    cases = []
+    for inv in report.get("investigations") or []:
+        rc = inv.get("root_cause", "unexplained")
+        resolved = rc != "unexplained"
+        variance = inv.get("variance_paise", 0)
+        bank_credit = bank_credit_by_key.get(inv.get("line_key"))
+        expected_net = bank_credit - variance if isinstance(bank_credit, int) else None
+        cases.append(
+            {
+                "line_key": inv.get("line_key"),
+                "root_cause": rc,
+                "root_cause_label": _ROOT_CAUSE_LABELS.get(rc, rc),
+                "resolved": resolved,
+                "confidence": inv.get("confidence", 0.0),
+                "bank_credit_paise": bank_credit,
+                "expected_net_paise": expected_net,
+                "variance_paise": variance,
+                "variance_inr": inv.get("variance_inr", "0.00"),
+                "reasoning_trace": inv.get("reasoning_trace") or [],
+                "candidates_tried": inv.get("candidates_tried") or [],
+                "corrective_entry": inv.get("corrective_entry"),
+                "next_action": (
+                    "Review the proposed voucher and post it in your ledger if the evidence is correct."
+                    if resolved
+                    else "Assign to a reviewer for manual investigation. No corrective voucher was drafted."
+                ),
+            }
+        )
+    resolved = sum(1 for c in cases if c["resolved"])
+    return {
+        "run_identity": report.get("run_identity") or {},
+        "summary": {
+            "total": len(cases),
+            "resolved": resolved,
+            "abstained": len(cases) - resolved,
+        },
+        "cases": cases,
+    }
+
+
+def _get_cached_investigations() -> dict:
+    global _INVESTIGATIONS_CACHE
+    if _INVESTIGATIONS_CACHE is not None:
+        return _INVESTIGATIONS_CACHE
+    with _INVESTIGATIONS_LOCK:
+        if _INVESTIGATIONS_CACHE is not None:
+            return _INVESTIGATIONS_CACHE
+        _INVESTIGATIONS_CACHE = _build_investigations_payload()
+        return _INVESTIGATIONS_CACHE
+
+
+@app.get("/api/investigations/sample")
+def api_investigations_sample() -> JSONResponse:
+    """Read-only root-cause investigations for the bundled benchmark. Deterministic; nothing stored."""
+    try:
+        payload = _get_cached_investigations()
+    except Exception as exc:  # pragma: no cover - defensive; benchmark is deterministic
+        _LOG.warning("Investigations benchmark unavailable: %s", exc)
+        return JSONResponse(
+            {"status": "unavailable", "detail": "Investigations benchmark unavailable."},
+            status_code=503,
+        )
+    return JSONResponse(payload)
+
+
+@app.get("/investigate", response_class=HTMLResponse)
+def investigate() -> str:
+    return investigate_page()
 
 
 @app.get("/dashboard", response_class=HTMLResponse)

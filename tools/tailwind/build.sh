@@ -12,7 +12,6 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 TW_VERSION="3.4.17"
-SRC="tools/tailwind/stitch_source.html"
 REFRESH_FONTS=0
 [ "${1:-}" = "--refresh-fonts" ] && REFRESH_FONTS=1
 
@@ -24,17 +23,14 @@ else
   [ -f tools/tailwind/fonts.css ] || { echo "ERROR: tools/tailwind/fonts.css missing; run with --refresh-fonts"; exit 1; }
 fi
 
-if [ -f "$SRC" ]; then
-  echo "==> rebuilding landing.html from Stitch source"
-  python3 tools/tailwind/build_landing.py
-else
-  echo "==> $SRC not present — skipping landing HTML rebuild (using committed landing.html)"
-fi
-
-echo "==> inlining icons in verify.html (idempotent)"
+# landing.html, verify.html, etc. are the hand-authored source of truth. The icon
+# inliner is idempotent (converts any remaining material-symbols spans to inline SVG).
+echo "==> inlining icons (idempotent)"
+python3 tools/tailwind/inline_icons.py webapp/templates/landing.html
 python3 tools/tailwind/inline_icons.py webapp/templates/verify.html
 python3 tools/tailwind/inline_icons.py webapp/templates/dashboard.html
 python3 tools/tailwind/inline_icons.py webapp/templates/upload.html
+python3 tools/tailwind/inline_icons.py webapp/templates/investigate.html
 
 # Compile every stylesheet to a STAGED file first; publish to webapp/static only
 # after all of them succeed, so a failed second compile can't leave the committed
@@ -52,12 +48,14 @@ build_css tools/tailwind/tailwind.config.js tools/tailwind/_stage_landing.css
 build_css tools/tailwind/verify.config.js  tools/tailwind/_stage_verify.css
 build_css tools/tailwind/dashboard.config.js tools/tailwind/_stage_dashboard.css
 build_css tools/tailwind/upload.config.js    tools/tailwind/_stage_upload.css
+build_css tools/tailwind/investigate.config.js tools/tailwind/_stage_investigate.css
 
 echo "==> publishing stylesheets (all compiled OK)"
 mv tools/tailwind/_stage_landing.css webapp/static/landing.css
 mv tools/tailwind/_stage_verify.css  webapp/static/verify.css
 mv tools/tailwind/_stage_dashboard.css webapp/static/dashboard.css
 mv tools/tailwind/_stage_upload.css    webapp/static/upload.css
+mv tools/tailwind/_stage_investigate.css webapp/static/investigate.css
 
 echo "==> done"
-wc -c webapp/static/landing.css webapp/static/verify.css webapp/static/dashboard.css webapp/static/upload.css
+wc -c webapp/static/landing.css webapp/static/verify.css webapp/static/dashboard.css webapp/static/upload.css webapp/static/investigate.css

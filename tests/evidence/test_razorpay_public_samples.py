@@ -1,0 +1,288 @@
+"""Evidence layer: untangle vs. Razorpay's OWN published sample recon report.
+
+Most reconciliation demos grade their own homework — you generate the data, so you
+generate the answer key, so your "accuracy" only measures your generator. This test
+is the antidote: it validates untangle's money model against a file **untangle did
+not author**.
+
+`data/razorpay-samples/sample-settlements-recon-report.xlsx` is Razorpay's own
+published sample settlement recon report, downloaded verbatim from their docs CDN
+(provenance + SHA-256 in `data/razorpay-samples/SOURCES.md`). Razorpay's billing
+engine decided the settlement groupings, the per-transaction fees, and the
+credit/debit legs. So when untangle's `ReconRow` model and `SettlementIndex`
+reproduce the money identity in this file to the paise, that is a property of
+*Razorpay's* ledger — external ground truth, not our synthetic benchmark.
+
+No network. No API key. No third-party dependency — the .xlsx is parsed with the
+Python standard library (a .xlsx is a zip of XML). Runs fully offline in CI.
+
+Honest scope: this is Razorpay's small illustrative sample (unit-rupee rows), not a
+real merchant's production volume. The claim is precisely that untangle **ingests
+and conserves Razorpay's own published money legs exactly, including refund-as-debit
+sign handling** — not a reconciliation-accuracy claim on a real bank statement.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import xml.etree.ElementTree as ET
+import zipfile
+from collections import defaultdict
+from dataclasses import replace
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+
+import pytest
+
+from engine.models import ReconRow
+from engine.reconcile import SettlementIndex
+
+SAMPLE = (
+    Path(__file__).resolve().parents[2]
+    / "data"
+    / "razorpay-samples"
+    / "sample-settlements-recon-report.xlsx"
+)
+
+_NS = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+SAMPLE_SHA256 = "d2a238c7876bbe7b57274edade200a91803cc6964a3e9b3052f312b35caabdbd"
+
+
+class EvidenceIntegrityError(ValueError):
+    """The input is not the reviewed, provenance-pinned public workbook."""
+
+
+def _col_letters(ref: str) -> str:
+    return "".join(c for c in ref if c.isalpha())
+
+
+def _read_xlsx(path: Path) -> list[dict[str, str]]:
+    """Parse the first worksheet into a list of {column_letter: value} dicts, stdlib only."""
+    snapshot = path.read_bytes()
+    if hashlib.sha256(snapshot).hexdigest() != SAMPLE_SHA256:
+        raise EvidenceIntegrityError("Razorpay sample SHA-256 does not match pinned provenance")
+    with zipfile.ZipFile(io.BytesIO(snapshot)) as z:
+        shared: list[str] = []
+        if "xl/sharedStrings.xml" in z.namelist():
+            st = ET.fromstring(z.read("xl/sharedStrings.xml"))
+            for si in st.findall("a:si", _NS):
+                shared.append(
+                    "".join(
+                        t.text or ""
+                        for t in si.iter(
+                            "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t"
+                        )
+                    )
+                )
+        ws = ET.fromstring(z.read("xl/worksheets/sheet1.xml"))
+        rows: list[dict[str, str]] = []
+        for row in ws.find("a:sheetData", _NS).findall("a:row", _NS):
+            cells: dict[str, str] = {}
+            for c in row.findall("a:c", _NS):
+                v = c.find("a:v", _NS)
+                if v is None:
+                    continue
+                val = shared[int(v.text)] if c.get("t") == "s" else v.text
+                cells[_col_letters(c.get("r"))] = val
+            rows.append(cells)
+    return rows
+
+
+def test_sample_digest_matches_documented_provenance():
+    assert SAMPLE_SHA256 in SAMPLE.with_name("SOURCES.md").read_text()
+    assert _read_xlsx(SAMPLE)
+
+
+@pytest.mark.parametrize("replacement", [b"replaced workbook", b""])
+def test_modified_sample_rejected_before_zip_parsing(monkeypatch, replacement):
+    monkeypatch.setattr(Path, "read_bytes", lambda self: replacement)
+
+    def must_not_parse(*args, **kwargs):
+        pytest.fail("untrusted workbook reached ZIP parser")
+
+    monkeypatch.setattr(zipfile, "ZipFile", must_not_parse)
+    with pytest.raises(EvidenceIntegrityError, match="SHA-256"):
+        _read_xlsx(SAMPLE)
+
+
+def test_sample_is_read_once_and_same_snapshot_is_parsed(monkeypatch):
+    original = SAMPLE.read_bytes()
+    calls = []
+
+    def changing_file(self):
+        calls.append(self)
+        return original if len(calls) == 1 else b"replacement after verification"
+
+    monkeypatch.setattr(Path, "read_bytes", changing_file)
+    assert _read_xlsx(SAMPLE)
+    assert calls == [SAMPLE]
+
+
+def _paise(v: str | None, *, required: bool = False, field: str = "value") -> int:
+    """Rupee string -> exact integer paise. Fails loudly if a value is not whole paise."""
+    if v in (None, ""):
+        if required:
+            raise ValueError(f"required money field missing: {field}")
+        return 0
+    try:
+        amount = Decimal(v)
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"invalid money value for {field}: {v!r}") from exc
+    scaled = amount * 100
+    if scaled != scaled.to_integral_value():
+        raise ValueError(f"non-integer paise in source for {field}: {v!r}")
+    return int(scaled)
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_required_money_fields_fail_closed(value: str | None) -> None:
+    with pytest.raises(ValueError, match="required money field missing"):
+        _paise(value, required=True, field="amount")
+
+
+def test_money_parser_rejects_fractional_paise_without_float_rounding() -> None:
+    with pytest.raises(ValueError, match="non-integer paise"):
+        _paise("1.001", required=True, field="amount")
+
+
+def _load_recon_rows() -> list[ReconRow]:
+    """Map Razorpay's published recon columns onto untangle's own ReconRow model.
+
+    Razorpay labels its fee column 'fee (exclusive tax)' and itemises 'tax' (18% GST on
+    the fee) separately; untangle's convention is tax-inside-fee, so fee_paise = fee + tax
+    while tax_paise keeps the GST-on-fee for the recoverable schedule.
+    """
+    raw = _read_xlsx(SAMPLE)
+    header, data = raw[0], raw[1:]
+    col = {name: letter for letter, name in header.items()}
+
+    def cell(row: dict[str, str], name: str) -> str | None:
+        return row.get(col[name])
+
+    rows: list[ReconRow] = []
+    for r in data:
+        fee_excl = _paise(cell(r, "fee (exclusive tax)"), required=True, field="fee")
+        tax = _paise(cell(r, "tax"), required=True, field="tax")
+        rows.append(
+            ReconRow(
+                entity_id=str(cell(r, "entity_id")),
+                type=str(cell(r, "transaction_entity")),
+                amount_paise=_paise(cell(r, "amount"), required=True, field="amount"),
+                fee_paise=fee_excl + tax,  # untangle: tax lives inside fee
+                tax_paise=tax,
+                debit_paise=_paise(cell(r, "debit")),
+                credit_paise=_paise(cell(r, "credit")),
+                settlement_id=(str(cell(r, "settlement_id")) or None),
+                settlement_utr=(str(cell(r, "settlement_utr")) or None),
+                settled_at=None,
+                created_at=None,
+                on_hold=False,
+                dispute_id=None,
+                order_id=None,
+                method=(cell(r, "payment_method") or None),
+                description=None,
+            )
+        )
+    return rows
+
+
+@pytest.fixture(scope="module")
+def recon_rows() -> list[ReconRow]:
+    assert SAMPLE.is_file(), f"vendored Razorpay sample missing: {SAMPLE}"
+    rows = _load_recon_rows()
+    assert rows, "no transaction rows parsed from Razorpay sample"
+    return rows
+
+
+def test_per_row_money_identity_holds(recon_rows: list[ReconRow]) -> None:
+    """Razorpay's own per-row identity, reproduced through untangle's ReconRow to the paise.
+
+    payment: credit == amount - fee - tax  and  debit == 0
+    refund:  debit  == amount              and  credit == 0
+    """
+    seen_payment = seen_refund = False
+    for row in recon_rows:
+        if row.type == "payment":
+            seen_payment = True
+            assert row.debit_paise == 0, f"{row.entity_id}: payment carried a debit"
+            assert row.credit_paise == row.amount_paise - row.fee_paise, (
+                f"{row.entity_id}: credit {row.credit_paise} != amount-fee-tax "
+                f"{row.amount_paise - row.fee_paise}"
+            )
+        elif row.type == "refund":
+            seen_refund = True
+            assert row.credit_paise == 0, f"{row.entity_id}: refund carried a credit"
+            assert row.debit_paise == row.amount_paise, (
+                f"{row.entity_id}: refund debit {row.debit_paise} != amount {row.amount_paise}"
+            )
+    assert seen_payment, "sample unexpectedly had no payments"
+    assert seen_refund, "sample unexpectedly had no refunds — the refund sign path is the point"
+
+
+def _source_expected_nets() -> dict[str, int]:
+    """Independent input path: no ReconRow fields or credit/debit columns."""
+    header, *data = _read_xlsx(SAMPLE)
+    columns = {name: letter for letter, name in header.items()}
+    expected: dict[str, int] = defaultdict(int)
+    for raw in data:
+        sid = raw[columns["settlement_id"]]
+        kind = raw[columns["transaction_entity"]]
+        amount = _paise(raw.get(columns["amount"]), required=True, field="amount")
+        if kind == "payment":
+            fee = _paise(raw.get(columns["fee (exclusive tax)"]), required=True, field="fee")
+            tax = _paise(raw.get(columns["tax"]), required=True, field="tax")
+            expected[sid] += amount - fee - tax
+        elif kind == "refund":
+            expected[sid] -= amount
+        else:
+            raise ValueError(f"unsupported source transaction kind: {kind}")
+    return dict(expected)
+
+
+def test_settlement_index_matches_raw_source_columns(recon_rows: list[ReconRow]) -> None:
+    """Check cross-column consistency: amount minus mapped fee (including tax) minus refunds.
+
+    This runs Razorpay's data through untangle's real coverage code, not a bespoke sum. The
+    independent calculation is derived only from the sample's amount, fee, tax, and refund
+    columns; it is not a claim that any externally published settlement total was verified.
+    """
+    index = SettlementIndex(recon_rows)
+
+    independent = _source_expected_nets()
+
+    assert index.net_by_sid, "SettlementIndex found no settlements"
+    assert index.net_by_sid == independent
+    for sid, net in index.net_by_sid.items():
+        assert net == independent[sid], (
+            f"{sid}: untangle net_by_sid {net} != independently derived payment/refund total {independent[sid]}"
+        )
+        assert isinstance(net, int), f"{sid}: settlement net is not exact integer paise"
+
+    # At least one settlement's members include a refund — assert that path is exercised,
+    # so the test can never silently degrade into an all-payments (no-sign-trap) check.
+    refund_sids = {r.settlement_id for r in recon_rows if r.type == "refund" and r.settlement_id}
+    assert refund_sids, "no settlement with a refund leg — refund sign handling went unchecked"
+    for sid in refund_sids:
+        members = index.rows_by_sid[sid]
+        naive_amount_sum = sum(m.amount_paise - m.fee_paise for m in members)
+        assert index.net_by_sid[sid] != naive_amount_sum, (
+            f"{sid}: refund settlement must differ from the naive amount-sum — sign trap not present"
+        )
+
+
+@pytest.mark.parametrize("kind", ["payment", "refund"])
+def test_raw_source_expectation_detects_corrupted_money_leg(recon_rows, kind):
+    """Changing either mapped money leg must fail the independent source comparison."""
+    rows = list(recon_rows)
+    position = next(i for i, row in enumerate(rows) if row.type == kind)
+    row = rows[position]
+    field = "credit_paise" if kind == "payment" else "debit_paise"
+    rows[position] = replace(row, **{field: getattr(row, field) + 1})
+    expected = _source_expected_nets()
+    actual = SettlementIndex(rows).net_by_sid
+    with pytest.raises(AssertionError):
+        assert actual == expected
+    assert actual[row.settlement_id] - expected[row.settlement_id] == (
+        1 if kind == "payment" else -1
+    )

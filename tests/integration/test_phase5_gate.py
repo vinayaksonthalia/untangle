@@ -87,17 +87,26 @@ def test_phase5_gate_readme_leads_with_finance_loop_and_stays_honest():
 
 
 def test_phase5_gate_one_click_demo_reproduction(client):
-    """Gate 3: One-click demo-data reproduction works without upload."""
+    """Gate 3: One-click demo-data reproduction works without upload.
+
+    /try-sample returns a tab-local bootstrap containing the seed-42 demo bundle.
+    """
     r = client.get("/try-sample")
     assert r.status_code == 200
-    text = r.text
-    assert "Attribution &amp; Calibrated Abstention" in text or "Attribution & Calibrated Abstention" in text
-    assert "Proven Slice Only" in text
-    assert "<b>826</b> bank credits" in text  # multi-month demo (Apr–Jun 2026), reproducible from seed 42
-    assert "Exception queue" in text
-    # The multi-month demo drives the exception-queue month filter (Apr/May/Jun chips).
-    assert "All months" in text
-    assert "Apr 2026" in text and "May 2026" in text and "Jun 2026" in text
+    assert "sessionStorage" in r.text and "demo" in r.text
+    import json
+    import re
+    literal = re.search(r"sessionStorage\.setItem\('untangle_results', (.*)\); location", r.text).group(1)
+    bundle = json.loads(json.loads(literal))
+    pres = bundle["presentation"]
+    assert bundle.get("mode") == "demo"
+    # One coherent demo dataset (clean reconciliations + the root-cause investigation cases),
+    # so Dashboard, Investigate and Certificate all describe the SAME report.
+    assert pres["summary"]["n_bank_lines"] == 15  # 8 clean settlements + 7 investigation cases
+    assert pres["summary"]["reconciled_paise"] > 0  # the clean settlements give real reconciled value
+    # the demo also drives the Investigate queue (curated: 6 resolved + 1 honest abstention)
+    inv = bundle["investigations"]
+    assert inv.get("mode") == "demo" and inv["summary"]["resolved"] == 6
 
 
 def test_phase5_gate_zero_storage_and_kind_errors(client):

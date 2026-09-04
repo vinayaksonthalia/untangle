@@ -1,7 +1,9 @@
 """Web app end-to-end + adversarial tests (the breaking pass, made permanent)."""
 from __future__ import annotations
 
+import json
 import os
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,10 +29,28 @@ def _files(**over):
 
 
 def test_pages_render():
-    for path, marker in [("/", "with proof, not guesses."), ("/app", "Upload your files"),
-                         ("/try-sample", "Exception queue")]:
+    for path, marker in [("/", "Close your Razorpay settlement books"), ("/app", "Upload your files"),
+                         ("/dashboard", "Settlement close")]:
         r = client.get(path)
         assert r.status_code == 200 and marker in r.text, path
+
+
+def test_try_sample_loads_demo_run():
+    r = client.get("/try-sample")
+    assert r.status_code == 200 and "sessionStorage" in r.text
+    assert "untangle_run" not in r.headers.get("set-cookie", "")
+    assert "no-store" in r.headers.get("cache-control", "")
+    literal = re.search(r"sessionStorage\.setItem\('untangle_results', (.*)\); location", r.text).group(1)
+    bundle = json.loads(json.loads(literal))
+    assert bundle["version"] == 1 and bundle["mode"] == "demo"
+    assert bundle["certificate"]["content_sha256"]
+    assert bundle["presentation"].get("summary")
+    assert isinstance(bundle["investigations"]["cases"], list)
+
+
+def test_legacy_current_endpoints_are_explicitly_removed():
+    for path in ("/api/presentation/current", "/api/investigations/current", "/api/certificate/current", "/api/journal/current.tally.xml"):
+        assert client.get(path, cookies={"untangle_run": "someone-elses-run"}).status_code == 410
 
 
 def test_api_reconcile_happy_path():
@@ -40,9 +60,37 @@ def test_api_reconcile_happy_path():
     assert t["reconciled_count"] > 0 and t["fee_gst_recoverable_paise"] > 0
 
 
-def test_browser_reconcile_returns_dashboard():
+def test_browser_reconcile_redirects_to_your_run():
     r = client.post("/reconcile", files=_files())
-    assert r.status_code == 200 and "Exception queue" in r.text
+    assert r.status_code == 200 and "no-store" in r.headers.get("cache-control", "")
+    assert "set-cookie" not in r.headers
+
+
+def test_browser_bundle_escapes_script_terminator():
+    from webapp.app import _bundle_response
+    hostile = {"version": 1, "mode": "your_run", "metadata": "</script><script>alert(1)</script>"}
+    r = _bundle_response(hostile)
+    body = r.body.decode()
+    assert body.count("</script>") == 1  # only the bootstrap tag closes
+    literal = re.search(r"sessionStorage\.setItem\('untangle_results', (.*)\); location", body).group(1)
+    assert json.loads(json.loads(literal))["metadata"] == "</script><script>alert(1)</script>"
+
+
+def test_large_completed_bundle_downloads_without_truncation():
+    from webapp.app import _bundle_response
+    bundle = {"version": 1, "mode": "your_run", "x": "a" * (4 * 1024 * 1024)}
+    response = _bundle_response(bundle)
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["content-disposition"] == 'attachment; filename="untangle-results.json"'
+    assert json.loads(response.body) == bundle
+
+
+def test_static_landing_css_revalidates_without_losing_body():
+    r = client.get("/static/landing.css")
+    assert r.status_code == 200
+    assert r.headers["cache-control"] == "no-cache"
+    assert r.content
 
 
 @pytest.mark.parametrize("name,payload", [

@@ -25,21 +25,36 @@ def _load_template(name: str) -> str:
     return text
 
 
+def _page(name: str) -> str:
+    html = _load_template(name)
+    return html.replace("</head>", '<script src="/static/run-session.js"></script>\n</head>', 1)
+
+
 def landing_page() -> str:
     """Return the pre-built landing page (self-hosted fonts + compiled CSS)."""
-    return _load_template("landing.html")
+    return _page("landing.html")
 
 
 def upload_page() -> str:
     """Return the pre-built upload page (posts to /reconcile)."""
-    return _load_template("upload.html")
+    return _page("upload.html")
 
 
 def verify_page() -> str:
     """Return the pre-built verify page (self-hosted fonts + compiled CSS)."""
-    return _load_template("verify.html")
+    return _page("verify.html")
 
 
 def dashboard_page() -> str:
-    """Return the pre-built dashboard (its JS fetches live figures from /api/presentation)."""
-    return _load_template("dashboard.html")
+    """Return the dashboard; its JS reads this tab's result bundle."""
+    return _page("dashboard.html")
+
+
+def investigate_page() -> str:
+    """Return investigations from the same tab-local result as the dashboard."""
+    return _page("investigate.html")
+
+
+def certificate_page() -> str:
+    """Return the printable document and download from this tab's certificate."""
+    return _page("certificate.html")

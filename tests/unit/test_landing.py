@@ -87,8 +87,10 @@ def test_static_font_served_as_woff2(client):
 
 def test_boundary_language_preserved(client):
     html = client.get("/").text
-    assert "Deterministic code decides money and evidence" in html
-    assert "cannot move money, approve journals, override abstention, or certify" in html
+    # Read-only toward money is the load-bearing safety claim on the page.
+    assert "Read-only toward money" in html
+    assert "no code path to initiate, authorise, or debit a transfer" in html
+    assert "never posts to your books" in html
 
 
 def test_no_fabricated_or_stale_claims(client):
@@ -116,18 +118,20 @@ def test_template_loader_fails_loudly(tmp_path, monkeypatch):
     _load_template.cache_clear()  # restore clean cache for other tests
 
 
-def test_faq_accessibility(client):
+def test_safety_section_states_what_is_not_claimed(client):
+    """The institutional landing replaces a fake SOC2 block with an explicit no-overclaim
+    statement that links the real SAFETY.md."""
     html = client.get("/").text
-    assert html.count('aria-controls="faq-panel-') == 6
-    assert html.count('id="faq-panel-') == 6
-    assert 'aria-expanded="true"' in html and 'aria-expanded="false"' in html
+    assert "No SOC 2, ISO 27001, or statutory certification is claimed" in html
+    assert "https://github.com/vinayaksonthalia/untangle/blob/main/SAFETY.md" in html
 
 
 def test_gst_and_certificate_and_privacy_claims_qualified(client):
     html = client.get("/").text
-    assert "that merchants routinely miss" not in html      # overstated GST
-    assert "Cryptographically signed summaries" not in html  # certs aren't always signed
-    assert "optionally" in html.lower()                      # optionally ECDSA-signed
-    assert "per-request temp directory" not in html          # false privacy claim
+    assert "that merchants routinely miss" not in html         # overstated GST
+    assert "Cryptographically signed summaries" not in html     # certs aren't always signed
+    # certificate signing is honestly conditional, never asserted as always-on
+    assert "ECDSA P-256 when a key is configured, else hash-bound" in html
+    assert "per-request temp directory" not in html            # false privacy claim
     assert "Zero persistence" not in html
-    assert "held in memory only" in html
+    assert "processed in memory and discarded when the session ends" in html
