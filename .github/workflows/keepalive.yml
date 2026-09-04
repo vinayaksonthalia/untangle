@@ -1,0 +1,30 @@
+# Keep the Render free-tier deploy warm so it never cold-starts for a visitor.
+# Render free web services sleep after ~15 min idle; this pings /healthz on a schedule.
+# NOTE: GitHub-scheduled crons can be delayed under load and are disabled after 60 days
+# of repo inactivity — for a demo, a dedicated uptime monitor (e.g. UptimeRobot, 5-min
+# interval on the same /healthz URL) is more reliable. This workflow is a free backup.
+name: keepalive
+
+# Machine-readable provenance for this behaviour-affecting workflow.
+env:
+  PROVENANCE_CREATED_BY: vinayaksonthalia
+  PROVENANCE_CREATED_AT: "2026-09-04"
+  PROVENANCE_SOURCE_REPO: vinayaksonthalia/untangle
+  PROVENANCE_SOURCE_BRANCH: chore/render-keepalive
+  PROVENANCE_PURPOSE: "keep Render free-tier deploy warm via scheduled /healthz ping"
+
+on:
+  schedule:
+    - cron: "*/12 * * * *"   # every 12 minutes
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ping the deployed health endpoint
+        run: bash scripts/keepalive_ping.sh
+        env:
+          KEEPALIVE_URL: ${{ vars.KEEPALIVE_URL }}
