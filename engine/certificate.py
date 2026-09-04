@@ -36,8 +36,12 @@ _SIGNING_KEY_ENV = "UNTANGLE_SIGNING_KEY"  # base64-encoded PEM (PKCS8) ECDSA pr
 
 
 def _inr(paise: int) -> str:
-    """Format paise as standard INR currency string."""
-    return f"₹{paise / 100:,.2f}"
+    """Format exact integer paise without rounding through binary floating point."""
+    if type(paise) is not int:
+        raise ValueError("Certificate money must be integer paise")
+    rupees, remainder = divmod(abs(paise), 100)
+    sign = "-" if paise < 0 else ""
+    return f"₹{sign}{rupees:,}.{remainder:02d}"
 
 
 def _canonical(obj: Any) -> bytes:

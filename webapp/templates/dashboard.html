@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Reconciliation dashboard — untangle</title>
+<title>Settlement close — untangle</title>
 <meta name="description" content="untangle reconciliation dashboard: attribution coverage, unresolved value, recoverable GST, the evidence case file behind each verdict, and a balanced journal ready for Tally."/>
 <link rel="stylesheet" href="/static/dashboard.css"/>
 <style>
@@ -15,34 +15,88 @@
     .animate-fade-rise { animation: fadeRise 0.5s cubic-bezier(0.16,1,0.3,1) forwards; opacity: 0; }
   }
   :focus-visible { outline: 2px solid #0f172a; outline-offset: 2px; }
+  [hidden] { display: none !important; }
 </style>
 </head>
-<body class="bg-background font-body-md text-on-background tabular-nums">
-<header class="sticky top-0 z-50 w-full bg-surface-container-lowest/90 backdrop-blur-xl border-b border-outline-variant">
-<div class="max-w-[1400px] mx-auto px-container-padding h-16 flex items-center justify-between gap-4">
-<a href="/" class="font-headline-md text-headline-md tracking-tight" aria-label="untangle — home"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></a>
-<nav aria-label="Primary" class="hidden md:flex items-center gap-8 font-body-md text-on-surface-variant">
-<a class="text-on-surface font-semibold" aria-current="page" href="/dashboard">Dashboard</a>
-<a class="hover:text-on-surface transition-colors" href="/app">Upload</a>
-<a class="hover:text-on-surface transition-colors" href="/verify">Verify</a>
-<a class="hover:text-on-surface transition-colors" href="/#how">How it works</a>
+<body class="bg-background font-body-md text-on-background tabular-nums min-h-screen flex">
+<aside class="fixed left-0 top-0 h-full w-60 bg-surface border-r border-outline-variant hidden md:flex flex-col py-6 z-20">
+<a href="/" class="px-6 mb-8 flex items-center gap-3" aria-label="untangle — home">
+<div class="w-8 h-8 bg-primary rounded flex items-center justify-center text-on-primary font-bold">u</div>
+<div>
+<div class="font-headline-md text-[20px] leading-6 font-bold"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></div>
+<div class="font-label-caps text-[10px] text-on-surface-variant">Audit Engine v1.0</div>
+</div>
+</a>
+<nav class="flex-1 px-4 space-y-1" aria-label="Primary">
+<a class="flex items-center gap-3 px-3 py-2 text-primary font-semibold bg-surface-container-low border-r-2 border-primary rounded" aria-current="page" href="/dashboard">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="dashboard"><path d="M520-600v-240h320v240H520ZM120-440v-400h320v400H120Zm400 320v-400h320v400H520Zm-400 0v-240h320v240H120Zm80-400h160v-240H200v240Zm400 320h160v-240H600v240Zm0-480h160v-80H600v80ZM200-200h160v-80H200v80Zm160-320Zm240-160Zm0 240ZM360-280Z"/></svg><span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/investigate">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="search"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg><span>Investigate</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/app">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="upload_file"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg><span>Upload</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/verify">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="verified_user"><path d="m438-338 226-226-57-57-169 169-84-84-57 57 141 141Zm42 258q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z"/></svg><span>Verify</span>
+</a>
 </nav>
-<div class="flex items-center gap-3">
-<span class="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-surface-container-low rounded-full border border-outline-variant">
+<div class="px-4 mt-auto">
+<div class="px-3 py-2 font-label-caps text-[10px] text-on-surface-variant flex items-center gap-2">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]" data-icon="security"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q97-30 162-118.5T718-480H480v-315l-240 90v207q0 7 2 18h238v316Z"/></svg> Deterministic core
+</div>
+</div>
+</aside>
+
+<main class="md:ml-60 flex-1 flex flex-col min-w-0">
+<div class="md:hidden flex items-center gap-1 border-b border-outline-variant bg-surface px-3 h-12 overflow-x-auto shrink-0">
+<a href="/" class="font-headline-md text-[16px] font-bold mr-2 shrink-0"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></a>
+<a href="/dashboard" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Dashboard</a>
+<a href="/investigate" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Investigate</a>
+<a href="/app" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Upload</a>
+<a href="/verify" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Verify</a>
+</div>
+<header class="h-16 border-b border-outline-variant bg-surface flex items-center justify-between px-8 sticky top-0 z-10">
+<span class="flex items-center gap-2 px-3 py-1.5 bg-surface-container-low rounded-full border border-outline-variant">
 <span class="w-2 h-2 rounded-full bg-secondary-fixed-dim"></span>
 <span class="font-label-caps text-label-caps text-on-surface" id="run-scope">Example run</span>
 </span>
 <a href="/try-sample" class="inline-flex h-10 items-center px-4 bg-primary text-on-primary font-data-tabular text-data-tabular rounded hover:bg-audit-blue transition-colors shadow-sm">Run sample</a>
-</div>
-</div>
 </header>
 
-<main class="relative">
-<div class="max-w-[1400px] mx-auto px-container-padding py-8 flex flex-col gap-gutter">
+<div class="p-8 flex-1 overflow-auto">
+<div id="dash-empty" hidden class="max-w-[1400px] mx-auto">
+<div class="bg-surface rounded-xl border border-outline-variant p-12 text-center flex flex-col items-center gap-4">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" class="text-[48px] text-outline-variant" data-icon="dashboard"><path d="M520-600v-240h320v240H520ZM120-440v-400h320v400H120Zm400 320v-400h320v400H520Zm-400 0v-240h320v240H120Zm80-400h160v-240H200v240Zm400 320h160v-240H600v240Zm0-480h160v-80H600v80ZM200-200h160v-80H200v80Z"/></svg>
+<div>
+<h2 class="font-display-lg text-display-lg text-on-surface">No active run</h2>
+<p class="font-body-md text-on-surface-variant mt-2 max-w-md">untangle holds nothing by default. Reconcile your own three files, or load the bundled sample to see how a close runs end-to-end.</p>
+</div>
+<div class="flex items-center gap-3 mt-2">
+<a href="/app" class="inline-flex h-10 items-center px-5 bg-primary text-on-primary font-data-tabular text-data-tabular rounded hover:bg-audit-blue transition-colors shadow-sm">Reconcile your files</a>
+<a href="/try-sample" class="inline-flex h-10 items-center px-5 bg-surface-container-low text-on-surface border border-outline-variant font-data-tabular text-data-tabular rounded hover:bg-surface-container transition-colors">See the sample</a>
+</div>
+</div>
+</div>
+<div id="dash-content" class="max-w-[1400px] mx-auto flex flex-col gap-gutter">
 
-<div class="flex items-baseline justify-between flex-wrap gap-2">
-<h1 class="font-display-lg text-display-lg text-on-surface">Reconciliation dashboard</h1>
-<p class="font-body-sm text-on-surface-variant" id="run-identity">Loading live figures…</p>
+<div class="flex items-end justify-between flex-wrap gap-4">
+<div class="max-w-2xl">
+<h1 class="font-display-lg text-display-lg text-on-surface">Settlement close</h1>
+<p class="font-body-md text-on-surface-variant mt-2">A read-only view of attributed credits, reconciled settlements, recoverable fee GST, and the exceptions that still need evidence for this run.</p>
+<p class="font-body-sm text-on-surface-variant mt-1" id="run-identity">Loading live figures…</p>
+</div>
+<a href="/investigate" class="inline-flex h-10 items-center px-4 bg-primary text-on-primary font-data-tabular text-data-tabular rounded hover:bg-audit-blue transition-colors shadow-sm shrink-0">Investigate exceptions</a>
+</div>
+
+<!-- Business-value headline: ₹ to act on this run (honest "up to / review to confirm") -->
+<div class="bg-primary text-on-primary rounded-xl px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+<div class="flex items-baseline gap-3 flex-wrap">
+<span class="font-label-caps text-label-caps text-on-primary/80">UP TO</span>
+<span class="font-data-tabular text-display-lg tabular-nums" id="h-atstake">—</span>
+<span class="font-body-sm text-on-primary/85" id="h-atstake-breakdown">to act on this run</span>
+</div>
+<span class="font-body-sm text-on-primary/70">Review to confirm · untangle proposes, never posts</span>
 </div>
 
 <!-- Top metrics (real: summary.*) -->
@@ -73,7 +127,7 @@
 <div class="bg-surface p-6 rounded-xl border border-outline-variant flex flex-col justify-between relative overflow-hidden">
 <div class="absolute right-0 top-0 w-32 h-32 bg-secondary-container rounded-full blur-3xl opacity-20 transform translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
 <div class="flex justify-between items-start mb-4 relative z-10">
-<span class="font-label-caps text-on-surface-variant text-label-caps">GST ON FEES</span>
+<span class="font-label-caps text-on-surface-variant text-label-caps">RECOVERABLE FEE GST</span>
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-secondary"><path d="M200-280v-280h80v280h-80Zm240 0v-280h80v280h-80ZM80-120v-80h800v80H80Zm600-160v-280h80v280h-80ZM80-640v-80l400-200 400 200v80H80Zm178-80h444-444Zm0 0h444L480-830 258-720Z"/></svg>
 </div>
 <div class="relative z-10">
@@ -99,9 +153,12 @@
 <div class="bg-surface flex-1 rounded-xl border border-outline-variant overflow-hidden flex flex-col animate-fade-rise">
 <div class="p-6 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
 <h3 class="font-title-sm text-on-surface flex items-center gap-2">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-error"><path d="M348.5-291.5Q360-303 360-320t-11.5-28.5Q337-360 320-360t-28.5 11.5Q280-337 280-320t11.5 28.5Q303-280 320-280t28.5-11.5Zm0-160Q360-463 360-480t-11.5-28.5Q337-520 320-520t-28.5 11.5Q280-497 280-480t11.5 28.5Q303-440 320-440t28.5-11.5Zm0-160Q360-623 360-640t-11.5-28.5Q337-680 320-680t-28.5 11.5Q280-657 280-640t11.5 28.5Q303-600 320-600t28.5-11.5ZM440-280h240v-80H440v80Zm0-160h240v-80H440v80Zm0-160h240v-80H440v80ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg> Exception taxonomy
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-error"><path d="M348.5-291.5Q360-303 360-320t-11.5-28.5Q337-360 320-360t-28.5 11.5Q280-337 280-320t11.5 28.5Q303-280 320-280t28.5-11.5Zm0-160Q360-463 360-480t-11.5-28.5Q337-520 320-520t-28.5 11.5Q280-497 280-480t11.5 28.5Q303-440 320-440t28.5-11.5Zm0-160Q360-623 360-640t-11.5-28.5Q337-680 320-680t-28.5 11.5Q280-657 280-640t11.5 28.5Q303-600 320-600t28.5-11.5ZM440-280h240v-80H440v80Zm0-160h240v-80H440v80Zm0-160h240v-80H440v80ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg> Exceptions requiring evidence
 </h3>
+<div class="flex items-center gap-3">
 <span class="bg-surface-container text-on-surface-variant px-3 py-1 rounded-full font-label-caps text-[10px]" id="exc-count">—</span>
+<a href="/investigate" class="font-label-caps text-[10px] text-secondary hover:underline">Investigate →</a>
+</div>
 </div>
 <div class="overflow-x-auto">
 <table class="w-full text-left border-collapse">
@@ -157,9 +214,11 @@
 <div class="flex justify-between border-t border-outline-variant pt-2 mt-2"><span class="text-on-surface-variant">Close certificate</span><span class="text-secondary font-semibold" id="j-cert">—</span></div>
 </div>
 <div class="flex flex-col gap-2">
-<a href="/api/journal/sample.tally.xml" class="w-full bg-primary text-on-primary h-row-height-standard rounded-lg font-label-caps flex items-center justify-center gap-2 hover:bg-audit-blue transition-colors">
+<a href="/api/journal/current.tally.xml" class="w-full bg-primary text-on-primary h-row-height-standard rounded-lg font-label-caps flex items-center justify-center gap-2 hover:bg-audit-blue transition-colors">
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]"><path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg> Download Tally XML
 </a>
+<a href="/certificate" class="w-full border border-outline-variant text-on-surface h-row-height-standard rounded-lg font-label-caps flex items-center justify-center gap-2 hover:bg-surface-container-low transition-colors">
+<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Z"/></svg> View close certificate</a>
 <a href="/verify" class="w-full border border-outline-variant text-on-surface h-row-height-standard rounded-lg font-label-caps flex items-center justify-center gap-2 hover:bg-surface-container-low transition-colors">
 <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]"><path d="m438-338 226-226-57-57-169 169-84-84-57 57 141 141Zm42 258q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z"/></svg> Verify the certificate
 </a>
@@ -170,16 +229,19 @@
 
 <p class="font-body-sm text-on-surface-variant text-center" id="dash-error" hidden></p>
 </div>
+</div>
 </main>
 
 <script>
   const $ = (id) => document.getElementById(id);
   // Money is integer paise. Reject anything that isn't a finite safe integer (null,
   // undefined, booleans, NaN, floats) rather than coercing it into a fabricated ₹0.
-  const inr = (paise) =>
-    (typeof paise === 'number' && Number.isSafeInteger(paise))
-      ? '₹' + (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-      : '—';
+  // Integer minor-unit formatting: rupees and paise split with integer ops, never float division.
+  const inr = (paise) => {
+    if (typeof paise !== 'number' || !Number.isSafeInteger(paise)) return '—';
+    const sign = paise < 0 ? '−' : '', a = Math.abs(paise);
+    return '₹' + sign + Math.trunc(a / 100).toLocaleString('en-IN') + '.' + String(a % 100).padStart(2, '0');
+  };
   const pct = (n) => (Number.isFinite(n) ? (n * 100).toFixed(1) + '%' : '—');
 
   // buckets for "where the money came from" — mapped from real rails + summary
@@ -195,7 +257,7 @@
   async function load() {
     let p;
     try {
-      const r = await fetch('/api/presentation/sample');
+      const r = await untangleFetch('/api/presentation/current');
       if (!r.ok) throw new Error('HTTP ' + r.status);
       p = await r.json();
     } catch (e) {
@@ -203,7 +265,25 @@
       el.textContent = 'Could not load reconciliation figures (' + e.message + ').';
       return;
     }
+    // Default is empty — untangle holds no run until you upload or load the sample.
+    if (!p || p.mode === 'empty') {
+      $('dash-content').hidden = true;
+      $('dash-empty').hidden = false;
+      const chip = $('run-scope'); if (chip) chip.textContent = 'No active run';
+      return;
+    }
+    $('dash-empty').hidden = true;
+    $('dash-content').hidden = false;
+    const chip = $('run-scope');
+    if (chip) chip.textContent = p.mode === 'your_run' ? 'Your run' : 'Demo data';
     const s = p.summary || {};
+
+    // ₹ to act on this run = unresolved Razorpay slice + recoverable fee-GST (honest "up to")
+    const unresolved = Number.isSafeInteger(s.unresolved_paise) ? s.unresolved_paise : 0;
+    const recoverable = Number.isSafeInteger(s.fee_gst_recoverable_paise) ? s.fee_gst_recoverable_paise : 0;
+    $('h-atstake').textContent = inr(unresolved + recoverable);
+    $('h-atstake-breakdown').textContent =
+      inr(unresolved) + ' unresolved cash + ' + inr(recoverable) + ' recoverable fee-GST';
     $('run-identity').textContent =
       'engine ' + (p.run_identity?.engine_version || '?') + ' · audit ' +
       (p.run_identity?.audit_root || '').slice(0, 12) + '… · seed ' + (p.methodology?.seed ?? '?');
@@ -249,7 +329,7 @@
       leg.innerHTML =
         '<div class="w-3 h-3 rounded-full ' + BUCKET_COLOR[i] + ' mb-2"></div>' +
         '<span class="font-label-caps text-on-surface-variant">' + b.label + '</span>' +
-        '<span class="font-data-tabular text-on-surface">' + b.count + ' · ' + pct(share) + '</span>';
+        '<span class="font-data-tabular text-on-surface">' + Number(b.count) + ' · ' + pct(share) + '</span>';
       $('c-legend').appendChild(leg);
     });
 
@@ -259,10 +339,12 @@
     (p.exceptions_summary || []).forEach((ex, i) => {
       const tr = document.createElement('tr');
       tr.className = 'border-b border-outline-variant' + (i % 2 ? ' bg-surface-bright/50' : '');
-      tr.innerHTML =
-        '<td class="py-3 px-6 text-on-surface">' + ex.reason_code + '</td>' +
-        '<td class="py-3 px-6 text-on-surface-variant">' + ex.label + '</td>' +
-        '<td class="py-3 px-6 text-on-surface text-right font-medium">' + ex.count + '</td>';
+      [ex.reason_code, ex.label, ex.count].forEach(value => {
+        const cell = document.createElement('td');
+        cell.className = 'py-3 px-6 text-on-surface';
+        cell.textContent = String(value ?? '');
+        tr.appendChild(cell);
+      });
       body.appendChild(tr);
     });
 
@@ -278,9 +360,13 @@
         (pick.reconciled ? ' and reconciled to the settlement report.' : '.');
       $('ev-confidence').textContent = 'confidence ' + pick.confidence.toFixed(2);
       $('ev-tier').textContent = 'TIER ' + String(pick.tier).toUpperCase();
-      $('ev-signals').innerHTML = (pick.signals || []).map((sig) =>
-        '<span class="px-2 py-1 bg-surface-container rounded text-[10px] font-data-tabular border border-outline-variant/40">' + sig + '</span>'
-      ).join('') || '<span class="text-on-surface-variant text-xs">no discrete signals</span>';
+      $('ev-signals').replaceChildren();
+      (pick.signals?.length ? pick.signals : ['no discrete signals']).forEach(sig => {
+        const signal = document.createElement('span');
+        signal.className = 'px-2 py-1 bg-surface-container rounded text-[10px] font-data-tabular border border-outline-variant/40';
+        signal.textContent = String(sig);
+        $('ev-signals').appendChild(signal);
+      });
     }
 
     // ready to post (real reconciled totals + certificate status)

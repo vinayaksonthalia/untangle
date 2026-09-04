@@ -8,7 +8,12 @@ from datetime import datetime
 from engine.attribute import attribute_all
 from engine.evidence import ReconIndex
 from engine.ingest import load_bank, load_recon
-from engine.journal import build_journal_entries, to_journal_json, to_tally_xml
+from engine.journal import (
+    build_journal_entries,
+    journal_json_to_tally_xml,
+    to_journal_json,
+    to_tally_xml,
+)
 from engine.models import ReconciliationResult, ReconRow
 from engine.reconcile import reconcile
 
@@ -103,6 +108,22 @@ def test_tally_xml_sign_convention_and_balance():
             amt = float(le.find("AMOUNT").text)
             # Debit → ISDEEMEDPOSITIVE Yes + negative amount; Credit → No + positive.
             assert (pos == "Yes" and amt < 0) or (pos == "No" and amt > 0)
+
+
+def test_journal_json_tally_preserves_integer_paise():
+    xml = journal_json_to_tally_xml([{"ref": "r", "date": "20260101", "lines": [
+        {"ledger": "Bank", "debit_inr": "0", "credit_inr": "123456789012345.67"},
+        {"ledger": "Offset", "debit_inr": "123456789012345.67", "credit_inr": "0"},
+    ]}])
+    assert "123456789012345.67" in xml
+
+
+def test_journal_json_tally_preserves_ordinary_two_decimal_amount():
+    xml = journal_json_to_tally_xml([{"ref": "ordinary", "date": "20260101", "lines": [
+        {"ledger": "Bank", "debit_inr": "0", "credit_inr": "1234.56"},
+        {"ledger": "Offset", "debit_inr": "1234.56", "credit_inr": "0"},
+    ]}])
+    assert "1234.56" in xml
 
 
 def test_tally_xml_strips_xml_illegal_control_chars():

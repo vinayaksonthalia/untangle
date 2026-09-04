@@ -26,7 +26,7 @@ def test_dashboard_route_serves_template(client):
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
     assert r.text == dashboard_page()
-    assert "<title>Reconciliation dashboard" in r.text
+    assert "<title>Settlement close" in r.text
 
 
 def test_dashboard_local_assets_only(client):
@@ -48,7 +48,7 @@ def test_dashboard_csp_unchanged(client):
 
 def test_dashboard_wires_real_endpoint_not_mock_numbers(client):
     html = client.get("/dashboard").text
-    assert "/api/presentation/sample" in html  # live data, not hardcoded
+    assert "/api/presentation/current" in html  # live data, not hardcoded
     # none of the Stitch mock's fabricated values/persona survive
     for bad in ("94.2%", "1,42,850.50", "12,430.20", "TRX-8919", "SET-4492",
                 "Audit Officer", "PREMIUM ACCESS", "Integrity Level"):
@@ -68,9 +68,9 @@ def test_dashboard_css_and_data_endpoints(client):
 
 def test_dashboard_download_and_verify_links_resolve(client):
     html = client.get("/dashboard").text
-    assert 'href="/api/journal/sample.tally.xml"' in html
+    assert 'href="/certificate"' in html
     assert 'href="/verify"' in html
-    assert client.get("/api/journal/sample.tally.xml").status_code == 200
+    assert client.get("/certificate").status_code == 200
 
 
 def test_money_is_validated_not_coerced(client):

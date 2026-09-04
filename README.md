@@ -58,6 +58,20 @@ booking a wrong "this is Razorpay's" that would corrupt the ledger.
 Only once each credit is attributed can the Razorpay slice be reconciled to the paise and the recoverable
 GST on gateway fees (input tax credit) be surfaced.
 
+## Safety & guarantees
+
+untangle is safer by design: **read-only toward money.** Full detail in [SAFETY.md](SAFETY.md).
+
+- ✅ Read-only toward money — no code path can move, transfer, or debit funds
+- ✅ No posting — corrective journal entries are balanced **proposals**, marked "not posted"
+- ✅ Abstains rather than guesses — refuses to assert a match it cannot prove
+- ✅ Every verdict is evidence-backed; deterministic, exact integer paise
+- ✅ Independently verifiable close certificate (content SHA-256 + proof packets; ECDSA P-256 when signed, else hash-bound)
+- ✅ Privacy by construction — processed in memory, no application database
+- ☐ SOC 2 / ISO 27001 / statutory sign-off — **not claimed**
+- ☐ Native per-bank export adapters (HDFC/ICICI/…) — planned, not shipped
+- ☐ Benchmarks are synthetic unless a real dataset is explicitly named
+
 ## Why this is hard — and why a matcher fails
 
 The naive approach matches on brand words and round amounts. But a competitor payout, a refund, or a
@@ -188,6 +202,8 @@ uvicorn webapp.app:app --port 8080
 
 Both options serve the same routes:
 `/` landing · `/app` upload your three files · `/try-sample` instant sample run · `/api/docs` the JSON API.
+
+`/try-sample` and `/reconcile` return a no-store bootstrap page which places the bounded result bundle in browser-tab `sessionStorage` before navigating to `/dashboard`. Results persist across refreshes and are normally cleared when the tab closes (browser session restore can retain them); no private raw inputs or result database is retained by the server. Legacy `/api/*/current` endpoints return `410 Gone`.
 
 - **Bring your own data:** a bank statement CSV (`value_date · narration · credit · debit`), the Razorpay
   settlement report JSON (`entity_id · type · amount · fee · tax · settlement_utr`), and your order ledger
