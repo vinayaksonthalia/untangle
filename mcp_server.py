@@ -326,10 +326,12 @@ def reconcile_sample() -> dict[str, Any]:
 
 @mcp.tool()
 def sample_unresolved_cash() -> dict[str, Any]:
-    """List the unresolved bank credits in untangle's built-in demo dataset — no file paths required.
+    """List the unresolved bank lines in untangle's built-in demo dataset — no file paths required.
 
-    The no-path companion to list_unresolved_cash, for the hosted/remote MCP. Returns each
-    unresolved credit's reason code and suggested action, plus the recovery-plan summary.
+    The no-path companion to list_unresolved_cash, for the hosted/remote MCP. Each item's
+    ``amount_paise`` is the line's SIGNED net (positive = incoming credit, negative = a debit/
+    outflow), so a debit exception is never mistaken for incoming cash. Also returns each item's
+    reason code and suggested action, plus the recovery-plan summary (which splits credit vs debit).
     """
     try:
         report = _demo_report()
@@ -362,7 +364,11 @@ def sample_unresolved_cash() -> dict[str, Any]:
 
 @mcp.tool()
 def list_unresolved_cash(bank_path: str, recon_path: str, ledger_path: str) -> dict[str, Any]:
-    """List all unresolved bank credits with their rupee amounts and reason codes.
+    """List all unresolved bank lines with their signed amounts and reason codes.
+
+    Each item's ``amount_paise`` is the line's SIGNED net (positive = incoming credit, negative =
+    a debit/outflow), so a debit exception is never mistaken for incoming cash; the recovery
+    summary splits credit vs debit exposure.
 
     Args:
         bank_path: Path to bank statement CSV.
@@ -370,7 +376,7 @@ def list_unresolved_cash(bank_path: str, recon_path: str, ledger_path: str) -> d
         ledger_path: Path to order ledger CSV.
 
     Returns:
-        Dictionary containing unresolved credit items, reason codes, and recovery plan summary.
+        Dictionary containing unresolved items (with signed amount_paise), reason codes, and recovery plan summary.
     """
     try:
         report = _get_report(bank_path, recon_path, ledger_path)

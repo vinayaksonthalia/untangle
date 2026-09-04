@@ -88,6 +88,14 @@ def test_list_unresolved_cash():
     assert "detail" in first
     assert "suggested_action" in first
     assert "recovery_summary" in res
+    # Every item exposes a structured, SIGNED amount (positive = incoming credit, negative = a
+    # debit/outflow, None when the line is unavailable) — a debit exception must not read as cash.
+    for it in res["items"]:
+        assert "amount_paise" in it
+        assert it["amount_paise"] is None or isinstance(it["amount_paise"], int)
+    # the seed-42 benchmark contains at least one debit exception, proving the sign is preserved
+    # (never abs()'d into fake incoming cash)
+    assert any(isinstance(it["amount_paise"], int) and it["amount_paise"] < 0 for it in res["items"])
 
 
 def test_explain_bank_credit_known_rzp():
