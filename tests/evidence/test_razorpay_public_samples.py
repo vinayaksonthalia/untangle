@@ -27,6 +27,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import defaultdict
+from dataclasses import replace
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -179,7 +180,27 @@ def test_per_row_money_identity_holds(recon_rows: list[ReconRow]) -> None:
     assert seen_refund, "sample unexpectedly had no refunds — the refund sign path is the point"
 
 
-def test_settlement_closure_through_untangle_index(recon_rows: list[ReconRow]) -> None:
+def _source_expected_nets() -> dict[str, int]:
+    """Independent input path: no ReconRow fields or credit/debit columns."""
+    header, *data = _read_xlsx(SAMPLE)
+    columns = {name: letter for letter, name in header.items()}
+    expected: dict[str, int] = defaultdict(int)
+    for raw in data:
+        sid = raw[columns["settlement_id"]]
+        kind = raw[columns["transaction_entity"]]
+        amount = _paise(raw.get(columns["amount"]), required=True, field="amount")
+        if kind == "payment":
+            fee = _paise(raw.get(columns["fee (exclusive tax)"]), required=True, field="fee")
+            tax = _paise(raw.get(columns["tax"]), required=True, field="tax")
+            expected[sid] += amount - fee - tax
+        elif kind == "refund":
+            expected[sid] -= amount
+        else:
+            raise ValueError(f"unsupported source transaction kind: {kind}")
+    return dict(expected)
+
+
+def test_settlement_index_matches_raw_source_columns(recon_rows: list[ReconRow]) -> None:
     """Check cross-column consistency: amount minus mapped fee (including tax) minus refunds.
 
     This runs Razorpay's data through untangle's real coverage code, not a bespoke sum. The
@@ -188,15 +209,10 @@ def test_settlement_closure_through_untangle_index(recon_rows: list[ReconRow]) -
     """
     index = SettlementIndex(recon_rows)
 
-    independent: dict[str, int] = defaultdict(int)
-    for row in recon_rows:
-        if row.settlement_id:
-            if row.type == "payment":
-                independent[row.settlement_id] += row.amount_paise - row.fee_paise
-            elif row.type == "refund":
-                independent[row.settlement_id] -= row.amount_paise
+    independent = _source_expected_nets()
 
     assert index.net_by_sid, "SettlementIndex found no settlements"
+    assert index.net_by_sid == independent
     for sid, net in index.net_by_sid.items():
         assert net == independent[sid], (
             f"{sid}: untangle net_by_sid {net} != independently derived payment/refund total {independent[sid]}"
@@ -213,3 +229,20 @@ def test_settlement_closure_through_untangle_index(recon_rows: list[ReconRow]) -
         assert index.net_by_sid[sid] != naive_amount_sum, (
             f"{sid}: refund settlement must differ from the naive amount-sum — sign trap not present"
         )
+
+
+@pytest.mark.parametrize("kind", ["payment", "refund"])
+def test_raw_source_expectation_detects_corrupted_money_leg(recon_rows, kind):
+    """Changing either mapped money leg must fail the independent source comparison."""
+    rows = list(recon_rows)
+    position = next(i for i, row in enumerate(rows) if row.type == kind)
+    row = rows[position]
+    field = "credit_paise" if kind == "payment" else "debit_paise"
+    rows[position] = replace(row, **{field: getattr(row, field) + 1})
+    expected = _source_expected_nets()
+    actual = SettlementIndex(rows).net_by_sid
+    with pytest.raises(AssertionError):
+        assert actual == expected
+    assert actual[row.settlement_id] - expected[row.settlement_id] == (
+        1 if kind == "payment" else -1
+    )
