@@ -38,7 +38,6 @@
         urls.push(url); a.href = url; a.download = filename;
       });
     }
-    download('#dl-json', b && JSON.stringify(b.certificate, null, 2), 'application/json', 'untangle-close-certificate.json');
     download('a[href="/api/journal/current.tally.xml"]', b && b.journal_tally_xml, 'application/xml', 'untangle-journal.xml');
     if (b) {
       const notice = document.createElement('aside');

@@ -27,6 +27,7 @@ def test_bundle_issues_certificate_once_and_binds_presentation(monkeypatch):
     bundle = app_module._tab_bundle(report, {}, "your_run")
     assert len(calls) == 1
     assert bundle["certificate"] is certificate
+    assert "journal" not in bundle  # do not duplicate the complete XML journal as JSON
     assert bundle["presentation"]["certificate_status"] is certificate
     assert bundle["mode"] == bundle["presentation"]["mode"] == bundle["investigations"]["mode"]
     assert not hasattr(app_module, "_RUNS")

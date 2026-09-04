@@ -71,6 +71,8 @@ discarded when your report renders — not persisted to any database and never s
 when the request ends.)
 Results are saved in this browser tab, not in a server run database. Use “Clear this tab’s results”
 on a shared device; browser session restore or duplicating a tab may preserve a copy.
+Large completed results download as JSON instead of opening the dashboard. If tab storage
+is unavailable, a download is offered so your completed result is not lost.
 </p>
 
 <form action="/reconcile" method="post" enctype="multipart/form-data" id="upload-form">

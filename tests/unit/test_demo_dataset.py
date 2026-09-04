@@ -17,4 +17,6 @@ def test_demo_preserves_payment_methods_in_recon_and_ledger_rows():
             ("card_batch_a", "card", 0),
         )
     }
-    assert {order_id: by_order[order_id] for order_id in expected_methods} == expected_methods
+    for order_id, method in expected_methods.items():
+        assert by_order[order_id] == method
+        assert ledger_methods[order_id] == method

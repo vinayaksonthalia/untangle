@@ -76,13 +76,14 @@ def test_browser_bundle_escapes_script_terminator():
     assert json.loads(json.loads(literal))["metadata"] == "</script><script>alert(1)</script>"
 
 
-def test_browser_bundle_size_limit():
-    from fastapi import HTTPException
-
+def test_large_completed_bundle_downloads_without_truncation():
     from webapp.app import _bundle_response
-    with pytest.raises(HTTPException) as exc:
-        _bundle_response({"version": 1, "mode": "your_run", "x": "a" * (4 * 1024 * 1024)})
-    assert exc.value.status_code == 413
+    bundle = {"version": 1, "mode": "your_run", "x": "a" * (4 * 1024 * 1024)}
+    response = _bundle_response(bundle)
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["content-disposition"] == 'attachment; filename="untangle-results.json"'
+    assert json.loads(response.body) == bundle
 
 
 def test_static_landing_css_revalidates_without_losing_body():
