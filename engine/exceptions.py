@@ -125,4 +125,10 @@ def build_exceptions(
                     "match against the settlement report by hand.",
                     evidence=ev,
                 ))
+    # Attach each exception's structured bank-credit amount (in paise) from its line, so consumers
+    # never have to parse it out of the detail string.
+    for rec in out:
+        line = lines_by_key.get(rec.line_key)
+        if line is not None:
+            rec.amount_paise = line.amount_paise
     return out

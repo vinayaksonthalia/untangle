@@ -338,6 +338,7 @@ def sample_unresolved_cash() -> dict[str, Any]:
         items = [
             {
                 "line_key": exc.get("line_key"),
+                "amount_paise": exc.get("amount_paise"),
                 "reason_code": exc.get("reason_code"),
                 "detail": exc.get("detail"),
                 "suggested_action": exc.get("suggested_action"),
@@ -380,6 +381,7 @@ def list_unresolved_cash(bank_path: str, recon_path: str, ledger_path: str) -> d
         for exc in exceptions:
             items.append({
                 "line_key": exc.get("line_key"),
+                "amount_paise": exc.get("amount_paise"),
                 "reason_code": exc.get("reason_code"),
                 "detail": exc.get("detail"),
                 "suggested_action": exc.get("suggested_action"),

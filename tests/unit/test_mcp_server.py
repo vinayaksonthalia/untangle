@@ -72,6 +72,8 @@ def test_sample_unresolved_cash_needs_no_paths(monkeypatch):
     assert res["ok"] is True and res["mode"] == "demo"
     assert res["unresolved_count"] == len(res["items"]) > 0
     assert res["recovery_summary"]["unresolved_paise"] > 0
+    # each exception carries its own structured amount, not just the aggregate
+    assert all(isinstance(it["amount_paise"], int) and it["amount_paise"] > 0 for it in res["items"])
 
 
 def test_list_unresolved_cash():
