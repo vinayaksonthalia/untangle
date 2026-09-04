@@ -55,6 +55,22 @@ def test_issue_certificate_is_content_hashed_and_verifies_unsigned(monkeypatch):
     assert v["report_binding_valid"] is True
 
 
+def test_non_p256_signing_key_is_rejected(monkeypatch):
+    """Issuer configuration must match the advertised ECDSA P-256 certificate contract."""
+    if not _CRYPTO_AVAILABLE:
+        pytest.skip("cryptography extra not installed")
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    key = ec.generate_private_key(ec.SECP384R1())
+    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    import base64
+    monkeypatch.setenv("UNTANGLE_SIGNING_KEY", base64.b64encode(pem).decode())
+    env = issue_certificate(_report())
+    assert env["signed"] is False
+    assert "signature" not in env
+
+
 def test_attached_unbound_or_different_report_is_not_authenticated(monkeypatch):
     """An attached report must be the exact report used when the envelope was issued."""
     monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)

@@ -57,7 +57,12 @@ def _signing_key():
     if not pem:
         return None
     try:
-        return _ser.load_pem_private_key(base64.b64decode(pem), password=None)
+        key = _ser.load_pem_private_key(base64.b64decode(pem), password=None)
+        # Certificates advertise ECDSA P-256; reject other private-key types/curves rather
+        # than silently changing the issuer algorithm or producing unverifiable envelopes.
+        if not isinstance(key, _ec.EllipticCurvePrivateKey) or not isinstance(key.curve, _ec.SECP256R1):
+            return None
+        return key
     except Exception:
         return None
 
