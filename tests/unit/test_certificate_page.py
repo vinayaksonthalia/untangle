@@ -89,3 +89,42 @@ def test_certificate_initialization_is_per_run_and_cached(monkeypatch):
     assert results == [{"content_sha256": "x"}, {"content_sha256": "x"}]
     assert app_module._run_certificate(run) is results[0]
     assert len(calls) == 1
+
+
+def test_certificate_issuance_does_not_block_other_run_store_access(monkeypatch):
+    """A slow issuance for run A must not hold the process-wide run-store lock."""
+    issuance_started = threading.Event()
+    release_issuance = threading.Event()
+    run_a = {"report": {"id": "a"}}
+    run_b = {"report": {"id": "b"}}
+    errors = []
+
+    def fake_issue(report):
+        if report["id"] == "a":
+            issuance_started.set()
+            assert release_issuance.wait(timeout=3)
+        return {"content_sha256": report["id"]}
+
+    monkeypatch.setattr(app_module, "issue_certificate", fake_issue)
+
+    def issue_a():
+        try:
+            app_module._run_certificate(run_a)
+        except BaseException as exc:  # surface worker failures after join
+            errors.append(exc)
+
+    worker_a = threading.Thread(target=issue_a)
+    worker_a.start()
+    try:
+        assert issuance_started.wait(timeout=2)
+        run_id = app_module._store_run(run_b["report"], {}, "test")
+        stored_b = app_module._current_run(
+            type("Request", (), {"cookies": {"untangle_run": run_id}})()
+        )
+        assert stored_b is not None and stored_b["report"] is run_b["report"]
+        assert app_module._run_certificate(stored_b) == {"content_sha256": "b"}
+    finally:
+        release_issuance.set()
+        worker_a.join(timeout=3)
+    assert not worker_a.is_alive()
+    assert errors == []

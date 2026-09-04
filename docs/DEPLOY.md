@@ -48,7 +48,7 @@ It runs as an unprivileged user and ships no build tooling.
 
 ```bash
 pip install -e ".[web]"
-uvicorn webapp.app:app --port 8080       # -> http://localhost:8080
+uvicorn webapp.app:app --port 8080 --workers 1       # -> http://localhost:8080
 ```
 
 ## Routes
