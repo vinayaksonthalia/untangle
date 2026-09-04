@@ -3,6 +3,8 @@
 **Repository:** `vinayaksonthalia/untangle`  
 **Purpose:** Truth-and-evidence audit establishing the exact support status, provenance, and verification level of bank formats across Untangle.
 
+**Provider documentation source.** The Razorpay settlement-report field grammar that Untangle's fixtures and adapters are modelled on is taken from Razorpay's public settlement documentation — the settlement recon report API (`https://razorpay.com/docs/api/settlements/fetch-recon/`) and the settlement reports reference (`https://razorpay.com/docs/payments/settlements/`). Untangle exercises those published field shapes against **synthetic fixtures**; it does not ingest, store, or claim coverage over any live merchant's Razorpay data.
+
 ---
 
 ## 1. Support Level Taxonomy
