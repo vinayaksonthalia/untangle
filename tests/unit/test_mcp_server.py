@@ -98,6 +98,21 @@ def test_list_unresolved_cash():
     assert any(isinstance(it["amount_paise"], int) and it["amount_paise"] < 0 for it in res["items"])
 
 
+def test_list_unresolved_cash_empty_result(monkeypatch):
+    """Non-failure path: a clean report with zero exceptions yields an empty, well-formed listing
+    (no items, zero recovery totals) — the tool must not fabricate rows or error out."""
+    import mcp_server as m
+
+    monkeypatch.setattr(
+        m, "_get_report", lambda *a, **k: {"exceptions": [], "recovery_plan": {}}
+    )
+    res = list_unresolved_cash(_BANK_PATH, _RECON_PATH, _LEDGER_PATH)
+    assert res["ok"] is True
+    assert res["unresolved_count"] == 0
+    assert res["items"] == []
+    assert res["recovery_summary"]["unresolved_paise"] == 0
+
+
 def test_explain_bank_credit_known_rzp():
     """explain_bank_credit returns verdict, ties, and proof margin for a proven credit."""
     res = explain_bank_credit(_BANK_PATH, _RECON_PATH, _LEDGER_PATH, _KNOWN_RZP_KEY)
