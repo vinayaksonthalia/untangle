@@ -29,7 +29,7 @@ def test_certificate_no_external_resources(client):
     assert "material-symbols-outlined" not in html
 
 
-def test_certificate_residual_rendering_distinguishes_unavailable_zero_and_nonzero():
+def test_certificate_residual_rendering_distinguishes_unavailable_zero_and_nonzero(client):
     html = client.get("/certificate").text
     # Keep all three safety branches present: unavailable is not silently rendered as zero,
     # and only a proven zero receives the green status.
