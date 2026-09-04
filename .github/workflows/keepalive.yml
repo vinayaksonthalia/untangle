@@ -1,0 +1,26 @@
+# Keep the Render free-tier deploy warm so it never cold-starts for a visitor.
+# Render free web services sleep after ~15 min idle; this pings /healthz on a schedule.
+# NOTE: GitHub-scheduled crons can be delayed under load and are disabled after 60 days
+# of repo inactivity — for a demo, a dedicated uptime monitor (e.g. UptimeRobot, 5-min
+# interval on the same /healthz URL) is more reliable. This workflow is a free backup.
+name: keepalive
+on:
+  schedule:
+    - cron: "*/12 * * * *"   # every 12 minutes
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the deployed health endpoint
+        run: |
+          URL="${KEEPALIVE_URL:-https://untangle-073l.onrender.com/healthz}"
+          echo "Pinging $URL"
+          code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 90 "$URL" || echo "000")
+          echo "HTTP $code"
+          # A cold start can take a while; treat any 2xx/3xx as success and don't fail the run otherwise.
+          case "$code" in 2*|3*) echo "awake";; *) echo "warm-up attempted (code $code)";; esac
+        env:
+          KEEPALIVE_URL: ${{ vars.KEEPALIVE_URL }}
