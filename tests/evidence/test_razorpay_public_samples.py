@@ -24,6 +24,8 @@ sign handling** — not a reconciliation-accuracy claim on a real bank statement
 
 from __future__ import annotations
 
+import hashlib
+import io
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import defaultdict
@@ -44,6 +46,11 @@ SAMPLE = (
 )
 
 _NS = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+SAMPLE_SHA256 = "d2a238c7876bbe7b57274edade200a91803cc6964a3e9b3052f312b35caabdbd"
+
+
+class EvidenceIntegrityError(ValueError):
+    """The input is not the reviewed, provenance-pinned public workbook."""
 
 
 def _col_letters(ref: str) -> str:
@@ -52,7 +59,10 @@ def _col_letters(ref: str) -> str:
 
 def _read_xlsx(path: Path) -> list[dict[str, str]]:
     """Parse the first worksheet into a list of {column_letter: value} dicts, stdlib only."""
-    with zipfile.ZipFile(path) as z:
+    snapshot = path.read_bytes()
+    if hashlib.sha256(snapshot).hexdigest() != SAMPLE_SHA256:
+        raise EvidenceIntegrityError("Razorpay sample SHA-256 does not match pinned provenance")
+    with zipfile.ZipFile(io.BytesIO(snapshot)) as z:
         shared: list[str] = []
         if "xl/sharedStrings.xml" in z.namelist():
             st = ET.fromstring(z.read("xl/sharedStrings.xml"))
@@ -77,6 +87,36 @@ def _read_xlsx(path: Path) -> list[dict[str, str]]:
                 cells[_col_letters(c.get("r"))] = val
             rows.append(cells)
     return rows
+
+
+def test_sample_digest_matches_documented_provenance():
+    assert SAMPLE_SHA256 in SAMPLE.with_name("SOURCES.md").read_text()
+    assert _read_xlsx(SAMPLE)
+
+
+@pytest.mark.parametrize("replacement", [b"replaced workbook", b""])
+def test_modified_sample_rejected_before_zip_parsing(monkeypatch, replacement):
+    monkeypatch.setattr(Path, "read_bytes", lambda self: replacement)
+
+    def must_not_parse(*args, **kwargs):
+        pytest.fail("untrusted workbook reached ZIP parser")
+
+    monkeypatch.setattr(zipfile, "ZipFile", must_not_parse)
+    with pytest.raises(EvidenceIntegrityError, match="SHA-256"):
+        _read_xlsx(SAMPLE)
+
+
+def test_sample_is_read_once_and_same_snapshot_is_parsed(monkeypatch):
+    original = SAMPLE.read_bytes()
+    calls = []
+
+    def changing_file(self):
+        calls.append(self)
+        return original if len(calls) == 1 else b"replacement after verification"
+
+    monkeypatch.setattr(Path, "read_bytes", changing_file)
+    assert _read_xlsx(SAMPLE)
+    assert calls == [SAMPLE]
 
 
 def _paise(v: str | None, *, required: bool = False, field: str = "value") -> int:

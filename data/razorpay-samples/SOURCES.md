@@ -30,6 +30,12 @@ for the GST-on-fee schedule.
 
 ## What is checked against it
 
+The evidence loader enforces the SHA-256 above before opening the ZIP/XML workbook.
+It hashes and parses the same immutable byte snapshot. A missing or changed fixture
+fails rather than silently becoming new ground truth; updating the pinned digest
+requires a reviewed provenance update. Tests cover rejected replacements and
+single-read snapshot ownership as well as the original workbook.
+
 `tests/evidence/test_razorpay_public_samples.py` (no network, no API key, no extra
 dependency — parsed with the Python standard library) loads this file through
 untangle's own `ReconRow` model and `SettlementIndex`, and asserts:
