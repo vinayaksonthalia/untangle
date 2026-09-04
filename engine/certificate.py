@@ -50,26 +50,39 @@ def _canonical(obj: Any) -> bytes:
 
 
 def _signing_key():
-    """Load the ECDSA private key from the env (base64 PEM), or None if unavailable/unset."""
-    if not _CRYPTO_AVAILABLE:
-        return None
+    """Load the configured ECDSA P-256 key; fail closed on invalid configuration."""
     pem = os.environ.get(_SIGNING_KEY_ENV)
     if not pem:
         return None
+    if not _CRYPTO_AVAILABLE:
+        raise RuntimeError(
+            "UNTANGLE_SIGNING_KEY is configured but certificate signing support is unavailable"
+        )
     try:
-        return _ser.load_pem_private_key(base64.b64decode(pem), password=None)
-    except Exception:
-        return None
+        pem_bytes = base64.b64decode(pem, validate=True)
+    except Exception as exc:
+        raise ValueError("UNTANGLE_SIGNING_KEY must be valid base64") from exc
+    try:
+        key = _ser.load_pem_private_key(pem_bytes, password=None)
+    except Exception as exc:
+        raise ValueError(
+            "UNTANGLE_SIGNING_KEY must contain a valid unencrypted PEM private key"
+        ) from exc
+    # Certificates advertise ECDSA P-256; reject other private-key types/curves rather
+    # than silently changing the issuer algorithm or producing unverifiable envelopes.
+    if not isinstance(key, _ec.EllipticCurvePrivateKey) or not isinstance(key.curve, _ec.SECP256R1):
+        raise ValueError("UNTANGLE_SIGNING_KEY must contain an ECDSA P-256 private key")
+    return key
 
 
 def generate_signing_key() -> str:
     """Mint a new base64-PEM ECDSA (P-256) private key to store in $UNTANGLE_SIGNING_KEY."""
     if not _CRYPTO_AVAILABLE:
-        raise RuntimeError("Signing requires the optional 'crypto' extra: pip install 'untangle[crypto]'")
+        raise RuntimeError(
+            "Signing requires the optional 'crypto' extra: pip install 'untangle[crypto]'"
+        )
     key = _ec.generate_private_key(_ec.SECP256R1())
-    pem = key.private_bytes(
-        _ser.Encoding.PEM, _ser.PrivateFormat.PKCS8, _ser.NoEncryption()
-    )
+    pem = key.private_bytes(_ser.Encoding.PEM, _ser.PrivateFormat.PKCS8, _ser.NoEncryption())
     return base64.b64encode(pem).decode()
 
 
@@ -78,9 +91,11 @@ def public_key_pem() -> str | None:
     key = _signing_key()
     if key is None:
         return None
-    return key.public_key().public_bytes(
-        _ser.Encoding.PEM, _ser.PublicFormat.SubjectPublicKeyInfo
-    ).decode()
+    return (
+        key.public_key()
+        .public_bytes(_ser.Encoding.PEM, _ser.PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
 
 
 def issue_certificate(report: dict) -> dict:
@@ -168,7 +183,9 @@ def verify_certificate(payload: dict) -> dict:
     # Evidence pack provenance check for schema 1.1.0 vs legacy certificates
     cert_schema = cert.get("certificate_schema_version")
     cert_pack = cert.get("evidence_pack")
-    is_schema_1_1 = cert_schema == "1.1.0" or (isinstance(cert_pack, dict) and "schema_version" in cert_pack)
+    is_schema_1_1 = cert_schema == "1.1.0" or (
+        isinstance(cert_pack, dict) and "schema_version" in cert_pack
+    )
     if is_schema_1_1:
         pack_valid = (
             isinstance(cert_pack, dict)
@@ -197,7 +214,9 @@ def verify_certificate(payload: dict) -> dict:
                 and hashlib.sha256(_canonical(embedded_report)).hexdigest() == expected_report_hash
             )
             # Guardrail: attached report's evidence-pack identity MUST match certificate's evidence-pack identity
-            report_cfg = embedded_report.get("config", {}) if isinstance(embedded_report, dict) else {}
+            report_cfg = (
+                embedded_report.get("config", {}) if isinstance(embedded_report, dict) else {}
+            )
             report_pack = report_cfg.get("evidence_pack")
             report_schema = report_cfg.get("report_schema_version")
             # Schema-less reports are legacy only when genuinely unbound. Hybrid metadata must
@@ -223,7 +242,7 @@ def verify_certificate(payload: dict) -> dict:
 
     ok = (
         hash_matches
-        and (sig is None or signature_valid is True)     # a claimed signature must be valid
+        and (sig is None or signature_valid is True)  # a claimed signature must be valid
         and (report_binding_valid is not False)
         and (packets_passed is None or packets_passed == packets_verified)
         and pack_valid
@@ -289,12 +308,16 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
     # Verification block (using verify_report)
     verification_results = verify_report(report)
     # Count packet verification (excluding report-level checks)
-    packet_results = [r for r in verification_results if not r.packet_line_key.startswith("report:")]
+    packet_results = [
+        r for r in verification_results if not r.packet_line_key.startswith("report:")
+    ]
     packets_verified = len(packet_results)
     packets_passed = sum(1 for r in packet_results if r.ok)
 
     # Cross-check audit_root format result
-    audit_res = next((r for r in verification_results if r.packet_line_key == "report:audit_root"), None)
+    audit_res = next(
+        (r for r in verification_results if r.packet_line_key == "report:audit_root"), None
+    )
     audit_root_valid = audit_res.ok if audit_res else False
 
     engine_version = config.get("engine_version", "1.1.0")
@@ -310,6 +333,7 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
         raise ValueError("Schema 1.1.0 report must carry evidence-pack provenance")
     if cert_schema == "1.1.0":
         from engine.packs import PackError, resolve_pack_provenance
+
         try:
             resolve_pack_provenance(evidence_pack)
         except PackError as exc:
@@ -358,7 +382,9 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
 
 def main() -> None:
     """CLI entry point for close certificate generation."""
-    parser = argparse.ArgumentParser(description="Generate period close certificate from report JSON")
+    parser = argparse.ArgumentParser(
+        description="Generate period close certificate from report JSON"
+    )
     parser.add_argument("--run", required=True, help="Path to report JSON")
     args = parser.parse_args()
 
