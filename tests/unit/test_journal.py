@@ -118,6 +118,14 @@ def test_journal_json_tally_preserves_integer_paise():
     assert "123456789012345.67" in xml
 
 
+def test_journal_json_tally_preserves_ordinary_two_decimal_amount():
+    xml = journal_json_to_tally_xml([{"ref": "ordinary", "date": "20260101", "lines": [
+        {"ledger": "Bank", "debit_inr": "0", "credit_inr": "1234.56"},
+        {"ledger": "Offset", "debit_inr": "1234.56", "credit_inr": "0"},
+    ]}])
+    assert "1234.56" in xml
+
+
 def test_tally_xml_strips_xml_illegal_control_chars():
     """Qodo: uploaded settlement id/UTR with XML-1.0-forbidden control characters must not produce a
     non-well-formed Tally download — illegal code points are stripped before serialization."""
