@@ -36,11 +36,15 @@ untangle's own `ReconRow` model and `SettlementIndex`, and asserts:
 
 1. **Per-row money identity** — for every payment `credit == amount − fee − tax` with
    `debit == 0`; for every refund `debit == amount` with `credit == 0`.
-2. **Per-settlement closure** — independently derives each expected net from the
-   payment amount/fee/tax columns minus refund amount (not from credit/debit), then
+2. **Per-settlement cross-column consistency** — independently reads each expected net from the
+   raw workbook payment amount/fee/tax columns minus refund amount (not from mapped
+   `ReconRow` fields or credit/debit), then
    asserts `SettlementIndex.net_by_sid[sid]` matches to the paise. This cross-column
    check includes the settlement whose members include a refund (money **out**, a
    debit — the sign trap that fools naive "amount ≈ total" matchers).
+   Negative controls corrupt payment credit and refund debit by one paise and verify
+   that the comparison detects both errors. This is not verification against a
+   separately published settlement-level total or a bank statement.
 3. **Money conservation** — every amount is an exact integer number of paise; no
    fractional paise is introduced anywhere in the load.
 
