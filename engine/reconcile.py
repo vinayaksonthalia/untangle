@@ -18,13 +18,16 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from engine.bounded_subsets import find_bounded_subsets, find_legacy_subsets
 from engine.covered import canonical_row_ids
 from engine.evidence import extract_utr_tokens
 from engine.models import BankCreditLine, Rail, RailAttribution, ReconciliationResult, ReconRow
 
 _DRIFT_TOLERANCE_PAISE = 100      # ≤ ₹1 residual counts as balanced (labelled rounding drift)
-_SETSUM_MAX_TERMS = 3
+_SETSUM_MAX_TERMS = 5
 _SETSUM_MAX_CANDIDATES = 200     # candidate pool size up to N=200 per Phase 2
+_SETSUM_EXPANSION_MAX_CANDIDATES = 16
+_SETSUM_MAX_COMBINATIONS = 100_000
 _DATE_WINDOW_DAYS = 5
 
 
@@ -54,6 +57,7 @@ class SettlementIndex:
         for sid, n in self.net_by_sid.items():
             self.net_to_sids.setdefault(n, []).append(sid)
         self.ambiguous_lines: set[str] = set()
+        self.un_enumerable_lines: set[str] = set()
         self.duplicate_or_split_lines: set[str] = set()
         self.unbalanced_lines: dict[str, int] = {}
         self.uncredited_sids: set[str] = set()
@@ -73,11 +77,13 @@ class SettlementIndex:
     def amount_or_setsum_sids(
         self, line: BankCreditLine, used_sids: set[str] | None = None
     ) -> list[str]:
-        """A single settlement net (date-windowed) or a bounded, windowed set-sum, or [].
+        """A single settlement net or bounded windowed set-sum, or [].
 
-        Enumerates ALL satisfying subsets (tolerance 0).
-        If >1 distinct subset of settlement_ids satisfies the amount, abstains (returns [])
-        and records the line in ambiguous_lines (G2/FR-003).
+        The established 2–3-term search remains exact for up to 200 candidates. The
+        4–5-term expansion runs only for pools of up to 16 candidates and is exact
+        within its explicit combination budget. If >1 distinct subset satisfies the
+        amount, abstains (returns []) and records the line in ambiguous_lines
+        (G2/FR-003).
         """
         used = used_sids or set()
         satisfying_subsets: list[list[str]] = []
@@ -99,48 +105,25 @@ class SettlementIndex:
             if sid not in used and 0 < n < line.amount_paise and self._within_window(sid, line)
         ]
         if cands and len(cands) <= _SETSUM_MAX_CANDIDATES:
-            val_to_sids: dict[int, list[str]] = defaultdict(list)
-            for sid, n in cands:
-                val_to_sids[n].append(sid)
-
-            # 2-term sum
-            for i in range(len(cands)):
-                sid_i, n_i = cands[i]
-                rem = line.amount_paise - n_i
-                if rem in val_to_sids:
-                    for sid_j in val_to_sids[rem]:
-                        if sid_j > sid_i:
-                            sub = frozenset([sid_i, sid_j])
-                            if sub not in seen_subsets:
-                                seen_subsets.add(sub)
-                                satisfying_subsets.append([sid_i, sid_j])
-                                if len(satisfying_subsets) > 1:
-                                    break
-                if len(satisfying_subsets) > 1:
-                    break
-
-            # 3-term sum
-            if len(satisfying_subsets) <= 1:
-                for i in range(len(cands)):
-                    sid_i, n_i = cands[i]
-                    for j in range(i + 1, len(cands)):
-                        sid_j, n_j = cands[j]
-                        rem = line.amount_paise - n_i - n_j
-                        if rem <= 0:
-                            continue
-                        if rem in val_to_sids:
-                            for sid_k in val_to_sids[rem]:
-                                if sid_k > sid_j:
-                                    sub = frozenset([sid_i, sid_j, sid_k])
-                                    if sub not in seen_subsets:
-                                        seen_subsets.add(sub)
-                                        satisfying_subsets.append([sid_i, sid_j, sid_k])
-                                        if len(satisfying_subsets) > 1:
-                                            break
-                        if len(satisfying_subsets) > 1:
-                            break
-                    if len(satisfying_subsets) > 1:
-                        break
+            if len(cands) <= _SETSUM_EXPANSION_MAX_CANDIDATES:
+                search = find_bounded_subsets(
+                    cands,
+                    line.amount_paise,
+                    max_terms=_SETSUM_MAX_TERMS,
+                    max_items=_SETSUM_EXPANSION_MAX_CANDIDATES,
+                    max_combinations=_SETSUM_MAX_COMBINATIONS,
+                    sort_items=False,
+                )
+            else:
+                search = find_legacy_subsets(cands, line.amount_paise)
+            if search.exhausted:
+                self.un_enumerable_lines.add(line.key)
+                return []
+            for subset in search.subsets:
+                frozen = frozenset(subset)
+                if frozen not in seen_subsets:
+                    seen_subsets.add(frozen)
+                    satisfying_subsets.append(list(subset))
 
         if len(satisfying_subsets) > 1:
             self.ambiguous_lines.add(line.key)

@@ -11,6 +11,7 @@ import pytest
 
 from engine.certificate import (
     _CRYPTO_AVAILABLE,
+    _signing_key,
     build_close_certificate,
     generate_signing_key,
     issue_certificate,
@@ -20,7 +21,13 @@ from engine.service import reconcile
 
 
 def _report():
-    return reconcile("data/bank_statement.csv", "data/recon_report.json", "data/order_ledger.csv", no_ai=True, seed=42)
+    return reconcile(
+        "data/bank_statement.csv",
+        "data/recon_report.json",
+        "data/order_ledger.csv",
+        no_ai=True,
+        seed=42,
+    )
 
 
 def test_cli_emits_content_hashed_verifiable_envelope(tmp_path, monkeypatch):
@@ -31,7 +38,9 @@ def test_cli_emits_content_hashed_verifiable_envelope(tmp_path, monkeypatch):
     report_path.write_text(json.dumps(_report()), encoding="utf-8")
     proc = subprocess.run(
         [sys.executable, "-m", "engine.certificate", "--run", str(report_path)],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     env = json.loads(proc.stdout)
     assert len(env["content_sha256"]) == 64  # envelope, not the raw certificate body
@@ -53,6 +62,41 @@ def test_issue_certificate_is_content_hashed_and_verifies_unsigned(monkeypatch):
     assert v["authenticated"] is False
     assert v["packets_passed"] == v["packets_verified"] > 0
     assert v["report_binding_valid"] is True
+
+
+def test_non_p256_signing_key_is_rejected(monkeypatch):
+    """Issuer configuration must match the advertised ECDSA P-256 certificate contract."""
+    if not _CRYPTO_AVAILABLE:
+        pytest.skip("cryptography extra not installed")
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    key = ec.generate_private_key(ec.SECP384R1())
+    pem = key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    )
+    import base64
+
+    monkeypatch.setenv("UNTANGLE_SIGNING_KEY", base64.b64encode(pem).decode())
+    with pytest.raises(ValueError, match="ECDSA P-256"):
+        _signing_key()
+
+
+def test_malformed_signing_key_is_rejected(monkeypatch):
+    monkeypatch.setenv("UNTANGLE_SIGNING_KEY", "not-base64-pem")
+    expected = (ValueError, RuntimeError) if not _CRYPTO_AVAILABLE else (ValueError,)
+    with pytest.raises(expected):
+        _signing_key()
+
+
+def test_base64_encoded_non_pem_signing_key_is_rejected(monkeypatch):
+    if not _CRYPTO_AVAILABLE:
+        pytest.skip("cryptography extra not installed")
+    import base64
+
+    monkeypatch.setenv("UNTANGLE_SIGNING_KEY", base64.b64encode(b"not a PEM key").decode())
+    with pytest.raises(ValueError, match="valid unencrypted PEM private key"):
+        _signing_key()
 
 
 def test_attached_unbound_or_different_report_is_not_authenticated(monkeypatch):
@@ -113,6 +157,7 @@ def test_signed_certificate_rejects_replaced_report_even_if_outer_fields_are_rep
     """The report digest must be inside the issuer-signed certificate body."""
     if not _CRYPTO_AVAILABLE:
         import pytest
+
         pytest.skip("cryptography extra not installed")
     monkeypatch.setenv("UNTANGLE_SIGNING_KEY", generate_signing_key())
     original = _report()
@@ -156,6 +201,7 @@ def test_content_hash_is_deterministic(monkeypatch):
 def test_signed_certificate_verifies_and_forgery_is_detected(monkeypatch):
     if not _CRYPTO_AVAILABLE:
         import pytest
+
         pytest.skip("cryptography extra not installed")
     monkeypatch.setenv("UNTANGLE_SIGNING_KEY", generate_signing_key())
     env = issue_certificate(_report())
@@ -173,8 +219,11 @@ def test_signed_certificate_verifies_and_forgery_is_detected(monkeypatch):
 def test_hashless_or_mismatched_certificate_is_rejected(monkeypatch):
     """Qodo #11: an envelope with no content hash (or a wrong one) must never be reported authentic."""
     monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
-    assert verify_certificate({"certificate": {"summary": "x"}})["ok"] is False       # no hash
-    assert verify_certificate({"certificate": {"summary": "x"}, "content_sha256": "deadbeef"})["ok"] is False
+    assert verify_certificate({"certificate": {"summary": "x"}})["ok"] is False  # no hash
+    assert (
+        verify_certificate({"certificate": {"summary": "x"}, "content_sha256": "deadbeef"})["ok"]
+        is False
+    )
 
 
 def test_claimed_signature_that_cannot_be_authenticated_is_invalid(monkeypatch):
@@ -182,6 +231,7 @@ def test_claimed_signature_that_cannot_be_authenticated_is_invalid(monkeypatch):
     key (here: no issuer key configured) must be invalid, never a passthrough None."""
     if not _CRYPTO_AVAILABLE:
         import pytest
+
         pytest.skip("cryptography extra not installed")
     monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)  # no issuer key
     env = issue_certificate(_report())
@@ -196,6 +246,7 @@ def test_forgery_with_attacker_supplied_key_is_rejected(monkeypatch):
     authentication is against untangle's pinned issuer key, not a key inside the envelope."""
     if not _CRYPTO_AVAILABLE:
         import pytest
+
         pytest.skip("cryptography extra not installed")
     import base64 as _b64
 
@@ -214,9 +265,9 @@ def test_forgery_with_attacker_supplied_key_is_rejected(monkeypatch):
         "content_sha256": __import__("hashlib").sha256(body).hexdigest(),  # correct hash
         "signed": True,
         "signature": _b64.b64encode(attacker.sign(body, _e.ECDSA(_h.SHA256()))).decode(),
-        "public_key_pem": attacker.public_key().public_bytes(
-            _s.Encoding.PEM, _s.PublicFormat.SubjectPublicKeyInfo
-        ).decode(),
+        "public_key_pem": attacker.public_key()
+        .public_bytes(_s.Encoding.PEM, _s.PublicFormat.SubjectPublicKeyInfo)
+        .decode(),
     }
     v = verify_certificate(forged)  # verified against the ISSUER key, not the embedded attacker key
     assert v["signature_valid"] is False
@@ -296,4 +347,6 @@ def test_certificate_cli_execution(tmp_path):
     body = out_data["certificate"]
     assert "summary" in body
     assert "verification" in body
-    assert body["proven_razorpay_count"] == report["totals"]["by_rail_count"].get("razorpay_settlement", 0)
+    assert body["proven_razorpay_count"] == report["totals"]["by_rail_count"].get(
+        "razorpay_settlement", 0
+    )

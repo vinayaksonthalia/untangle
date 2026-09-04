@@ -4,7 +4,8 @@ Tier A  — exact evidence (a UTR token equal to a settlement_utr) → razorpay_
 Tier B  — scored combination of weak evidence (narration keywords, amount correlation,
           value-date proximity, brand+context) → highest-scoring rail, or UNKNOWN.
 Tier C  — bounded set-sum: for razorpay-looking credits whose amount is not a single
-          settlement net, try summing 2–3 settlement nets inside the value-date window
+          settlement net, try summing 2–5 settlement nets inside the value-date window
+          for a small pool, otherwise preserve the exact 2–3-term contract
           (merge/carry-forward). Abstain on ambiguity or blow-up.
 
 Precision-first (constitution IV): a Razorpay verdict may only outrank a competing
@@ -15,9 +16,9 @@ that is exactly the decoy trap the benchmark sets.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from itertools import combinations
 
+from engine.bounded_subsets import find_bounded_subsets, find_legacy_subsets
 from engine.challenger import challenge_razorpay
 from engine.evidence import (
     ReconIndex,
@@ -34,8 +35,10 @@ _HARD_RZP_SIGNALS = {"utr_exact", "utr_suffix", "setsum"}
 # tie; a brand word, the Razorpay IFSC, a UTR-shaped-but-unlisted token (settlement_ref), and
 # value_date_proximity are corroboration only and can never decide the verdict alone.
 _RZP_TIE_SIGNALS = {"utr_exact", "utr_suffix", "setsum", "amount_corr"}
-_SETSUM_MAX_TERMS = 3
+_SETSUM_MAX_TERMS = 5
 _SETSUM_MAX_CANDIDATES = 200  # candidate pool size up to N=200 per Phase 2
+_SETSUM_EXPANSION_MAX_CANDIDATES = 16
+_SETSUM_MAX_COMBINATIONS = 100_000
 
 _SIGNAL_CHANNELS = {
     "utr_exact": "identifier",
@@ -84,11 +87,12 @@ def _combine(items: list[EvidenceItem]) -> float:
 
 
 def _setsum_evidence(line: BankCreditLine, index: ReconIndex) -> list[EvidenceItem] | None:
-    """Try to explain the credit as a sum of 2–3 settlement nets within the date window.
+    """Try to explain the credit as a sum of 2–5 settlement nets within the date window.
 
-    Enumerates ALL satisfying subsets (tolerance 0, candidate pool up to N=200).
-    If >1 distinct subset of settlement_ids satisfies the amount, returns an EvidenceItem
-    with signal 'multiple_satisfying_subsets' so the caller can abstain (G2/FR-003).
+    The established 2–3-term search remains exact for the normal candidate pool of up
+    to 200 settlements. The 4–5-term expansion is exact only for pools of up to 16
+    candidates, with an explicit combination budget; larger pools use the legacy
+    2–3-term contract rather than treating unsearched larger subsets as exhaustion.
     """
     if not line.is_credit:
         return None
@@ -104,59 +108,34 @@ def _setsum_evidence(line: BankCreditLine, index: ReconIndex) -> list[EvidenceIt
         return None
 
     satisfying_subsets: list[tuple[str, ...]] = []
-    seen: set[frozenset[str]] = set()
-
-    # Check if any single settlement equals target in date window
     for sid in index.net_to_settlements.get(target, []):
         d = index.settlement_date.get(sid)
         if d is not None and abs((line.value_date - d).days) <= 5:
-            subset = frozenset([sid])
-            if subset not in seen:
-                seen.add(subset)
-                satisfying_subsets.append((sid,))
+            satisfying_subsets.append((sid,))
 
-    val_to_sids: dict[int, list[str]] = defaultdict(list)
-    for sid, n in cands:
-        val_to_sids[n].append(sid)
-
-    # 2-term sum (fast dictionary lookup)
-    for i in range(len(cands)):
-        sid_i, n_i = cands[i]
-        rem = target - n_i
-        if rem in val_to_sids:
-            for sid_j in val_to_sids[rem]:
-                if sid_j > sid_i:
-                    sub = frozenset([sid_i, sid_j])
-                    if sub not in seen:
-                        seen.add(sub)
-                        satisfying_subsets.append(tuple(sorted(sub)))
-                        if len(satisfying_subsets) > 1:
-                            break
-        if len(satisfying_subsets) > 1:
-            break
-
-    # 3-term sum (fast dictionary lookup)
-    if len(satisfying_subsets) <= 1:
-        for i in range(len(cands)):
-            sid_i, n_i = cands[i]
-            for j in range(i + 1, len(cands)):
-                sid_j, n_j = cands[j]
-                rem = target - n_i - n_j
-                if rem <= 0:
-                    continue
-                if rem in val_to_sids:
-                    for sid_k in val_to_sids[rem]:
-                        if sid_k > sid_j:
-                            sub = frozenset([sid_i, sid_j, sid_k])
-                            if sub not in seen:
-                                seen.add(sub)
-                                satisfying_subsets.append(tuple(sorted(sub)))
-                                if len(satisfying_subsets) > 1:
-                                    break
-                if len(satisfying_subsets) > 1:
-                    break
-            if len(satisfying_subsets) > 1:
-                break
+    if len(cands) <= _SETSUM_EXPANSION_MAX_CANDIDATES:
+        search = find_bounded_subsets(
+            cands,
+            target,
+            max_terms=_SETSUM_MAX_TERMS,
+            max_items=_SETSUM_EXPANSION_MAX_CANDIDATES,
+            max_combinations=_SETSUM_MAX_COMBINATIONS,
+            sort_items=False,
+        )
+    else:
+        search = find_legacy_subsets(cands, target)
+    if search.exhausted:
+        return [
+            EvidenceItem(
+                "setsum_unenumerable",
+                f"bounded set-sum combination budget exceeded while checking {len(cands)} settlements",
+                0.0,
+            )
+        ]
+    # Attribute evidence historically rendered settlement IDs in canonical order;
+    # keep that presentation stable even though the legacy matcher preserves its
+    # original candidate traversal order for reconciliation row ordering.
+    satisfying_subsets.extend(tuple(sorted(subset)) for subset in search.subsets)
 
     if len(satisfying_subsets) > 1:
         return [
@@ -280,6 +259,17 @@ def attribute_line(
     tier_used = Tier.B
     if not rzp_hard:
         setsum = _setsum_evidence(line, index)
+        # An incomplete bounded search is never a proof. Keep distinctive competing
+        # rails eligible, but do not allow an unfinished set-sum to create a Razorpay tie.
+        if setsum and any(e.signal == "setsum_unenumerable" for e in setsum) and not non_rzp:
+            return RailAttribution(
+                line.key,
+                Rail.UNKNOWN.value,
+                0.0,
+                Tier.NONE.value,
+                rzp_ev + setsum,
+                abstained=True,
+            )
         # If setsum is ambiguous (multiple satisfying subsets), must abstain per G2/FR-003
         if setsum and any(e.signal == "multiple_satisfying_subsets" for e in setsum):
             if not non_rzp:
@@ -370,7 +360,11 @@ _STRONG_RZP_SIGNALS = {"ifsc_ratn", "utr_suffix"}
 def _all_sum_subsets(
     items: list[BankCreditLine], target: int, tol: int, max_legs: int
 ) -> list[tuple[BankCreditLine, ...]]:
-    """Every DISTINCT subset of 2..max_legs credits whose amounts sum to `target` (±tol)."""
+    """Every DISTINCT subset of 2..max_legs credits whose amounts sum to `target` (±tol).
+
+    Split-leg reconstruction intentionally remains on its existing 2–3-leg bounded
+    contract; settlement aggregation above uses resource-bounded exact combinations.
+    """
     out: list[tuple[BankCreditLine, ...]] = []
     seen: set[frozenset[str]] = set()
     for k in range(2, max_legs + 1):

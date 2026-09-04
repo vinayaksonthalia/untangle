@@ -139,8 +139,11 @@ dominates; capped at 0.99).
   narration keywords (PayU/Delhivery/@ybl/…), amount-equals-a-settlement-net, value-date
   proximity, Razorpay brand/IFSC identity. Highest-scoring rail wins **if** it clears τ.
 - **Tier C — bounded set-sum.** For a Razorpay-looking credit whose amount isn't a single
-  settlement net, try summing 2–3 settlement nets within the date window (merge /
-  carry-forward). Bounded (≤3 terms, ≤40 candidates) — abstain rather than explode.
+  settlement net, try summing settlement nets within the date window (merge / carry-forward).
+  The established exact 2–3-term search remains available for up to 200 candidates. An
+  exact 4–5-term expansion is enabled only when the candidate pool is ≤16, with a fixed
+  combination budget; ambiguity or budget overflow abstains rather than guessing. Split-
+  bank-credit reconstruction remains a separate 2–3-leg contract.
 
 **Two guards that protect precision (both added after the audit):**
 1. *Coincidental-amount guard:* a Razorpay verdict needs a **substantive** signal (UTR,

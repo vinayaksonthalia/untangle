@@ -99,6 +99,8 @@ def test_single_verdict_and_line_key_conservation(eval_result):
     assert invariants.line_key_conservation
     assert eval_result.aggregate_metrics["n_bank_lines"] == 826
     assert eval_result.aggregate_metrics["attributed"] + eval_result.aggregate_metrics["abstained"] == 826
+    assert eval_result.aggregate_metrics["reconciled_count"] == 245
+    assert eval_result.aggregate_metrics["reconciled_paise"] == 430439847
 
 
 def test_ambiguous_cases_remain_abstained(eval_result):
