@@ -100,7 +100,7 @@
 
   (async function(){
     let p;
-    try { const r = await fetch('/api/presentation/current'); p = r.ok ? await r.json() : {mode:'empty'}; }
+    try { const r = await untangleFetch('/api/presentation/current'); p = r.ok ? await r.json() : {mode:'empty'}; }
     catch(e) { p = {mode:'empty'}; }
     $('toolbar').hidden = false;
     if (!p || p.mode === 'empty') { $('empty').hidden = false; $('dl-json').style.display='none'; return; }

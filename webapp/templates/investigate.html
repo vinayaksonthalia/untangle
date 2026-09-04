@@ -296,7 +296,7 @@ Deterministic core · the LLM writes the explanation, never the numbers. Every s
 
   async function load() {
     try {
-      const r = await fetch('/api/investigations/current');
+      const r = await untangleFetch('/api/investigations/current');
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const p = await r.json();
       if (!p || p.mode === 'empty') { emptyState('untangle holds no run by default. Reconcile your files or load the sample to see root-cause investigations.'); return; }

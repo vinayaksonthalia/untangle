@@ -69,6 +69,8 @@ and your order ledger. They're sent to untangle's <code>/reconcile</code> endpoi
 discarded when your report renders — not persisted to any database and never sent to a third party.
 (A large multipart upload may be briefly spooled to a temporary file by the server, which is removed
 when the request ends.)
+Results are saved in this browser tab, not in a server run database. Use “Clear this tab’s results”
+on a shared device; browser session restore or duplicating a tab may preserve a copy.
 </p>
 
 <form action="/reconcile" method="post" enctype="multipart/form-data" id="upload-form">
