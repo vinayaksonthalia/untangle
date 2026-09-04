@@ -48,6 +48,14 @@ def test_try_sample_redirect_contract():
     assert "untangle_run=" in r.headers["set-cookie"]
 
 
+def test_run_cookie_secure_only_for_https():
+    https_client = TestClient(app, base_url="https://testserver", raise_server_exceptions=False)
+    secure = https_client.get("/try-sample", follow_redirects=False).headers["set-cookie"]
+    assert "Secure" in secure
+    local = client.get("/try-sample", follow_redirects=False).headers["set-cookie"]
+    assert "Secure" not in local
+
+
 def test_api_reconcile_happy_path():
     r = client.post("/api/reconcile", files=_files())
     assert r.status_code == 200
