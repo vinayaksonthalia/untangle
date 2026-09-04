@@ -23,22 +23,8 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Ping the deployed health endpoint
-        run: |
-          URL="${KEEPALIVE_URL:-https://untangle-073l.onrender.com/healthz}"
-          echo "Pinging $URL"
-          # A cold start can take a while, so retry a few times before giving up.
-          # Any 2xx/3xx = awake. If every attempt fails (transport error -> 000,
-          # or a 4xx/5xx), the endpoint is genuinely unreachable: fail the run so
-          # the broken deploy surfaces instead of a silently-green keepalive.
-          code=000
-          for attempt in 1 2 3; do
-            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 90 "$URL" || echo "000")
-            echo "attempt $attempt: HTTP $code"
-            case "$code" in 2*|3*) echo "awake"; exit 0;; esac
-            [ "$attempt" -lt 3 ] && sleep 20
-          done
-          echo "::error::keepalive could not reach $URL after 3 attempts (last code $code)"
-          exit 1
+        run: bash scripts/keepalive_ping.sh
         env:
           KEEPALIVE_URL: ${{ vars.KEEPALIVE_URL }}
