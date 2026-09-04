@@ -196,6 +196,9 @@ class ExceptionRecord:
     reason_code: str
     detail: str
     suggested_action: str
+    # The bank credit's rupee value in paise, so a consumer (UI / MCP agent) gets each
+    # exception's amount as structured data, not only inside the human-readable detail string.
+    amount_paise: int | None = None
     evidence: list[EvidenceItem] = field(default_factory=list)
 
     def to_dict(self) -> dict:
