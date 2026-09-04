@@ -8,7 +8,12 @@ from datetime import datetime
 from engine.attribute import attribute_all
 from engine.evidence import ReconIndex
 from engine.ingest import load_bank, load_recon
-from engine.journal import build_journal_entries, journal_json_to_tally_xml, to_journal_json, to_tally_xml
+from engine.journal import (
+    build_journal_entries,
+    journal_json_to_tally_xml,
+    to_journal_json,
+    to_tally_xml,
+)
 from engine.models import ReconciliationResult, ReconRow
 from engine.reconcile import reconcile
 
