@@ -78,11 +78,11 @@ def _signing_key():
 def generate_signing_key() -> str:
     """Mint a new base64-PEM ECDSA (P-256) private key to store in $UNTANGLE_SIGNING_KEY."""
     if not _CRYPTO_AVAILABLE:
-        raise RuntimeError(
-            "Signing requires the optional 'crypto' extra: pip install 'untangle[crypto]'"
-        )
+        raise RuntimeError("Signing requires the optional 'crypto' extra: pip install 'untangle[crypto]'")
     key = _ec.generate_private_key(_ec.SECP256R1())
-    pem = key.private_bytes(_ser.Encoding.PEM, _ser.PrivateFormat.PKCS8, _ser.NoEncryption())
+    pem = key.private_bytes(
+        _ser.Encoding.PEM, _ser.PrivateFormat.PKCS8, _ser.NoEncryption()
+    )
     return base64.b64encode(pem).decode()
 
 
@@ -91,11 +91,9 @@ def public_key_pem() -> str | None:
     key = _signing_key()
     if key is None:
         return None
-    return (
-        key.public_key()
-        .public_bytes(_ser.Encoding.PEM, _ser.PublicFormat.SubjectPublicKeyInfo)
-        .decode()
-    )
+    return key.public_key().public_bytes(
+        _ser.Encoding.PEM, _ser.PublicFormat.SubjectPublicKeyInfo
+    ).decode()
 
 
 def issue_certificate(report: dict) -> dict:
@@ -144,7 +142,10 @@ def verify_certificate(payload: dict) -> dict:
     if not isinstance(payload, dict):
         return {"ok": False, "error": "payload is not a dict"}
     cert = payload.get("certificate") if isinstance(payload.get("certificate"), dict) else payload
-    body = _canonical(cert)
+    try:
+        body = _canonical(cert)
+    except Exception:
+        return {"ok": False, "error": "certificate body is not canonical JSON"}
     recomputed = hashlib.sha256(body).hexdigest()
     claimed = payload.get("content_sha256")
     # Qodo #11: a certificate MUST carry a content hash that matches; a missing/mismatched hash fails.
@@ -156,16 +157,25 @@ def verify_certificate(payload: dict) -> dict:
     # would let anyone sign with their own key and claim validity). If a signature is present but cannot
     # be authenticated (no crypto, no configured issuer key, malformed, or mismatch) → invalid, not None.
     signature_valid: bool | None = None
+    signature_present = "signature" in payload
     sig = payload.get("signature")
-    if sig:
-        issuer_pub = public_key_pem()  # this instance's pinned public key; None if unconfigured
+    signed = payload.get("signed")
+    signature_contract_valid = (
+        isinstance(signed, bool)
+        and signed is signature_present
+        and (not signature_present or isinstance(sig, str) and bool(sig))
+    )
+    if signature_present:
         signature_valid = False
-        if _CRYPTO_AVAILABLE and issuer_pub:
+        if signature_contract_valid and _CRYPTO_AVAILABLE:
             try:
+                issuer_pub = public_key_pem()
+                if not issuer_pub:
+                    raise ValueError("issuer signing key is not configured")
                 pub = _ser.load_pem_public_key(issuer_pub.encode())
-                pub.verify(base64.b64decode(sig), body, _ec.ECDSA(_hashes.SHA256()))
+                pub.verify(base64.b64decode(sig, validate=True), body, _ec.ECDSA(_hashes.SHA256()))
                 signature_valid = True
-            except Exception:  # InvalidSignature, malformed key/sig, etc. → not authenticated
+            except Exception:  # Invalid signature/key/configuration → structured failed verification.
                 signature_valid = False
 
     # Independent re-verification of an attached report is useful only when the report is bound to
@@ -183,9 +193,7 @@ def verify_certificate(payload: dict) -> dict:
     # Evidence pack provenance check for schema 1.1.0 vs legacy certificates
     cert_schema = cert.get("certificate_schema_version")
     cert_pack = cert.get("evidence_pack")
-    is_schema_1_1 = cert_schema == "1.1.0" or (
-        isinstance(cert_pack, dict) and "schema_version" in cert_pack
-    )
+    is_schema_1_1 = cert_schema == "1.1.0" or (isinstance(cert_pack, dict) and "schema_version" in cert_pack)
     if is_schema_1_1:
         pack_valid = (
             isinstance(cert_pack, dict)
@@ -214,9 +222,7 @@ def verify_certificate(payload: dict) -> dict:
                 and hashlib.sha256(_canonical(embedded_report)).hexdigest() == expected_report_hash
             )
             # Guardrail: attached report's evidence-pack identity MUST match certificate's evidence-pack identity
-            report_cfg = (
-                embedded_report.get("config", {}) if isinstance(embedded_report, dict) else {}
-            )
+            report_cfg = embedded_report.get("config", {}) if isinstance(embedded_report, dict) else {}
             report_pack = report_cfg.get("evidence_pack")
             report_schema = report_cfg.get("report_schema_version")
             # Schema-less reports are legacy only when genuinely unbound. Hybrid metadata must
@@ -242,7 +248,8 @@ def verify_certificate(payload: dict) -> dict:
 
     ok = (
         hash_matches
-        and (sig is None or signature_valid is True)  # a claimed signature must be valid
+        and signature_contract_valid
+        and (not signature_present or signature_valid is True)
         and (report_binding_valid is not False)
         and (packets_passed is None or packets_passed == packets_verified)
         and pack_valid
@@ -308,16 +315,12 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
     # Verification block (using verify_report)
     verification_results = verify_report(report)
     # Count packet verification (excluding report-level checks)
-    packet_results = [
-        r for r in verification_results if not r.packet_line_key.startswith("report:")
-    ]
+    packet_results = [r for r in verification_results if not r.packet_line_key.startswith("report:")]
     packets_verified = len(packet_results)
     packets_passed = sum(1 for r in packet_results if r.ok)
 
     # Cross-check audit_root format result
-    audit_res = next(
-        (r for r in verification_results if r.packet_line_key == "report:audit_root"), None
-    )
+    audit_res = next((r for r in verification_results if r.packet_line_key == "report:audit_root"), None)
     audit_root_valid = audit_res.ok if audit_res else False
 
     engine_version = config.get("engine_version", "1.1.0")
@@ -333,7 +336,6 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
         raise ValueError("Schema 1.1.0 report must carry evidence-pack provenance")
     if cert_schema == "1.1.0":
         from engine.packs import PackError, resolve_pack_provenance
-
         try:
             resolve_pack_provenance(evidence_pack)
         except PackError as exc:
@@ -382,11 +384,23 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
 
 def main() -> None:
     """CLI entry point for close certificate generation."""
-    parser = argparse.ArgumentParser(
-        description="Generate period close certificate from report JSON"
+    parser = argparse.ArgumentParser(description="Generate period close certificate from report JSON")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--run", help="Path to report JSON")
+    source.add_argument(
+        "--generate-key",
+        action="store_true",
+        help="Print a new base64-encoded ECDSA P-256 private key",
     )
-    parser.add_argument("--run", required=True, help="Path to report JSON")
     args = parser.parse_args()
+
+    if args.generate_key:
+        try:
+            print(generate_signing_key())
+        except Exception as exc:
+            print(f"Error generating signing key: {exc}", file=sys.stderr)
+            sys.exit(2)
+        return
 
     try:
         with open(args.run, encoding="utf-8") as f:
