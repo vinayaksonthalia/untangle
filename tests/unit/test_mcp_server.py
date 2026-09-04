@@ -24,6 +24,8 @@ from mcp_server import (  # noqa: E402  — imported after the importorskip guar
     investigate_variance,
     list_unresolved_cash,
     reconcile_files,
+    reconcile_sample,
+    sample_unresolved_cash,
     suggest_next_evidence,
     verify_proof_packet,
 )
@@ -45,6 +47,35 @@ def test_reconcile_files():
     assert res["headline_metrics"]["unresolved_rzp_count"] == 12
 
 
+def test_reconcile_sample_needs_no_paths(monkeypatch):
+    """reconcile_sample runs the built-in demo with NO file paths — the hosted/sandboxed path.
+
+    This is the tool that makes the remote MCP usable: it never calls _safe_path, so it works
+    even when the sandbox rejects every filesystem path.
+    """
+    monkeypatch.setenv("UNTANGLE_MCP_SANDBOX", "1")
+    res = reconcile_sample()
+    assert res["ok"] is True
+    assert res["mode"] == "demo"
+    assert len(res["audit_root"]) == 64
+    h = res["headline_metrics"]
+    assert h["n_bank_lines"] == 15  # 8 clean settlements + 7 investigation cases
+    assert h["reconciled_paise"] > 0
+    # deterministic: a second call returns the identical run
+    assert reconcile_sample()["audit_root"] == res["audit_root"]
+
+
+def test_sample_unresolved_cash_needs_no_paths(monkeypatch):
+    """sample_unresolved_cash surfaces the demo's exceptions without any file path."""
+    monkeypatch.setenv("UNTANGLE_MCP_SANDBOX", "1")
+    res = sample_unresolved_cash()
+    assert res["ok"] is True and res["mode"] == "demo"
+    assert res["unresolved_count"] == len(res["items"]) > 0
+    assert res["recovery_summary"]["unresolved_paise"] > 0
+    # each exception carries its own structured amount, not just the aggregate
+    assert all(isinstance(it["amount_paise"], int) and it["amount_paise"] > 0 for it in res["items"])
+
+
 def test_list_unresolved_cash():
     """list_unresolved_cash returns exception records with reason codes and suggested actions."""
     res = list_unresolved_cash(_BANK_PATH, _RECON_PATH, _LEDGER_PATH)
@@ -57,6 +88,29 @@ def test_list_unresolved_cash():
     assert "detail" in first
     assert "suggested_action" in first
     assert "recovery_summary" in res
+    # Every item exposes a structured, SIGNED amount (positive = incoming credit, negative = a
+    # debit/outflow, None when the line is unavailable) — a debit exception must not read as cash.
+    for it in res["items"]:
+        assert "amount_paise" in it
+        assert it["amount_paise"] is None or isinstance(it["amount_paise"], int)
+    # the seed-42 benchmark contains at least one debit exception, proving the sign is preserved
+    # (never abs()'d into fake incoming cash)
+    assert any(isinstance(it["amount_paise"], int) and it["amount_paise"] < 0 for it in res["items"])
+
+
+def test_list_unresolved_cash_empty_result(monkeypatch):
+    """Non-failure path: a clean report with zero exceptions yields an empty, well-formed listing
+    (no items, zero recovery totals) — the tool must not fabricate rows or error out."""
+    import mcp_server as m
+
+    monkeypatch.setattr(
+        m, "_get_report", lambda *a, **k: {"exceptions": [], "recovery_plan": {}}
+    )
+    res = list_unresolved_cash(_BANK_PATH, _RECON_PATH, _LEDGER_PATH)
+    assert res["ok"] is True
+    assert res["unresolved_count"] == 0
+    assert res["items"] == []
+    assert res["recovery_summary"]["unresolved_paise"] == 0
 
 
 def test_explain_bank_credit_known_rzp():
