@@ -85,8 +85,16 @@ untangle-mcp --http --host 127.0.0.1 --port 8081
 
 ## 3. Tool Catalog (10 Read-Only Tools)
 
+> **On the hosted/remote MCP, start with `reconcile_sample`.** The path-based tools require file
+> paths, which the public server's sandbox confines to its bundled data dir — so for a zero-setup
+> demo call `reconcile_sample` (no arguments; runs untangle's built-in demo, the same run the web
+> app serves at `/try-sample`) and `sample_unresolved_cash`. To reconcile your **own** files, use
+> the local `stdio` server (`untangle-mcp`) or the web upload.
+
 | Tool Name | Description | Output |
 |---|---|---|
+| `reconcile_sample` | Reconciles untangle's built-in demo dataset — **no file paths** (works on the hosted MCP). | Headline metrics, counts, and SHA-256 audit root. |
+| `sample_unresolved_cash` | Lists the demo's unresolved credits — **no file paths** (hosted-MCP companion to `list_unresolved_cash`). | Exception records & recovery items. |
 | `reconcile_files` | Reconciles bank statement against settlement report and order ledger. | Headline metrics, counts, and SHA-256 audit root. |
 | `list_unresolved_cash` | Lists unresolved bank credits with rupee value, reason codes, and recovery actions. | Exception records & recovery items. |
 | `explain_bank_credit` | Breaks down credit verdict, tie signals, challenger margin, and settlement coverage. | Credit explanation & proof margin. |

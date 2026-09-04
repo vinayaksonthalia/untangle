@@ -173,6 +173,65 @@ def _report_from_snapshot(
     return report
 
 
+def _headline_metrics(totals: dict[str, Any]) -> dict[str, Any]:
+    """The compact reconciliation summary returned by reconcile_files / reconcile_sample."""
+    return {
+        "n_bank_lines": totals.get("n_bank_lines", 0),
+        "n_recon_rows": totals.get("n_recon_rows", 0),
+        "attributed_count": totals.get("attributed", 0),
+        "abstained_count": totals.get("abstained", 0),
+        "reconciled_count": totals.get("reconciled_count", 0),
+        "reconciled_paise": totals.get("reconciled_paise", 0),
+        "unresolved_rzp_count": totals.get("unresolved_rzp_count", 0),
+        "fee_gst_recoverable_paise": totals.get("fee_gst_recoverable_paise", 0),
+        "exception_count": totals.get("exception_count", 0),
+        "by_rail_count": totals.get("by_rail_count", {}),
+        "by_rail_paise": totals.get("by_rail_paise", {}),
+    }
+
+
+# Bundled demo dataset — the SAME coherent run the web app serves at /try-sample. It needs no
+# file paths, so it works on the hosted/remote MCP, which is sandboxed and cannot read a caller's
+# files. Built once (deterministic), then reconciled through the normal content-keyed cache.
+_DEMO_SNAPSHOT: tuple[tuple[bytes, ...], tuple[str, ...]] | None = None
+_DEMO_SNAPSHOT_LOCK = threading.Lock()
+
+
+def _demo_snapshots() -> tuple[tuple[bytes, ...], tuple[str, ...]]:
+    global _DEMO_SNAPSHOT
+    if _DEMO_SNAPSHOT is not None:
+        return _DEMO_SNAPSHOT
+    with _DEMO_SNAPSHOT_LOCK:
+        if _DEMO_SNAPSHOT is not None:
+            return _DEMO_SNAPSHOT
+        import shutil
+        import tempfile
+
+        from generator.config import Config
+        from generator.demo_dataset import write_demo_dataset
+
+        work = tempfile.mkdtemp(prefix="untangle_mcp_demo_")
+        try:
+            base = write_demo_dataset(work, Config())
+            snaps: list[bytes] = []
+            toks: list[str] = []
+            for name in ("bank_statement.csv", "recon_report.json", "order_ledger.csv"):
+                with open(os.path.join(base, name), "rb") as fh:
+                    content = fh.read()
+                snaps.append(content)
+                toks.append(hashlib.sha256(content).hexdigest())
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        _DEMO_SNAPSHOT = (tuple(snaps), tuple(toks))
+        return _DEMO_SNAPSHOT
+
+
+def _demo_report() -> dict[str, Any]:
+    """Reconcile the bundled demo dataset (cached by content like every other report)."""
+    snapshots, token = _demo_snapshots()
+    return _report_from_snapshot(snapshots, token)
+
+
 def _get_journal_entries(bank_path: str, recon_path: str) -> list[JournalEntry]:
     bank_path, recon_path = _safe_path(bank_path), _safe_path(recon_path)
     snapshots, token = _snapshot_inputs(
@@ -228,19 +287,7 @@ def reconcile_files(bank_path: str, recon_path: str, ledger_path: str) -> dict[s
             "audit_root": report.get("audit_root"),
             "config": report.get("config"),
             "totals": totals,
-            "headline_metrics": {
-                "n_bank_lines": totals.get("n_bank_lines", 0),
-                "n_recon_rows": totals.get("n_recon_rows", 0),
-                "attributed_count": totals.get("attributed", 0),
-                "abstained_count": totals.get("abstained", 0),
-                "reconciled_count": totals.get("reconciled_count", 0),
-                "reconciled_paise": totals.get("reconciled_paise", 0),
-                "unresolved_rzp_count": totals.get("unresolved_rzp_count", 0),
-                "fee_gst_recoverable_paise": totals.get("fee_gst_recoverable_paise", 0),
-                "exception_count": totals.get("exception_count", 0),
-                "by_rail_count": totals.get("by_rail_count", {}),
-                "by_rail_paise": totals.get("by_rail_paise", {}),
-            },
+            "headline_metrics": _headline_metrics(totals),
         }
     except Exception as exc:
         return {
@@ -248,6 +295,68 @@ def reconcile_files(bank_path: str, recon_path: str, ledger_path: str) -> dict[s
             "error": str(exc),
             "error_type": type(exc).__name__,
         }
+
+
+@mcp.tool()
+def reconcile_sample() -> dict[str, Any]:
+    """Reconcile untangle's built-in demo dataset — no file paths required.
+
+    Use this on the hosted/remote MCP, which is sandboxed and cannot read your files. It runs the
+    same coherent demo the web app serves at /try-sample (clean reconciled settlements plus the
+    root-cause investigation cases) and returns the same summary shape as reconcile_files. To
+    reconcile your OWN files, use the local stdio server (untangle-mcp) or the web upload.
+
+    Returns:
+        Structured dictionary with totals, audit_root, and key reconciliation metrics.
+    """
+    try:
+        report = _demo_report()
+        totals = report.get("totals", {})
+        return {
+            "ok": True,
+            "mode": "demo",
+            "audit_root": report.get("audit_root"),
+            "config": report.get("config"),
+            "totals": totals,
+            "headline_metrics": _headline_metrics(totals),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "error_type": type(exc).__name__}
+
+
+@mcp.tool()
+def sample_unresolved_cash() -> dict[str, Any]:
+    """List the unresolved bank credits in untangle's built-in demo dataset — no file paths required.
+
+    The no-path companion to list_unresolved_cash, for the hosted/remote MCP. Returns each
+    unresolved credit's reason code and suggested action, plus the recovery-plan summary.
+    """
+    try:
+        report = _demo_report()
+        exceptions = report.get("exceptions", [])
+        plan = report.get("recovery_plan") or {}
+        items = [
+            {
+                "line_key": exc.get("line_key"),
+                "reason_code": exc.get("reason_code"),
+                "detail": exc.get("detail"),
+                "suggested_action": exc.get("suggested_action"),
+            }
+            for exc in exceptions
+        ]
+        return {
+            "ok": True,
+            "mode": "demo",
+            "unresolved_count": len(items),
+            "items": items,
+            "recovery_summary": {
+                "unresolved_paise": plan.get("unresolved_paise", 0),
+                "recoverable_if_actioned_paise": plan.get("recoverable_if_actioned_paise", 0),
+                "note": plan.get("note"),
+            },
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "error_type": type(exc).__name__}
 
 
 @mcp.tool()
