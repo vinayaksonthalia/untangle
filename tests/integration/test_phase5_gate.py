@@ -89,20 +89,23 @@ def test_phase5_gate_readme_leads_with_finance_loop_and_stays_honest():
 def test_phase5_gate_one_click_demo_reproduction(client):
     """Gate 3: One-click demo-data reproduction works without upload.
 
-    /try-sample now loads the seed-42 sample as the active DEMO run and redirects into the
-    console; the reproducible demo (826 bank credits) is served from the live presentation API.
+    /try-sample returns a tab-local bootstrap containing the seed-42 demo bundle.
     """
-    r = client.get("/try-sample")  # TestClient follows the 303 into /dashboard
+    r = client.get("/try-sample")
     assert r.status_code == 200
-    assert "Settlement close" in r.text
-    pres = client.get("/api/presentation/current").json()
-    assert pres.get("mode") == "demo"
+    assert "sessionStorage" in r.text and "demo" in r.text
+    import json
+    import re
+    literal = re.search(r"sessionStorage\.setItem\('untangle_results', (.*)\); location", r.text).group(1)
+    bundle = json.loads(json.loads(literal))
+    pres = bundle["presentation"]
+    assert bundle.get("mode") == "demo"
     # One coherent demo dataset (clean reconciliations + the root-cause investigation cases),
     # so Dashboard, Investigate and Certificate all describe the SAME report.
     assert pres["summary"]["n_bank_lines"] == 15  # 8 clean settlements + 7 investigation cases
     assert pres["summary"]["reconciled_paise"] > 0  # the clean settlements give real reconciled value
     # the demo also drives the Investigate queue (curated: 6 resolved + 1 honest abstention)
-    inv = client.get("/api/investigations/current").json()
+    inv = bundle["investigations"]
     assert inv.get("mode") == "demo" and inv["summary"]["resolved"] == 6
 
 

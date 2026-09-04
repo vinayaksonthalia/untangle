@@ -24,7 +24,7 @@ from contextlib import asynccontextmanager
 from functools import lru_cache
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
@@ -639,80 +639,39 @@ def _ensure_sample() -> None:
             shutil.rmtree(staging, ignore_errors=True)
 
 
-# ---- Ephemeral per-viewer runs -------------------------------------------------
-# A reconciliation the viewer just ran (their upload, or the sample) is held in memory
-# only, keyed by an opaque cookie, with a short TTL and a hard cap. Nothing is written to
-# disk or a database — this is the privacy contract ("processed in memory, then discarded")
-# extended so a run can flow across Dashboard → Investigate → Verify within one session.
-_RUN_TTL_S = 60 * 30
-_RUN_CAP = 200
-_RUN_COOKIE = "untangle_run"
-_RUNS: dict[str, dict] = {}
-_RUNS_LOCK = threading.Lock()
+# ---- Browser-tab result bundle ----------------------------------------------
+
+def _tab_bundle(report: dict, bank: dict, mode: str) -> dict:
+    """Serialize one bounded result bundle for the requesting tab; no private server retention."""
+    from engine.journal import journal_json_to_tally_xml
+    from webapp.presentation import PresentationSchemaError, build_presentation_payload
+
+    cert = issue_certificate(report)
+    try:
+        presentation = build_presentation_payload(report, certificate=cert)
+    except PresentationSchemaError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {
+        "version": 1,
+        "mode": mode,
+        "presentation": {**presentation, "mode": mode},
+        "investigations": {**_shape_investigations_payload(report, bank), "mode": mode},
+        "certificate": cert,
+        "journal": report.get("journal") or [],
+        "journal_tally_xml": journal_json_to_tally_xml(report.get("journal") or [], company="Your Company Name"),
+    }
 
 
-def _store_run(report: dict, bank_credit_by_key: dict, mode: str) -> str:
-    run_id = uuid.uuid4().hex
-    now = time.time()
-    with _RUNS_LOCK:
-        for k in [k for k, v in _RUNS.items() if now - v["created"] > _RUN_TTL_S]:
-            _RUNS.pop(k, None)
-        if len(_RUNS) >= _RUN_CAP:  # evict oldest to bound memory
-            for k in sorted(_RUNS, key=lambda k: _RUNS[k]["created"])[: len(_RUNS) - _RUN_CAP + 1]:
-                _RUNS.pop(k, None)
-        _RUNS[run_id] = {
-            "report": report,
-            "bank": bank_credit_by_key,
-            "mode": mode,
-            "created": now,
-            "cert_lock": threading.Lock(),
-        }
-    return run_id
-
-
-def _current_run(request: Request) -> dict | None:
-    rid = request.cookies.get(_RUN_COOKIE)
-    if not rid:
-        return None
-    with _RUNS_LOCK:
-        run = _RUNS.get(rid)
-        if run and time.time() - run["created"] > _RUN_TTL_S:
-            _RUNS.pop(rid, None)
-            return None
-    return run
-
-
-def _run_certificate(run: dict) -> dict:
-    """Issue the run's close certificate exactly once and reuse it.
-
-    Certificates are cached on the run so repeated Dashboard/Investigate/Certificate
-    fetches for one session return a byte-identical envelope. ECDSA signing (when a key
-    is configured) is randomized, so re-issuing per request would otherwise yield a
-    different signature each time for the same underlying report.
-    """
-    # Resolve the per-run lock under the store lock, but never hold the global lock while
-    # hashing/verifying/signing the report. Legacy in-memory runs may not have the lock.
-    with _RUNS_LOCK:
-        cert_lock = run.get("cert_lock")
-        if cert_lock is None:
-            cert_lock = threading.Lock()
-            run["cert_lock"] = cert_lock
-    with cert_lock:
-        cert = run.get("cert")
-        if cert is None:
-            cert = issue_certificate(run["report"])
-            run["cert"] = cert
-        return cert
-
-
-def _set_run_cookie(resp: Response, run_id: str, request: Request) -> None:
-    # Secure only over HTTPS so the opaque bearer cookie is never sent in cleartext on a
-    # real deployment, while local HTTP development and the test client still work. Behind a
-    # TLS-terminating proxy (e.g. Render) run uvicorn with --proxy-headers so the scheme is https.
-    secure = request.url.scheme == "https"
-    resp.set_cookie(
-        _RUN_COOKIE, run_id, max_age=_RUN_TTL_S, httponly=True, samesite="lax", secure=secure
-    )
+def _bundle_response(bundle: dict) -> HTMLResponse:
+    encoded = json.dumps(bundle, separators=(",", ":"), ensure_ascii=False).replace("<", "\\u003c")
+    if len(encoded.encode("utf-8")) > 4 * 1024 * 1024:
+        raise HTTPException(413, "Result bundle is too large for browser tab storage.")
+    response = HTMLResponse(f"""<!doctype html><meta charset=utf-8><title>Processing complete</title>
+<p>Results processed in memory and kept only in this browser tab. Redirecting…</p>
+<script>try {{ sessionStorage.removeItem('untangle_results'); sessionStorage.setItem('untangle_results', {json.dumps(encoded)}); location.replace('/dashboard'); }}
+catch (_) {{ document.body.textContent='This browser blocked session storage. Please enable it and retry.'; }}</script>""")
+    response.headers["cache-control"] = "no-store"
+    return response
 
 
 def _shape_investigations_payload(report: dict, bank_credit_by_key: dict) -> dict:
@@ -744,58 +703,25 @@ def _shape_investigations_payload(report: dict, bank_credit_by_key: dict) -> dic
 
 @app.get("/api/presentation/current")
 def api_presentation_current(request: Request, limit: int = 100, offset: int = 0) -> JSONResponse:
-    """The active viewer run (their upload or the sample) as read-only UI data, or an empty marker."""
-    from webapp.presentation import PresentationSchemaError, build_presentation_payload
-
-    run = _current_run(request)
-    if not run:
-        return JSONResponse({"mode": "empty"})
-    cert = _run_certificate(run)
-    try:
-        payload = build_presentation_payload(run["report"], certificate=cert, limit=limit, offset=offset)
-    except PresentationSchemaError as exc:
-        raise HTTPException(422, str(exc)) from exc
-    payload["mode"] = run["mode"]
-    return JSONResponse(payload)
+    return JSONResponse({"detail": "This legacy endpoint was removed; read the tab-local result bundle."}, status_code=410)
 
 
 @app.get("/api/investigations/current")
 def api_investigations_current(request: Request) -> JSONResponse:
-    """Investigations for the cookie-selected active run — the same report Dashboard and
-    Certificate describe. Demo and upload both derive from their own stored report, so all
-    three surfaces stay consistent."""
-    run = _current_run(request)
-    if not run:
-        return JSONResponse({"mode": "empty", "summary": {"total": 0, "resolved": 0, "abstained": 0}, "cases": []})
-    payload = _shape_investigations_payload(run["report"], run["bank"])
-    payload["mode"] = run["mode"]
-    return JSONResponse(payload)
+    """Removed legacy endpoint; the browser reads investigations from its tab-local bundle."""
+    return JSONResponse({"detail": "This legacy endpoint was removed; read the tab-local result bundle."}, status_code=410)
 
 
 @app.get("/api/certificate/current")
 def api_certificate_current(request: Request) -> JSONResponse:
-    """The signed (or hash-bound) close certificate for the active run — portable + re-verifiable."""
-    run = _current_run(request)
-    if not run:
-        return JSONResponse({"mode": "empty"}, status_code=404)
-    return JSONResponse(_run_certificate(run))
+    """Removed legacy endpoint; the browser reads the certificate from its tab-local bundle."""
+    return JSONResponse({"detail": "This legacy endpoint was removed; read the tab-local result bundle."}, status_code=410)
 
 
 @app.get("/api/journal/current.tally.xml")
 def api_journal_current(request: Request) -> Response:
-    """The active run's balanced journal as Tally XML — the figures shown on the viewer's own
-    dashboard, never the bundled sample. 404 if the session holds no run."""
-    from engine.journal import journal_json_to_tally_xml
-
-    run = _current_run(request)
-    if not run:
-        return JSONResponse({"mode": "empty"}, status_code=404)
-    xml = journal_json_to_tally_xml(run["report"].get("journal") or [], company="Your Company Name")
-    return Response(
-        content=xml,
-        media_type="application/xml",
-        headers={"Content-Disposition": 'attachment; filename="untangle-journal.tally.xml"'},
-    )
+    """Removed legacy endpoint; the browser downloads Tally XML from its tab-local bundle."""
+    return JSONResponse({"detail": "This legacy endpoint was removed; download from the tab-local result bundle."}, status_code=410)
 
 
 @app.get("/certificate", response_class=HTMLResponse)
@@ -850,13 +776,10 @@ def _demo_run_data() -> tuple[dict, dict]:
 
 
 @app.get("/try-sample")
-def try_sample(request: Request) -> RedirectResponse:
-    """Load the coherent sample as the active DEMO run, then open the console."""
+def try_sample(request: Request) -> HTMLResponse:
+    """Process the coherent sample and bootstrap its result bundle into the browser tab."""
     report, bank_credit = _demo_run_data()
-    run_id = _store_run(report, bank_credit, "demo")
-    resp = RedirectResponse(url="/dashboard", status_code=303)
-    _set_run_cookie(resp, run_id, request)
-    return resp
+    return _bundle_response(_tab_bundle(report, bank_credit, "demo"))
 
 
 @app.post("/reconcile")
@@ -865,17 +788,14 @@ async def reconcile_upload(
     bank: UploadFile = File(...),
     recon: UploadFile = File(...),
     ledger: UploadFile = File(...),
-) -> RedirectResponse:
+) -> HTMLResponse:
     slot = request.state.reconciliation_slot
     b = await _read_upload("bank_statement.csv", bank)
     r = await _read_upload("recon_report.json", recon)
     ln = await _read_upload("order_ledger.csv", ledger)
     report = await _run_safely_bytes_async(b, r, ln, slot=slot)
     bank_credit = {line.key: line.amount_paise for line in load_bank_bytes(b)}
-    run_id = _store_run(report, bank_credit, "your_run")
-    resp = RedirectResponse(url="/dashboard", status_code=303)
-    _set_run_cookie(resp, run_id, request)
-    return resp
+    return _bundle_response(_tab_bundle(report, bank_credit, "your_run"))
 
 
 @app.post("/api/reconcile")

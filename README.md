@@ -203,7 +203,7 @@ uvicorn webapp.app:app --port 8080
 Both options serve the same routes:
 `/` landing · `/app` upload your three files · `/try-sample` instant sample run · `/api/docs` the JSON API.
 
-`/try-sample` and `/reconcile` return `303 See Other` redirects to `/dashboard` and set the active-run cookie; clients must follow the redirect (or call `/dashboard` separately).
+`/try-sample` and `/reconcile` return a no-store bootstrap page which places the bounded result bundle in browser-tab `sessionStorage` before navigating to `/dashboard`. Results persist across refreshes and are normally cleared when the tab closes (browser session restore can retain them); no private raw inputs or result database is retained by the server. Legacy `/api/*/current` endpoints return `410 Gone`.
 
 - **Bring your own data:** a bank statement CSV (`value_date · narration · credit · debit`), the Razorpay
   settlement report JSON (`entity_id · type · amount · fee · tax · settlement_utr`), and your order ledger

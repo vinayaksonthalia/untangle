@@ -30,9 +30,10 @@ per minute). This is suitable for the single-instance demo only; multiple worker
 rate limiting and concurrency control. The MCP transport remains separately mounted with its protocol
 and CORS behavior.
 
-The hosted demo must run as a single instance with one worker: active runs are held in the process-local
-`_RUNS` store. Shared multi-worker storage is out of scope for this demo. This is the same limitation as
-the existing “single-instance demo only” deployment boundary above.
+The hosted demo may run as a single instance with one worker for predictable resource limits. Private
+results are held in the browser tab's `sessionStorage` bundle; the server retains no private result store.
+During processing, the server necessarily sees uploaded bytes in memory (and may briefly spool multipart
+uploads), then releases them. This is not a promise that engineers cannot access process memory.
 
 ## Any Docker host (Fly.io, Cloud Run, a VM)
 
@@ -60,8 +61,28 @@ uvicorn webapp.app:app --port 8080 --workers 1       # -> http://localhost:8080
 | `/try-sample` | Run the seeded sample end-to-end (no upload needed) |
 | `/api/docs` | OpenAPI docs |
 
-`/try-sample` and `/reconcile` return `303 See Other` to `/dashboard` and set an active-run cookie; callers
-that do not follow redirects must request the dashboard explicitly.
+`/try-sample` and `/reconcile` return a no-store bootstrap page that writes a bounded result bundle to
+browser-tab `sessionStorage` and then navigates to `/dashboard`. Refreshes preserve the bundle; normal
+tab close clears it, though browser session restore and duplicated tabs may retain or copy it. The UI's
+Clear action removes it explicitly. Legacy `/api/*/current` endpoints return `410 Gone`.
+
+This is a breaking browser-route migration from `303` plus a run cookie to `200` HTML plus
+JavaScript navigation. Non-browser integrations should use `/api/reconcile` for report JSON;
+requesting `/dashboard` alone does not populate results. Stored browser data is display data,
+not evidence of authenticity: the Verify screen still checks certificates independently.
+
+### Browser regression check
+
+With a local server on port 8766 and Playwright available in your development environment:
+
+```bash
+node tests/browser/tab_results.cjs
+```
+
+This exercises separate browser profiles uploading distinct synthetic files, independent tabs,
+refresh, certificate downloads, navigation, clearing, corrupt storage, and unavailable storage.
+Generate the normal synthetic `data/` fixtures first; never use private statements for this check.
+Set `UNTANGLE_TEST_URL` to test another local port. Playwright is test tooling, not a runtime dependency.
 
 ## Verification status
 

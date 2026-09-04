@@ -1,7 +1,9 @@
 """Web app end-to-end + adversarial tests (the breaking pass, made permanent)."""
 from __future__ import annotations
 
+import json
 import os
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -34,26 +36,21 @@ def test_pages_render():
 
 
 def test_try_sample_loads_demo_run():
-    # /try-sample now loads the sample as the active DEMO run and redirects into the console
-    r = client.get("/try-sample")  # TestClient follows the 303 to /dashboard
-    assert r.status_code == 200 and "Settlement close" in r.text
-    pres = client.get("/api/presentation/current")
-    assert pres.status_code == 200 and pres.json().get("mode") == "demo"
+    r = client.get("/try-sample")
+    assert r.status_code == 200 and "sessionStorage" in r.text
+    assert "untangle_run" not in r.headers.get("set-cookie", "")
+    assert "no-store" in r.headers.get("cache-control", "")
+    literal = re.search(r"sessionStorage\.setItem\('untangle_results', (.*)\); location", r.text).group(1)
+    bundle = json.loads(json.loads(literal))
+    assert bundle["version"] == 1 and bundle["mode"] == "demo"
+    assert bundle["certificate"]["content_sha256"]
+    assert bundle["presentation"].get("summary")
+    assert isinstance(bundle["investigations"]["cases"], list)
 
 
-def test_try_sample_redirect_contract():
-    r = client.get("/try-sample", follow_redirects=False)
-    assert r.status_code == 303
-    assert r.headers["location"] == "/dashboard"
-    assert "untangle_run=" in r.headers["set-cookie"]
-
-
-def test_run_cookie_secure_only_for_https():
-    https_client = TestClient(app, base_url="https://testserver", raise_server_exceptions=False)
-    secure = https_client.get("/try-sample", follow_redirects=False).headers["set-cookie"]
-    assert "Secure" in secure
-    local = client.get("/try-sample", follow_redirects=False).headers["set-cookie"]
-    assert "Secure" not in local
+def test_legacy_current_endpoints_are_explicitly_removed():
+    for path in ("/api/presentation/current", "/api/investigations/current", "/api/certificate/current", "/api/journal/current.tally.xml"):
+        assert client.get(path, cookies={"untangle_run": "someone-elses-run"}).status_code == 410
 
 
 def test_api_reconcile_happy_path():
@@ -64,18 +61,28 @@ def test_api_reconcile_happy_path():
 
 
 def test_browser_reconcile_redirects_to_your_run():
-    # an upload becomes the active YOUR-RUN session and redirects into the console
-    r = client.post("/reconcile", files=_files())  # TestClient follows the 303 to /dashboard
-    assert r.status_code == 200 and "Settlement close" in r.text
-    pres = client.get("/api/presentation/current")
-    assert pres.status_code == 200 and pres.json().get("mode") == "your_run"
+    r = client.post("/reconcile", files=_files())
+    assert r.status_code == 200 and "no-store" in r.headers.get("cache-control", "")
+    assert "set-cookie" not in r.headers
 
 
-def test_browser_reconcile_redirect_contract():
-    r = client.post("/reconcile", files=_files(), follow_redirects=False)
-    assert r.status_code == 303
-    assert r.headers["location"] == "/dashboard"
-    assert "untangle_run=" in r.headers["set-cookie"]
+def test_browser_bundle_escapes_script_terminator():
+    from webapp.app import _bundle_response
+    hostile = {"version": 1, "mode": "your_run", "metadata": "</script><script>alert(1)</script>"}
+    r = _bundle_response(hostile)
+    body = r.body.decode()
+    assert body.count("</script>") == 1  # only the bootstrap tag closes
+    literal = re.search(r"sessionStorage\.setItem\('untangle_results', (.*)\); location", body).group(1)
+    assert json.loads(json.loads(literal))["metadata"] == "</script><script>alert(1)</script>"
+
+
+def test_browser_bundle_size_limit():
+    from fastapi import HTTPException
+
+    from webapp.app import _bundle_response
+    with pytest.raises(HTTPException) as exc:
+        _bundle_response({"version": 1, "mode": "your_run", "x": "a" * (4 * 1024 * 1024)})
+    assert exc.value.status_code == 413
 
 
 def test_static_landing_css_revalidates_without_losing_body():
