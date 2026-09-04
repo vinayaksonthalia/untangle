@@ -31,7 +31,7 @@ from engine.models import Rail, RunReport
 from engine.packs import get_default_pack
 from engine.reconcile import reconcile
 
-_ENGINE_VERSION = "1.1.0"
+_ENGINE_VERSION = "1.2.0"
 
 
 def _indian_group(digits: str) -> str:
