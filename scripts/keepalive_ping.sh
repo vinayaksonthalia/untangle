@@ -21,7 +21,11 @@ echo "Pinging $URL"
 code=000
 attempt=1
 while [ "$attempt" -le "$attempts" ]; do
-  code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 90 "$URL" || echo "000")
+  # curl's -w "%{http_code}" already prints 000 on a transport failure, so we
+  # read that value directly (|| true keeps set -u happy on non-zero exit) and
+  # only default when curl produced nothing — never appending a second 000.
+  code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 90 "$URL" 2>/dev/null) || true
+  code=${code:-000}
   echo "attempt $attempt: HTTP $code"
   case "$code" in 2*|3*) echo "awake"; exit 0;; esac
   [ "$attempt" -lt "$attempts" ] && sleep "$sleep_secs"

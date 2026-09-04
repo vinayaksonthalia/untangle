@@ -12,8 +12,6 @@ import os
 import subprocess
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "keepalive_ping.sh"
 
@@ -55,11 +53,14 @@ def test_3xx_counts_as_awake(tmp_path):
 
 
 def test_transport_failure_fails_run(tmp_path):
-    # curl itself failing (DNS/timeout) -> non-zero exit, script sees 000.
-    r = _run_with_stub_curl(tmp_path, 'exit 7')
+    # Real curl with -w "%{http_code}" prints 000 to stdout AND exits non-zero on
+    # a transport failure (DNS/timeout); the stub mirrors that exactly.
+    r = _run_with_stub_curl(tmp_path, 'echo 000; exit 7')
     assert r.returncode == 1
     assert "::error::" in r.stdout
-    assert "000" in r.stdout
+    # The status must normalise to a single 000 — no duplicated/multiline code.
+    assert "last code 000)" in r.stdout
+    assert "000\n000" not in r.stdout
 
 
 def test_http_error_fails_run(tmp_path):
