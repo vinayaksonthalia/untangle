@@ -2,9 +2,9 @@
 
 Tests the remote HTTP transport mounted at /mcp in the FastAPI app:
 1. MCP initialize handshake over /mcp/ returns untangle serverInfo.
-2. tools/list returns all 10 read-only tool names.
+2. tools/list returns all 12 read-only tool names.
 3. Tool execution over HTTP (reconcile_files) returns ok: true against the bundled demo data.
-4. Read-only security invariant: all 10 tools are strictly analytical/read-only.
+4. Read-only security invariant: all 12 tools are strictly analytical/read-only.
 5. SANDBOX: a caller-supplied path outside the demo dir is rejected (no arbitrary server-file read).
 6. Scoped CORS on /mcp aligned with the MCP origin allowlist.
 
@@ -26,7 +26,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 from webapp.app import app  # noqa: E402
 
 _EXPECTED_TOOLS = {
-    "reconcile_files", "list_unresolved_cash", "explain_bank_credit", "get_competing_explanations",
+    "reconcile_files", "reconcile_sample", "list_unresolved_cash", "sample_unresolved_cash",
+    "explain_bank_credit", "get_competing_explanations",
     "suggest_next_evidence", "export_proof_packet", "verify_proof_packet", "generate_close_certificate",
     "export_journal_entries", "investigate_variance",
 }
@@ -89,7 +90,7 @@ def test_mcp_http_tools_list(client):
     payload = _rpc(client, "tools/list", {}, sid, 2)
     tool_names = {t["name"] for t in payload["result"]["tools"]}
     assert tool_names == _EXPECTED_TOOLS
-    assert len(payload["result"]["tools"]) == 10
+    assert len(payload["result"]["tools"]) == 12
 
 
 def test_mcp_http_tool_execution(client):

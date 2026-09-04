@@ -196,6 +196,11 @@ class ExceptionRecord:
     reason_code: str
     detail: str
     suggested_action: str
+    # The bank line's SIGNED net movement in paise (positive = incoming credit, negative = a
+    # debit/outflow), copied from the line so a consumer gets the amount as structured data — not
+    # only inside the detail string. None when the line is unavailable. Signed, never abs()'d: an
+    # unresolved debit must not read as incoming cash.
+    amount_paise: int | None = None
     evidence: list[EvidenceItem] = field(default_factory=list)
 
     def to_dict(self) -> dict:

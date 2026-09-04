@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "description": "Frozen pre-refactor canonical decision projections for seed 42 and seed 1337 from origin/main",
   "seed_42_dev": {
-    "projection_sha256": "2e6a32f9cf2de9cae8a8097e1e36eda16be78b4f1a655a15c5ad293e1c764c87",
+    "projection_sha256": "63b0f9cd8f4c5ad856dc5600cdeca5a9ef9f52b3cf7b8e0758a41fa7333bcb68",
     "summary": {
       "n_bank_lines": 294,
       "attributed": 280,
@@ -3224,157 +3224,157 @@
           "line_key": "k_08caaa377b23210c",
           "reason_code": "reconstructed_split_leg",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 38142182
         },
         {
           "line_key": "k_0eb5cf2a2da0aff4",
           "reason_code": "reconstructed_split_leg",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 21591367
         },
         {
           "line_key": "k_1b8a9f2c1ba547ea",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 3168778
         },
         {
           "line_key": "k_282fc4734d7093ea",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 16357727
         },
         {
           "line_key": "k_28fd316afcf99f42",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 30276806
         },
         {
           "line_key": "k_33ec37d9870a7c39",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 18794390
         },
         {
           "line_key": "k_43cc97ed69afb9f7",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 963104
         },
         {
           "line_key": "k_5c22358b570f6c08",
           "reason_code": "reconstructed_split_leg",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 21655741
         },
         {
           "line_key": "k_60231761c15d872d",
           "reason_code": "reconstructed_split_leg",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 12537916
         },
         {
           "line_key": "k_6644554c21d62d5e",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 5917830
         },
         {
           "line_key": "k_755d0814cc113612",
           "reason_code": "unbalanced_residual",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 27000363
         },
         {
           "line_key": "k_7b1787bfa2dc7ffa",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 3356716
         },
         {
           "line_key": "k_7df0803fb16260b0",
           "reason_code": "unbalanced_residual",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 26112261
         },
         {
           "line_key": "k_7f42f5c3dab95b69",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 31515609
         },
         {
           "line_key": "k_8aa4f7199b649b65",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 5382404
         },
         {
           "line_key": "k_8bba00a375ad8849",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 22102352
         },
         {
           "line_key": "k_9f7964040d9a0f49",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 18673014
         },
         {
           "line_key": "k_bd486904595f3d1d",
           "reason_code": "reconstructed_split_leg",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 22714097
         },
         {
           "line_key": "k_bfade3f637da5699",
           "reason_code": "razorpay_coverage_not_found",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 18377229
         },
         {
           "line_key": "k_c6a9ea92cfe95686",
           "reason_code": "reconstructed_split_leg",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 26951573
         },
         {
           "line_key": "k_d0e0ffc59dbce0e3",
           "reason_code": "reconstructed_split_leg",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 19074585
         },
         {
           "line_key": "k_e0ad41c7aef07cfa",
           "reason_code": "razorpay_coverage_not_found",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 37545438
         },
         {
           "line_key": "k_eea2950f2ef81f97",
           "reason_code": "reconstructed_split_leg",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 16897892
         },
         {
           "line_key": "k_f1544257417b3de8",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 15698210
         },
         {
           "line_key": "k_f303683682e6244e",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 19987333
         },
         {
           "line_key": "k_f8c917475ab1b17a",
           "reason_code": "unattributed_ambiguous",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": -2950
         },
         {
           "line_key": "ledger:duplicate_order_booking",
@@ -4337,7 +4337,7 @@
     }
   },
   "seed_1337_sealed": {
-    "projection_sha256": "084cdcd0d952121d616c341f9adb5c8f407bc94e117afdc92a300ec6c3dad70e",
+    "projection_sha256": "45d06e761cb969075535651f91e29754bc49dce5246fe1cd23409da9383bf320",
     "summary": {
       "n_bank_lines": 285,
       "attributed": 257,
@@ -7453,199 +7453,199 @@
           "line_key": "k_07def5bce166e301",
           "reason_code": "razorpay_coverage_not_found",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 36814836
         },
         {
           "line_key": "k_094659904546447d",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 64312940
         },
         {
           "line_key": "k_14809e671d593807",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 5363304
         },
         {
           "line_key": "k_1920eaea9690431b",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 8042026
         },
         {
           "line_key": "k_19b2770e44a7c2a9",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 4832856
         },
         {
           "line_key": "k_1b83ca609876a239",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 13483523
         },
         {
           "line_key": "k_1e392321517d357b",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 768033
         },
         {
           "line_key": "k_2003bb01efb53743",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 6886873
         },
         {
           "line_key": "k_3044c54dc1ecb549",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 21334659
         },
         {
           "line_key": "k_35bd841776c08ba4",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 15738756
         },
         {
           "line_key": "k_40e4ab03e10e640f",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 665028
         },
         {
           "line_key": "k_45d97a59fb14f906",
           "reason_code": "unbalanced_residual",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 41554024
         },
         {
           "line_key": "k_47395a2210095c25",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 25574613
         },
         {
           "line_key": "k_578050d753819e0e",
           "reason_code": "unattributed_ambiguous",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": -1180
         },
         {
           "line_key": "k_740c6531cdacef1b",
           "reason_code": "unbalanced_residual",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 44878247
         },
         {
           "line_key": "k_7712c47ee279d7fe",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 27717821
         },
         {
           "line_key": "k_78a8428301379b90",
           "reason_code": "unattributed_ambiguous",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": -2950
         },
         {
           "line_key": "k_8228b5643fbae89a",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 27739177
         },
         {
           "line_key": "k_8245e4f7fa4bb61a",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 22061692
         },
         {
           "line_key": "k_8b7baca93e39f088",
           "reason_code": "reconstructed_split_leg",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 35872179
         },
         {
           "line_key": "k_94efe0b73d0d14ed",
           "reason_code": "reconstructed_split_leg",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 1470576
         },
         {
           "line_key": "k_a14f1e5eeab5bf91",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 4272837
         },
         {
           "line_key": "k_a2616df093b450dc",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 23896062
         },
         {
           "line_key": "k_aa27a73525dcf08a",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 12934169
         },
         {
           "line_key": "k_b3b6b4cab8190eaf",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 3472624
         },
         {
           "line_key": "k_b72338efd1ac27bd",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 3376668
         },
         {
           "line_key": "k_b9114b311a37265e",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 931298
         },
         {
           "line_key": "k_be0a4d051cbf8eb5",
           "reason_code": "unattributed_ambiguous",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 14016273
         },
         {
           "line_key": "k_c8871975a4c4721e",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 16665168
         },
         {
           "line_key": "k_c93f1c3042fc9962",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 8782560
         },
         {
           "line_key": "k_d374775ba9108762",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 5119061
         },
         {
           "line_key": "k_e6c0fa8efa2a792d",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 13737855
         },
         {
           "line_key": "k_fc80dbd7c33e8bbd",
           "reason_code": "razorpay_uncertain",
           "severity": "",
-          "amount_paise": null
+          "amount_paise": 16990252
         },
         {
           "line_key": "ledger:duplicate_order_booking",
