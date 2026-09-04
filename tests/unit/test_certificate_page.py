@@ -1,9 +1,10 @@
 """Close-certificate document: routing, CSP, empty-by-default, run-scoped JSON."""
 from __future__ import annotations
 
-import pytest
 import threading
 import time
+
+import pytest
 from fastapi.testclient import TestClient
 
 from webapp import app as app_module
