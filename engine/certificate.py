@@ -50,21 +50,23 @@ def _canonical(obj: Any) -> bytes:
 
 
 def _signing_key():
-    """Load the ECDSA private key from the env (base64 PEM), or None if unavailable/unset."""
-    if not _CRYPTO_AVAILABLE:
-        return None
+    """Load the configured ECDSA P-256 key; fail closed on invalid configuration."""
     pem = os.environ.get(_SIGNING_KEY_ENV)
     if not pem:
         return None
+    if not _CRYPTO_AVAILABLE:
+        raise RuntimeError("UNTANGLE_SIGNING_KEY is configured but certificate signing support is unavailable")
     try:
-        key = _ser.load_pem_private_key(base64.b64decode(pem), password=None)
+        key = _ser.load_pem_private_key(base64.b64decode(pem, validate=True), password=None)
         # Certificates advertise ECDSA P-256; reject other private-key types/curves rather
         # than silently changing the issuer algorithm or producing unverifiable envelopes.
         if not isinstance(key, _ec.EllipticCurvePrivateKey) or not isinstance(key.curve, _ec.SECP256R1):
-            return None
+            raise ValueError("UNTANGLE_SIGNING_KEY must contain an ECDSA P-256 private key")
         return key
-    except Exception:
-        return None
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("UNTANGLE_SIGNING_KEY is not valid base64-encoded PEM") from exc
 
 
 def generate_signing_key() -> str:

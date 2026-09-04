@@ -11,6 +11,7 @@ import pytest
 
 from engine.certificate import (
     _CRYPTO_AVAILABLE,
+    _signing_key,
     build_close_certificate,
     generate_signing_key,
     issue_certificate,
@@ -66,9 +67,15 @@ def test_non_p256_signing_key_is_rejected(monkeypatch):
     pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
     import base64
     monkeypatch.setenv("UNTANGLE_SIGNING_KEY", base64.b64encode(pem).decode())
-    env = issue_certificate(_report())
-    assert env["signed"] is False
-    assert "signature" not in env
+    with pytest.raises(ValueError, match="ECDSA P-256"):
+        _signing_key()
+
+
+def test_malformed_signing_key_is_rejected(monkeypatch):
+    monkeypatch.setenv("UNTANGLE_SIGNING_KEY", "not-base64-pem")
+    expected = (ValueError, RuntimeError) if not _CRYPTO_AVAILABLE else (ValueError,)
+    with pytest.raises(expected):
+        _signing_key()
 
 
 def test_attached_unbound_or_different_report_is_not_authenticated(monkeypatch):
