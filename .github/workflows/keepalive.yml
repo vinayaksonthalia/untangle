@@ -4,6 +4,15 @@
 # of repo inactivity — for a demo, a dedicated uptime monitor (e.g. UptimeRobot, 5-min
 # interval on the same /healthz URL) is more reliable. This workflow is a free backup.
 name: keepalive
+
+# Machine-readable provenance for this behaviour-affecting workflow.
+env:
+  PROVENANCE_CREATED_BY: vinayaksonthalia
+  PROVENANCE_CREATED_AT: "2026-09-04"
+  PROVENANCE_SOURCE_REPO: vinayaksonthalia/untangle
+  PROVENANCE_SOURCE_BRANCH: chore/render-keepalive
+  PROVENANCE_PURPOSE: "keep Render free-tier deploy warm via scheduled /healthz ping"
+
 on:
   schedule:
     - cron: "*/12 * * * *"   # every 12 minutes
@@ -18,9 +27,18 @@ jobs:
         run: |
           URL="${KEEPALIVE_URL:-https://untangle-073l.onrender.com/healthz}"
           echo "Pinging $URL"
-          code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 90 "$URL" || echo "000")
-          echo "HTTP $code"
-          # A cold start can take a while; treat any 2xx/3xx as success and don't fail the run otherwise.
-          case "$code" in 2*|3*) echo "awake";; *) echo "warm-up attempted (code $code)";; esac
+          # A cold start can take a while, so retry a few times before giving up.
+          # Any 2xx/3xx = awake. If every attempt fails (transport error -> 000,
+          # or a 4xx/5xx), the endpoint is genuinely unreachable: fail the run so
+          # the broken deploy surfaces instead of a silently-green keepalive.
+          code=000
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 90 "$URL" || echo "000")
+            echo "attempt $attempt: HTTP $code"
+            case "$code" in 2*|3*) echo "awake"; exit 0;; esac
+            [ "$attempt" -lt 3 ] && sleep 20
+          done
+          echo "::error::keepalive could not reach $URL after 3 attempts (last code $code)"
+          exit 1
         env:
           KEEPALIVE_URL: ${{ vars.KEEPALIVE_URL }}
