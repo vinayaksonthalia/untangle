@@ -24,6 +24,8 @@ from mcp_server import (  # noqa: E402  — imported after the importorskip guar
     investigate_variance,
     list_unresolved_cash,
     reconcile_files,
+    reconcile_sample,
+    sample_unresolved_cash,
     suggest_next_evidence,
     verify_proof_packet,
 )
@@ -43,6 +45,33 @@ def test_reconcile_files():
     assert res["totals"]["n_bank_lines"] == 294
     assert res["headline_metrics"]["reconciled_count"] == 91
     assert res["headline_metrics"]["unresolved_rzp_count"] == 12
+
+
+def test_reconcile_sample_needs_no_paths(monkeypatch):
+    """reconcile_sample runs the built-in demo with NO file paths — the hosted/sandboxed path.
+
+    This is the tool that makes the remote MCP usable: it never calls _safe_path, so it works
+    even when the sandbox rejects every filesystem path.
+    """
+    monkeypatch.setenv("UNTANGLE_MCP_SANDBOX", "1")
+    res = reconcile_sample()
+    assert res["ok"] is True
+    assert res["mode"] == "demo"
+    assert len(res["audit_root"]) == 64
+    h = res["headline_metrics"]
+    assert h["n_bank_lines"] == 15  # 8 clean settlements + 7 investigation cases
+    assert h["reconciled_paise"] > 0
+    # deterministic: a second call returns the identical run
+    assert reconcile_sample()["audit_root"] == res["audit_root"]
+
+
+def test_sample_unresolved_cash_needs_no_paths(monkeypatch):
+    """sample_unresolved_cash surfaces the demo's exceptions without any file path."""
+    monkeypatch.setenv("UNTANGLE_MCP_SANDBOX", "1")
+    res = sample_unresolved_cash()
+    assert res["ok"] is True and res["mode"] == "demo"
+    assert res["unresolved_count"] == len(res["items"]) > 0
+    assert res["recovery_summary"]["unresolved_paise"] > 0
 
 
 def test_list_unresolved_cash():
