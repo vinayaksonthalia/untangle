@@ -1,248 +1,312 @@
 <!doctype html>
-<html lang="en" class="scroll-smooth">
+<html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>untangle — deterministic Razorpay settlement reconciliation</title>
-<meta name="description" content="untangle reconstructs commingled bank credits, unbundles Razorpay payouts to the single paise, proves fee &amp; GST allocations, and produces audit-ready Tally XML — abstaining rather than forcing a match. Read-only toward money."/>
-<link rel="stylesheet" href="/static/landing.css"/>
+<meta name="description" content="untangle separates commingled bank credits by payment rail, unbundles the proven Razorpay slice to the single paise, surfaces recoverable fee-GST, and writes a balanced Tally XML journal — abstaining rather than forcing a match. Read-only toward money."/>
 <style>
-  html, body { margin:0; padding:0; }
-  body { background:#fff; }
-  .font-tabular { font-variant-numeric: tabular-nums; }
-  :focus-visible { outline: 2px solid #2b5edb; outline-offset: 2px; }
+/* self-hosted fonts (CSP default-src 'self' blocks external font hosts) */
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:100 900;font-display:swap;src:url('/static/fonts/hanken-grotesk-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'Hanken Grotesk';font-style:normal;font-weight:100 900;font-display:swap;src:url('/static/fonts/hanken-grotesk-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;src:url('/static/fonts/inter-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;src:url('/static/fonts/inter-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:100 800;font-display:swap;src:url('/static/fonts/jetbrains-mono-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:100 800;font-display:swap;src:url('/static/fonts/jetbrains-mono-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+:root{
+  --ground:#f6f8fc;--panel:#fff;--panel-2:#fafbfe;--ink:#111827;--muted:#586074;--faint:#8b91a3;
+  --line:#e5e9f1;--line-strong:#cdd4e1;--accent:#2b5edb;--accent-ink:#1e49b8;--accent-tint:#e9f0fe;
+  --green:#0b7a43;--green-tint:#e7f4ec;--amber:#b06000;--amber-tint:#fbf1e1;--radius:10px;--grid:rgba(43,94,219,.05);
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;--display:'Hanken Grotesk','Inter',sans-serif;
+  --mono:'JetBrains Mono','SFMono-Regular',Menlo,monospace;--serif:Georgia,'Times New Roman',serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#090c13;--panel:#111725;--panel-2:#0d1220;--ink:#e9ecf3;--muted:#9aa2b4;--faint:#6a7185;
+  --line:#1f2634;--line-strong:#323b4d;--accent:#77a0ff;--accent-ink:#93b3ff;--accent-tint:#14213a;
+  --green:#4cc38a;--green-tint:#11241d;--amber:#e0a15a;--amber-tint:#281f12;--grid:rgba(119,160,255,.07);
+}}
+:root[data-theme="dark"]{
+  --ground:#090c13;--panel:#111725;--panel-2:#0d1220;--ink:#e9ecf3;--muted:#9aa2b4;--faint:#6a7185;
+  --line:#1f2634;--line-strong:#323b4d;--accent:#77a0ff;--accent-ink:#93b3ff;--accent-tint:#14213a;
+  --green:#4cc38a;--green-tint:#11241d;--amber:#e0a15a;--amber-tint:#281f12;--grid:rgba(119,160,255,.07);
+}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.wrap{max-width:1180px;margin:0 auto;padding:0 32px}@media(max-width:640px){.wrap{padding:0 20px}}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+h1,h2,h3{margin:0;font-family:var(--display);letter-spacing:-.035em;text-wrap:balance;font-weight:800}p{margin:0}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:8px;height:46px;padding:0 22px;border-radius:9px;font-weight:600;font-size:14.5px;cursor:pointer;border:1px solid transparent;white-space:nowrap;transition:background .15s,border-color .15s,transform .1s;font-family:var(--sans)}
+.btn.primary{background:var(--accent);color:#fff}.btn.primary:hover{background:var(--accent-ink)}
+.btn.ghost{background:var(--panel);color:var(--ink);border-color:var(--line-strong)}.btn.ghost:hover{border-color:var(--muted)}
+.btn.sm{height:38px;padding:0 15px;font-size:13.5px;border-radius:8px}.btn:active{transform:translateY(1px)}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;height:38px;width:38px;border-radius:8px;color:var(--muted);border:1px solid transparent;background:none;cursor:pointer}
+.iconbtn:hover{color:var(--ink);background:var(--panel);border-color:var(--line)}
+.kbd{display:inline-flex;align-items:center;gap:5px;height:38px;padding:0 11px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-family:var(--mono);font-size:12px;background:var(--panel);cursor:pointer}
+.kbd kbd{font-family:var(--mono);font-size:11px;color:var(--ink);background:var(--ground);border:1px solid var(--line);border-radius:3px;padding:0 4px}
+.brand{font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:-.035em}.brand .b{color:var(--accent)}
+.ah .ln{display:inline-block}.ah.arm .ln{opacity:0;transform:translateY(.18em)}
+.ah.arm.play .ln{animation:lnArrive .40s cubic-bezier(.22,1,.36,1) both;animation-delay:var(--d,0ms)}
+@keyframes lnArrive{from{opacity:0;transform:translateY(.18em)}to{opacity:1;transform:none}}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}
+.js .reveal{opacity:0;transform:translateY(22px);transition:opacity .8s cubic-bezier(.22,1,.36,1),transform .8s cubic-bezier(.22,1,.36,1)}
+.js .reveal.in{opacity:1;transform:none}.js .reveal.d1{transition-delay:.09s}.js .reveal.d2{transition-delay:.18s}
+@media (prefers-reduced-motion:reduce){.ah.arm .ln{opacity:1!important;transform:none!important;animation:none!important}.js .reveal{opacity:1!important;transform:none!important}*{animation:none!important;transition:none!important}}
+.lnav{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--ground) 85%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.lnav .wrap{height:64px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.lnav nav{display:flex;gap:28px}.lnav nav a{font-size:14px;color:var(--muted);font-weight:500}.lnav nav a:hover{color:var(--ink)}
+.lnav .right{display:flex;align-items:center;gap:10px;flex-wrap:nowrap}@media(max-width:820px){.lnav nav{display:none}}
+@media(max-width:560px){.lnav .wrap{gap:12px}.lnav .right{gap:6px}.lnav .right .kbd,.lnav .right .gh{display:none}.lnav .btn.sm{padding:0 12px}}
+.gh{color:var(--muted)}.gh:hover{color:var(--ink)}
+.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
+.hero::before{content:"";position:absolute;inset:0;background-image:radial-gradient(var(--grid) 1px,transparent 1px);background-size:28px 28px;-webkit-mask-image:radial-gradient(ellipse 72% 60% at 50% 26%,#000 40%,transparent 74%);mask-image:radial-gradient(ellipse 72% 60% at 50% 26%,#000 40%,transparent 74%)}
+.hero .wrap{position:relative;padding:100px 32px 84px;text-align:center;display:flex;flex-direction:column;align-items:center}
+.tags{display:inline-flex;flex-wrap:wrap;gap:0 14px;justify-content:center;align-items:center;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:30px;border:1px solid var(--line);background:var(--panel);border-radius:100px;padding:8px 18px}
+.tags .dot{width:4px;height:4px;border-radius:50%;background:var(--line-strong)}.tags .on{color:var(--green)}
+h1.head{font-size:clamp(40px,6vw,72px);line-height:1.02;max-width:16ch;margin-bottom:26px}
+h1.head .proof{font-family:var(--serif);font-style:italic;font-weight:400;color:var(--accent)}
+.lede{max-width:60ch;color:var(--muted);font-size:clamp(16px,1.6vw,19px);margin-bottom:34px}
+.cta-row{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
+.trust{display:flex;flex-wrap:wrap;gap:12px 30px;justify-content:center;font-family:var(--mono);font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:26px;margin-top:44px;width:100%;max-width:880px}
+.trust span{display:inline-flex;align-items:center;gap:8px}.trust svg{color:var(--accent)}
+.section{border-bottom:1px solid var(--line)}.section.alt{background:var(--panel-2)}
+.section .wrap{padding:100px 32px}@media(max-width:760px){.section .wrap{padding:68px 20px}.hero .wrap{padding:72px 20px 56px}}
+.feature{display:grid;grid-template-columns:.92fr 1.08fr;gap:64px;align-items:center}
+.feature.flip{grid-template-columns:1.08fr .92fr}.feature.flip .fig{order:-1}
+@media(max-width:900px){.feature,.feature.flip{grid-template-columns:1fr;gap:36px}.feature.flip .fig{order:0}}
+.ftext .eyebrow{display:block;margin-bottom:18px}.ftext h2{font-size:clamp(30px,4.2vw,50px);line-height:1.05;margin-bottom:20px}
+.ftext .l2{color:var(--muted);font-size:17px;line-height:1.7;max-width:44ch;margin-bottom:24px}
+.center-head{max-width:64ch;margin:0 auto 52px;text-align:center}.center-head .eyebrow{display:block;margin-bottom:16px}
+.center-head h2{font-size:clamp(30px,4.4vw,52px);line-height:1.04}.center-head p{color:var(--muted);font-size:17px;margin-top:18px}
+.arrowlink{display:inline-flex;align-items:center;gap:8px;color:var(--accent);font-weight:600;font-size:14.5px}
+.arrowlink svg{transition:transform .2s}.arrowlink:hover svg{transform:translateX(4px)}
+.mock{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:0 1px 0 var(--line),0 30px 60px -42px rgba(20,30,60,.3)}
+:root[data-theme="dark"] .mock,:root:not([data-theme="light"]) .mock{box-shadow:0 1px 0 var(--line),0 30px 70px -46px rgba(0,0,0,.75)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .mock{box-shadow:0 1px 0 var(--line),0 30px 70px -46px rgba(0,0,0,.75)}}
+.mock .mh{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 20px;border-bottom:1px solid var(--line)}
+.mock .mh .dot3{display:flex;gap:6px}.mock .mh .dot3 i{width:9px;height:9px;border-radius:50%;background:var(--line-strong)}
+.mock .mh .lab{font-family:var(--mono);font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.08em}
+.evi .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.evi .top .k{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.06em}
+.evi .top .amt{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.evi .top .flag{font-family:var(--mono);font-size:11px;color:var(--green);display:inline-flex;align-items:center;gap:6px}
+.evi .top .flag i{width:6px;height:6px;border-radius:50%;background:var(--green)}
+.evi .rows{padding:8px 22px 16px}.evi .r{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--line)}
+.evi .r:last-child{border-bottom:0}.evi .r .lbl{color:var(--muted);font-size:14.5px}
+.evi .r .v{font-family:var(--mono);font-size:14.5px;font-variant-numeric:tabular-nums}.evi .r .v.neg{color:var(--amber)}
+.evi .r.total{border-top:2px solid var(--line-strong);margin-top:4px;padding-top:15px}
+.evi .r.total .lbl{color:var(--ink);font-weight:700;font-family:var(--display);font-size:15.5px}
+.evi .r.total .v{color:var(--green);font-weight:700;font-size:17px}
+.evi .foot{display:flex;flex-wrap:wrap;gap:8px 20px;justify-content:space-between;padding:15px 22px;border-top:1px solid var(--line);background:var(--panel-2);font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.evi .foot b{color:var(--ink);font-weight:600}
+.nlist .ni{display:grid;grid-template-columns:auto 1fr auto;gap:20px;align-items:baseline;padding:20px 4px;border-bottom:1px solid var(--line)}
+.nlist .ni:last-child{border-bottom:0}.nlist .ni .idx{font-family:var(--mono);font-size:13px;color:var(--faint)}
+.nlist .ni h3{font-family:var(--display);font-size:18px;font-weight:700}.nlist .ni p{color:var(--muted);font-size:14px;margin-top:4px;max-width:52ch}
+.nlist .ni .risk{font-family:var(--mono);font-size:11px;color:var(--amber);white-space:nowrap}
+.nlist .ni.hl{border-left:2px solid var(--accent);padding-left:16px}.nlist .ni.hl .risk{color:var(--accent)}
+.tiers2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.tier{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
+.tier .pill{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:100px;background:var(--accent-tint);color:var(--accent-ink)}
+.tier h3{font-family:var(--display);font-weight:700;font-size:16px;margin:16px 0 6px}.tier p{color:var(--muted);font-size:13.5px}
+.tier .verdict{margin-top:14px;font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--green)}
+.caps-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.caps-top .count{font-family:var(--mono);font-size:13px;color:var(--muted)}.caps-nav{display:flex;gap:8px}
+.caps-vp{overflow:hidden}
+.caps-track{display:grid;grid-auto-flow:column;grid-auto-columns:calc((100% - 40px)/3);gap:20px;transition:transform .48s cubic-bezier(.22,1,.36,1)}
+@media(max-width:880px){.caps-track{grid-auto-columns:calc((100% - 20px)/2)}}@media(max-width:580px){.caps-track{grid-auto-columns:100%}}
+.cap{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:28px 26px;display:flex;flex-direction:column;min-height:248px;transition:border-color .2s,box-shadow .2s}
+.cap:hover{border-color:var(--line-strong)}.cap.feat{border-color:var(--accent);box-shadow:0 20px 50px -40px var(--accent)}
+.cap .num{font-family:var(--mono);font-size:12.5px;color:var(--faint)}
+.cap h3{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:-.025em;margin:20px 0 12px;line-height:1.15}.cap.feat h3{color:var(--accent)}
+.cap p{color:var(--muted);font-size:14.5px}.cap .tag{margin-top:auto;padding-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--faint);border-top:1px solid var(--line)}
+.railbar{height:3px;background:var(--line);border-radius:2px;margin-top:22px;overflow:hidden}
+.railbar span{display:block;height:100%;background:var(--accent);border-radius:2px;transition:margin-left .48s cubic-bezier(.22,1,.36,1),width .48s}
+.surf{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}@media(max-width:900px){.surf{grid-template-columns:1fr}}
+.sf{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column}
+.sf .h{display:flex;align-items:center;gap:11px;padding:18px 22px;border-bottom:1px solid var(--line)}
+.sf .h .i{color:var(--accent)}.sf .h b{font-family:var(--display);font-size:16px}.sf .h span{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--faint);text-transform:uppercase}
+.sf .term{padding:20px 22px;font-family:var(--mono);font-size:12.5px;background:var(--panel-2);flex:1;line-height:1.8;overflow-x:auto}
+.sf .term .c{color:var(--faint)}.sf .term .g{color:var(--green)}.sf .term .a{color:var(--accent)}
+.sf .cap2{padding:16px 22px;border-top:1px solid var(--line);color:var(--muted);font-size:13.5px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--panel)}
+@media(max-width:720px){.metrics{grid-template-columns:repeat(2,1fr)}}
+.metric{padding:34px 26px;border-right:1px solid var(--line)}.metric:last-child{border-right:0}
+@media(max-width:720px){.metric{border-bottom:1px solid var(--line)}.metric:nth-child(2n){border-right:0}}
+.metric .v{font-family:var(--display);font-weight:800;font-size:44px;letter-spacing:-.04em;font-variant-numeric:tabular-nums;line-height:1}.metric .v.g{color:var(--green)}
+.metric .l{color:var(--muted);font-size:13.5px;margin-top:12px}
+.safe{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}@media(max-width:760px){.safe{grid-template-columns:1fr}}
+.safe .s{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:28px}
+.safe .s .ic{width:42px;height:42px;border-radius:10px;background:var(--accent-tint);color:var(--accent);display:flex;align-items:center;justify-content:center;margin-bottom:18px}
+.safe .s h3{font-family:var(--display);font-weight:700;font-size:16.5px;margin-bottom:9px}.safe .s p{color:var(--muted);font-size:14px}.safe a{color:var(--accent);font-weight:600}
+.close-cta{position:relative;overflow:hidden;background:var(--ink);color:#fff}
+:root[data-theme="dark"] .close-cta,:root:not([data-theme="light"]) .close-cta{background:#05070c;border-top:1px solid var(--line)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .close-cta{background:#05070c;border-top:1px solid var(--line)}}
+.close-cta::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.06) 1px,transparent 1px);background-size:26px 26px}
+.close-cta .wrap{position:relative;padding:96px 32px;text-align:center;display:flex;flex-direction:column;align-items:center}
+.close-cta h2{font-size:clamp(32px,5vw,54px);line-height:1.04;color:#fff;max-width:17ch;margin-bottom:18px}
+.close-cta p{color:rgba(255,255,255,.72);max-width:56ch;margin-bottom:30px;font-size:17px}
+.close-cta .btn.ghost{background:rgba(255,255,255,.08);color:#fff;border-color:rgba(255,255,255,.22)}.close-cta .btn.ghost:hover{background:rgba(255,255,255,.15)}
+.close-cta .chips{display:flex;flex-wrap:wrap;gap:10px 26px;justify-content:center;margin-top:34px;font-family:var(--mono);font-size:12.5px;color:rgba(255,255,255,.62)}
+.close-cta .chips span{display:inline-flex;align-items:center;gap:8px}.close-cta .chips i{width:5px;height:5px;border-radius:50%;background:var(--green)}
+.lfoot{padding:38px 0 52px}.lfoot .wrap{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.lfoot nav{display:flex;gap:22px;flex-wrap:wrap}.lfoot nav a:hover{color:var(--ink)}
+.cmdk-bg{position:fixed;inset:0;z-index:120;background:rgba(8,11,20,.5);backdrop-filter:blur(3px);display:none;align-items:flex-start;justify-content:center;padding:12vh 16px 0}
+.cmdk-bg.open{display:flex}
+.cmdk{width:100%;max-width:580px;background:var(--panel);border:1px solid var(--line-strong);border-radius:14px;overflow:hidden;box-shadow:0 24px 70px rgba(8,11,20,.35)}
+.cmdk .in{display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--line)}
+.cmdk input{flex:1;height:54px;border:0;background:transparent;color:var(--ink);font-family:var(--sans);font-size:15.5px;outline:none}
+.cmdk .list{max-height:360px;overflow-y:auto;padding:8px}
+.cmdk .grp{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);padding:8px 10px 4px}
+.cmdk .row{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:8px;cursor:pointer;font-size:14.5px}
+.cmdk .row .k{font-family:var(--mono);font-size:11px;color:var(--faint)}.cmdk .row .nm{flex:1;font-weight:500}
+.cmdk .row[aria-selected="true"]{background:var(--accent-tint)}
+.cmdk .foot{display:flex;justify-content:space-between;padding:10px 16px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--faint)}
+.cmdk .empty{padding:28px;text-align:center;color:var(--muted);font-size:14px}
 </style>
 </head>
-<body class="bg-white font-sans text-on-surface antialiased selection:bg-primary-tint selection:text-primary">
+<body>
+<header class="lnav"><div class="wrap">
+  <a class="brand" href="/"><span>un</span><span class="b">tangle</span></a>
+  <nav><a href="#forensic">Forensic lens</a><a href="#problem">Problem</a><a href="#capabilities">Capabilities</a><a href="#surfaces">Surfaces</a><a href="#safety">Safety</a></nav>
+  <div class="right">
+    <button class="kbd" id="cmdk-open" aria-label="Command menu"><kbd>⌘</kbd><kbd>K</kbd></button>
+    <a class="iconbtn gh" href="https://github.com/vinayaksonthalia/untangle" target="_blank" rel="noopener" aria-label="GitHub"><svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
+    <button class="iconbtn" id="theme" aria-label="Theme"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+    <a class="btn primary sm" href="/try-sample">See the sample</a>
+  </div>
+</div></header>
 
-<!-- announcement -->
-<div class="bg-surface border-b border-border text-on-surface text-[12px] py-2 px-4 sm:px-8 font-mono tracking-tight">
-<div class="max-w-7xl mx-auto w-full flex items-center justify-between gap-4">
-<div class="flex items-center gap-2 overflow-hidden truncate">
-<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-primary-tint text-primary font-bold text-[10px] uppercase tracking-wider shrink-0">Track 4</span>
-<span class="truncate">Attribution-first reconciliation for Razorpay settlements — read-only, precision over recall.</span>
-</div>
-<a class="inline-flex items-center gap-1 text-primary hover:text-primary-hover font-semibold shrink-0" href="/verify">Verify a certificate →</a>
-</div>
-</div>
+<main>
+<section class="hero"><div class="wrap">
+  <div class="tags"><span>Deterministic</span><span class="dot"></span><span>Read-only toward money</span><span class="dot"></span><span class="on">Abstains rather than guessing</span></div>
+  <h1 class="head ah" data-ah>Close your Razorpay settlement books with <span class="proof">proof</span>, not guesses.</h1>
+  <p class="lede">untangle separates commingled bank credits by payment rail, unbundles the proven Razorpay slice to the single paise, surfaces recoverable fee-GST, and writes a balanced Tally XML journal — never forcing a match it cannot prove. Coverage is demonstrated on synthetic fixtures modelled on Razorpay's published settlement-report structure, not on live merchant data.</p>
+  <div class="cta-row"><a class="btn primary" href="/try-sample">See the sample run →</a><a class="btn ghost" href="/app">Reconcile your files</a></div>
+  <div class="trust">
+    <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Every verdict evidence-backed</span>
+    <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg> Read-only ingestion</span>
+    <span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg> Content SHA-256 audit root</span>
+    <a href="https://github.com/vinayaksonthalia/untangle/blob/main/docs/BANK_FORMAT_EVIDENCE.md" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/></svg> Settlement-report fields exercised, and their Razorpay-doc source ↗</a>
+  </div>
+</div></section>
 
-<!-- nav -->
-<header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-border">
-<div class="max-w-7xl mx-auto px-4 sm:px-8 h-16 flex items-center justify-between gap-6">
-<a class="flex items-center gap-2 shrink-0" href="/"><span class="font-display text-[22px] font-bold tracking-tight"><span class="text-on-surface">un</span><span class="text-primary">tangle</span></span></a>
-<nav class="hidden xl:flex items-center gap-7 text-[13px] font-medium text-on-surface-variant">
-<a class="hover:text-primary transition-colors" href="#problem">The problem</a>
-<a class="hover:text-primary transition-colors" href="#forensic">Forensic lens</a>
-<a class="hover:text-primary transition-colors" href="#invariants">Invariants</a>
-<a class="hover:text-primary transition-colors" href="#tiers">Evidence tiers</a>
-<a class="hover:text-primary transition-colors" href="#artifacts">Artifacts</a>
-<a class="hover:text-primary transition-colors" href="#safety">Safety</a>
-</nav>
-<div class="flex items-center gap-3 shrink-0">
-<a class="hidden sm:inline-flex text-[13px] font-medium text-on-surface-variant hover:text-on-surface px-2.5 py-1.5" href="/verify">Verify</a>
-<a class="inline-flex items-center gap-1.5 px-4 py-2 rounded text-[13px] font-semibold text-white bg-primary hover:bg-primary-hover transition-colors" href="/try-sample">See the sample</a>
-</div>
-</div>
-</header>
+<section class="section alt" id="forensic"><div class="wrap"><div class="feature">
+  <div class="ftext reveal"><span class="eyebrow">Forensic lens · illustrative</span><h2 class="ah" data-ah>Fuzzy matching hides the <span class="proof">money</span>.</h2><p class="l2">The same ₹12,40,474.00 credit, two ways. A string-distance matcher coerces a match and buries the variance in suspense. untangle decomposes to exact integer paise and closes to zero.</p><a class="arrowlink" href="/try-sample">See it on the sample run <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a></div>
+  <div class="fig reveal d1"><div class="mock evi"><div class="mh"><div class="dot3"><i></i><i></i><i></i></div><span class="lab">Reconciliation · one credit</span></div>
+    <div class="top"><div><div class="k">BANK CREDIT · HDFC</div><div class="amt mono">₹12,40,474.00</div></div><span class="flag"><i></i> residual ₹0.00</span></div>
+    <div class="rows">
+      <div class="r"><span class="lbl">Gross order volume</span><span class="v">₹12,85,000.00</span></div>
+      <div class="r"><span class="lbl">− Gateway MDR (2.0%)</span><span class="v neg">− ₹25,700.00</span></div>
+      <div class="r"><span class="lbl">− GST on fee (18%)</span><span class="v neg">− ₹4,626.00</span></div>
+      <div class="r"><span class="lbl">− Chargeback (CB-2041)</span><span class="v neg">− ₹14,200.00</span></div>
+      <div class="r total"><span class="lbl">Net bank credit</span><span class="v">₹12,40,474.00</span></div>
+    </div>
+    <div class="foot"><span>UTR <b>HDFC000240-994812</b></span><span>GST ITC <b>₹4,626.00</b></span><span>SHA-256 <b>d83f49…e271a</b></span></div>
+  </div></div>
+</div></div></section>
 
-<!-- hero -->
-<section class="relative pt-12 pb-16 lg:pt-16 lg:pb-24 bg-gradient-to-b from-surface/50 to-white border-b border-border">
-<div class="max-w-7xl mx-auto px-4 sm:px-8 flex flex-col items-center text-center">
-<div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-border mb-6 text-on-surface-variant text-[12px] font-mono tracking-tight">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px] text-secondary"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Zm34-102 102-44 104 44 56-96 110-26-10-112 74-84-74-86 10-112-110-24-58-96-102 44-104-44-56 96-110 24 10 112-74 86 74 84-10 114 110 24 58 96Zm102-318Zm-42 142 226-226-56-58-170 170-86-84-56 56 142 142Z"/></svg>
-<span class="font-semibold text-on-surface">DETERMINISTIC · READ-ONLY</span><span class="text-border">|</span>
-<span>INTEGER PAISE</span><span class="text-border">|</span>
-<span class="text-secondary font-medium">ABSTAINS RATHER THAN GUESSING</span>
-</div>
-<h1 class="font-display text-3xl sm:text-5xl lg:text-[58px] lg:leading-[1.1] font-extrabold tracking-tight max-w-4xl mb-6">
-Close your Razorpay settlement books <span class="text-primary underline decoration-primary-tint decoration-8 underline-offset-4">with proof</span>, not guesses.
-</h1>
-<p class="text-base sm:text-lg lg:text-[19px] leading-relaxed text-on-surface-variant max-w-3xl mb-10">
-untangle separates commingled bank credits by payment rail, unbundles the proven Razorpay slice to the single paise, surfaces recoverable fee GST, and produces a balanced Tally XML journal — never forcing a match it cannot prove.
-</p>
-<div class="flex flex-wrap items-center justify-center gap-4 mb-10 w-full max-w-lg">
-<a class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded text-[14px] font-semibold text-white bg-primary hover:bg-primary-hover transition-colors" href="/try-sample"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[18px]"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg> See the sample run</a>
-<a class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded text-[14px] font-semibold text-on-surface bg-white hover:bg-surface border border-border transition-colors" href="/app"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[18px] text-on-surface-variant"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg> Reconcile your files</a>
-</div>
-<div class="w-full max-w-5xl pt-8 border-t border-border-light flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-[12px] font-mono text-on-surface-variant">
-<div class="flex items-center gap-1.5"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-secondary text-[16px]"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Zm34-102 102-44 104 44 56-96 110-26-10-112 74-84-74-86 10-112-110-24-58-96-102 44-104-44-56 96-110 24 10 112-74 86 74 84-10 114 110 24 58 96Zm102-318Zm-42 142 226-226-56-58-170 170-86-84-56 56 142 142Z"/></svg> Every verdict evidence-backed</div>
-<div class="flex items-center gap-1.5"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-primary text-[16px]"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q97-30 162-118.5T718-480H480v-315l-240 90v207q0 7 2 18h238v316Z"/></svg> Read-only statement ingestion</div>
-<div class="flex items-center gap-1.5"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-secondary text-[16px]"><path d="M481-781q106 0 200 45.5T838-604q7 9 4.5 16t-8.5 12q-6 5-14 4.5t-14-8.5q-55-78-141.5-119.5T481-741q-97 0-182 41.5T158-580q-6 9-14 10t-14-4q-7-5-8.5-12.5T126-602q62-85 155.5-132T481-781Zm0 94q135 0 232 90t97 223q0 50-35.5 83.5T688-257q-51 0-87.5-33.5T564-374q0-33-24.5-55.5T481-452q-34 0-58.5 22.5T398-374q0 97 57.5 162T604-121q9 3 12 10t1 15q-2 7-8 12t-15 3q-104-26-170-103.5T358-374q0-50 36-84t87-34q51 0 87 34t36 84q0 33 25 55.5t59 22.5q34 0 58-22.5t24-55.5q0-116-85-195t-203-79q-118 0-203 79t-85 194q0 24 4.5 60t21.5 84q3 9-.5 16T208-205q-8 3-15.5-.5T182-217q-15-39-21.5-77.5T154-374q0-133 96.5-223T481-687Zm0-192q64 0 125 15.5T724-819q9 5 10.5 12t-1.5 14q-3 7-10 11t-17-1q-53-27-109.5-41.5T481-839q-58 0-114 13.5T260-783q-8 5-16 2.5T232-791q-4-8-2-14.5t10-11.5q56-30 117-46t124-16Zm0 289q93 0 160 62.5T708-374q0 9-5.5 14.5T688-354q-8 0-14-5.5t-6-14.5q0-75-55.5-125.5T481-550q-76 0-130.5 50.5T296-374q0 81 28 137.5T406-123q6 6 6 14t-6 14q-6 6-14 6t-14-6q-59-62-90.5-126.5T256-374q0-91 66-153.5T481-590Zm-1 196q9 0 14.5 6t5.5 14q0 75 54 123t126 48q6 0 17-1t23-3q9-2 15.5 2.5T744-191q2 8-3 14t-13 8q-18 5-31.5 5.5t-16.5.5q-89 0-154.5-60T460-374q0-8 5.5-14t14.5-6Z"/></svg> Content SHA-256 audit root</div>
-<div class="flex items-center gap-1.5"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-on-surface text-[16px]"><path d="M240-80q-50 0-85-35t-35-85v-120h120v-560l60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60v680q0 50-35 85t-85 35H240Zm480-80q17 0 28.5-11.5T760-200v-560H320v440h360v120q0 17 11.5 28.5T720-160ZM360-600v-80h240v80H360Zm0 120v-80h240v80H360Zm320-120q-17 0-28.5-11.5T640-640q0-17 11.5-28.5T680-680q17 0 28.5 11.5T720-640q0 17-11.5 28.5T680-600Zm0 120q-17 0-28.5-11.5T640-520q0-17 11.5-28.5T680-560q17 0 28.5 11.5T720-520q0 17-11.5 28.5T680-480ZM240-160h360v-80H200v40q0 17 11.5 28.5T240-160Zm-40 0v-80 80Z"/></svg> Balanced Tally XML journal</div>
-</div>
-</div>
-</section>
+<section class="section" id="problem"><div class="wrap"><div class="feature flip">
+  <div class="fig reveal"><div class="nlist">
+    <div class="ni"><span class="idx">01</span><div><h3>Razorpay T+2 settlements</h3><p>Hundreds of checkouts minus MDR, interchange and 18% GST — matching by amount is impossible.</p></div><span class="risk">unextracted ITC</span></div>
+    <div class="ni"><span class="idx">02</span><div><h3>Direct NEFT / RTGS</h3><p>B2B credits land the same day as gateway payouts; matchers pair them by coincidence.</p></div><span class="risk">debtor aging</span></div>
+    <div class="ni"><span class="idx">03</span><div><h3>Direct UPI &amp; QR</h3><p>Truncated narrations with no invoice reference flood the statement.</p></div><span class="risk">duplicate revenue</span></div>
+    <div class="ni"><span class="idx">04</span><div><h3>Loan drawdowns &amp; sweeps</h3><p>Sweeps and overdraft fees get mistaken for settlements.</p></div><span class="risk">debt as revenue</span></div>
+    <div class="ni hl"><span class="idx">05</span><div><h3>Chargeback clawbacks</h3><p>A dispute docks a later, unrelated settlement; heuristics miss the negative leg — untangle abstains.</p></div><span class="risk">precision first</span></div>
+  </div></div>
+  <div class="ftext reveal d1"><span class="eyebrow">The Indian ingestion trap</span><h2 class="ah" data-ah>Which credit is even <span class="proof">Razorpay’s</span>?</h2><p class="l2">A current account takes money from many rails at once — all as undifferentiated bank credits. Before you reconcile anything, you must know which credit is which.</p>
+    <div class="tiers2"><div class="tier"><span class="pill">Tier A</span><h3>Direct UTR</h3><p>Settlement UTR mirrors the bank feed exactly.</p><div class="verdict">Proven</div></div><div class="tier"><span class="pill">Tier C</span><h3>Unique subset-sum</h3><p>Exactly one set of settlements matches.</p><div class="verdict">Proven by construction</div></div></div>
+  </div>
+</div></div></section>
 
-<!-- forensic side-by-side -->
-<section class="py-16 bg-white border-b border-border" id="forensic">
-<div class="max-w-7xl mx-auto px-4 sm:px-8">
-<div class="text-center max-w-3xl mx-auto mb-10">
-<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-surface border border-border text-[11px] font-mono uppercase text-on-surface-variant font-semibold mb-2"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px] text-primary"><path d="M160-120q-33 0-56.5-23.5T80-200v-560q0-33 23.5-56.5T160-840h640q33 0 56.5 23.5T880-760v560q0 33-23.5 56.5T800-120H160Zm0-80h640v-560H160v560Zm40-80h200v-80H200v80Zm382-80 198-198-57-57-141 142-57-57-56 57 113 113Zm-382-80h200v-80H200v80Zm0-160h200v-80H200v80Zm-40 400v-560 560Z"/></svg> Illustrative worked example</div>
-<h2 class="font-display text-2xl sm:text-3xl font-bold tracking-tight">Fuzzy matching vs. untangle's deterministic solver</h2>
-<p class="text-sm sm:text-base text-on-surface-variant mt-2">How a heuristic matcher hides disallowances, and how untangle decomposes the same credit to exact integer paise.</p>
-</div>
-<div class="bg-surface rounded-xl border border-border overflow-hidden">
-<div class="bg-white border-b border-border px-5 py-3 flex flex-wrap items-center justify-between gap-4 font-mono text-[12px]">
-<div class="flex items-center gap-2">
-<span class="w-3 h-3 rounded-full bg-[#ea4335]"></span><span class="w-3 h-3 rounded-full bg-[#fbbc05]"></span><span class="w-3 h-3 rounded-full bg-[#34a853]"></span>
-<span class="ml-2 font-semibold">One bank credit</span><span class="text-on-surface-variant">₹12,40,474.00 into HDFC Current A/c</span>
-</div>
-<span class="inline-flex items-center gap-1 text-secondary font-semibold text-[11px]"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> integer-paise engine</span>
-</div>
-<div class="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border">
-<!-- fuzzy -->
-<div class="p-6 sm:p-8 bg-error-tint/20 flex flex-col justify-between">
-<div>
-<div class="flex items-center justify-between mb-4">
-<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-error-tint text-error font-mono text-[11px] font-bold uppercase"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[15px]"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg> Fuzzy / "AI" matching</span>
-<span class="text-[11px] font-mono text-error font-medium">"Confidence: 68%"</span>
-</div>
-<h3 class="text-base font-bold mb-2">Guess on narration string &amp; round amount</h3>
-<p class="text-xs text-on-surface-variant mb-4 leading-relaxed">String-distance matchers coerce a match and write penny variances into a suspense dump.</p>
-<div class="bg-white p-4 rounded border border-error/20 font-mono text-[12px] space-y-2 mb-4">
-<div class="text-[11px] text-on-surface-subtle uppercase">Raw bank narration</div>
-<div class="font-semibold bg-surface p-2 rounded break-all">CMS/NEFT/HDFC000240/RZP-PAYOUT-994812/1240474.00</div>
-<div class="pt-1 text-[11px] text-on-surface-subtle uppercase">Rule applied</div>
-<div class="text-error text-[11px] leading-normal">Forced match to a ~₹12,40,000 candidate; booked ₹474.00 to <em>Misc. round-off</em>.</div>
-</div>
-<div class="bg-white/80 p-4 rounded border border-error/10 text-xs text-on-surface-variant space-y-2">
-<div class="font-bold text-error flex items-center gap-1"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px]"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg> What it hides</div>
-<ul class="list-disc list-inside space-y-1 text-[11px] pl-1">
-<li><strong class="text-on-surface">₹25,700.00</strong> MDR fee left unbooked</li>
-<li><strong class="text-on-surface">₹4,626.00</strong> 18% GST input tax credit not extracted</li>
-<li><strong class="text-on-surface">₹14,200.00</strong> chargeback deduction concealed</li>
-</ul>
-</div>
-</div>
-<div class="pt-4 mt-4 border-t border-error/20 flex items-center justify-between font-mono text-[11px] text-error font-medium"><span>Unproved drift masked</span><span>₹474.00</span></div>
-</div>
-<!-- deterministic -->
-<div class="p-6 sm:p-8 bg-secondary-tint/20 flex flex-col justify-between">
-<div>
-<div class="flex items-center justify-between mb-4">
-<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-secondary-tint text-secondary font-mono text-[11px] font-bold uppercase"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[15px]"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Zm34-102 102-44 104 44 56-96 110-26-10-112 74-84-74-86 10-112-110-24-58-96-102 44-104-44-56 96-110 24 10 112-74 86 74 84-10 114 110 24 58 96Zm102-318Zm-42 142 226-226-56-58-170 170-86-84-56 56 142 142Z"/></svg> untangle deterministic solver</span>
-<span class="text-[11px] font-mono text-secondary font-bold">residual ₹0.00</span>
-</div>
-<h3 class="text-base font-bold mb-2">Exact integer-paise decomposition</h3>
-<p class="text-xs text-on-surface-variant mb-4 leading-relaxed">UTR-bound; decomposes gross checkout value, gateway fee, and statutory tax exactly (124,047,400 paise).</p>
-<div class="bg-white p-4 rounded border border-secondary/20 font-mono text-[12px] space-y-2 mb-4 font-tabular">
-<div class="flex justify-between"><span class="text-[11px] text-on-surface-variant">Gross order volume</span><span class="font-bold">₹12,85,000.00</span></div>
-<div class="flex justify-between text-[11px]"><span>− Gateway MDR (2.0%)</span><span class="text-error font-medium">− ₹25,700.00</span></div>
-<div class="flex justify-between text-[11px]"><span>− GST on fee (CGST 9% + SGST 9%)</span><span class="text-error font-medium">− ₹4,626.00</span></div>
-<div class="flex justify-between text-[11px]"><span>− Chargeback (ref #CB-2041)</span><span class="text-error font-medium">− ₹14,200.00</span></div>
-<div class="pt-2 border-t border-border flex justify-between font-bold"><span class="text-secondary flex items-center gap-1"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px]"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg> Net bank credit</span><span class="text-secondary text-sm">₹12,40,474.00</span></div>
-</div>
-<div class="bg-white/80 p-4 rounded border border-secondary/10 text-xs text-on-surface-variant space-y-1.5">
-<div class="font-bold text-secondary flex items-center gap-1"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px]"><path d="M481-781q106 0 200 45.5T838-604q7 9 4.5 16t-8.5 12q-6 5-14 4.5t-14-8.5q-55-78-141.5-119.5T481-741q-97 0-182 41.5T158-580q-6 9-14 10t-14-4q-7-5-8.5-12.5T126-602q62-85 155.5-132T481-781Zm0 94q135 0 232 90t97 223q0 50-35.5 83.5T688-257q-51 0-87.5-33.5T564-374q0-33-24.5-55.5T481-452q-34 0-58.5 22.5T398-374q0 97 57.5 162T604-121q9 3 12 10t1 15q-2 7-8 12t-15 3q-104-26-170-103.5T358-374q0-50 36-84t87-34q51 0 87 34t36 84q0 33 25 55.5t59 22.5q34 0 58-22.5t24-55.5q0-116-85-195t-203-79q-118 0-203 79t-85 194q0 24 4.5 60t21.5 84q3 9-.5 16T208-205q-8 3-15.5-.5T182-217q-15-39-21.5-77.5T154-374q0-133 96.5-223T481-687Zm0-192q64 0 125 15.5T724-819q9 5 10.5 12t-1.5 14q-3 7-10 11t-17-1q-53-27-109.5-41.5T481-839q-58 0-114 13.5T260-783q-8 5-16 2.5T232-791q-4-8-2-14.5t10-11.5q56-30 117-46t124-16Zm0 289q93 0 160 62.5T708-374q0 9-5.5 14.5T688-354q-8 0-14-5.5t-6-14.5q0-75-55.5-125.5T481-550q-76 0-130.5 50.5T296-374q0 81 28 137.5T406-123q6 6 6 14t-6 14q-6 6-14 6t-14-6q-59-62-90.5-126.5T256-374q0-91 66-153.5T481-590Zm-1 196q9 0 14.5 6t5.5 14q0 75 54 123t126 48q6 0 17-1t23-3q9-2 15.5 2.5T744-191q2 8-3 14t-13 8q-18 5-31.5 5.5t-16.5.5q-89 0-154.5-60T460-374q0-8 5.5-14t14.5-6Z"/></svg> Verification</div>
-<p class="text-[11px] font-mono break-all">Match key: <span class="text-on-surface font-semibold">UTR HDFC000240-994812</span> · content SHA-256: <span class="text-primary">d83f49…e271a</span></p>
-<div class="text-[11px] text-secondary font-medium">GST ITC ₹4,626.00 recoverable · balanced double-entry drafted</div>
-</div>
-</div>
-<div class="pt-4 mt-4 border-t border-secondary/20 flex items-center justify-between font-mono text-[11px] text-secondary font-bold"><span>Verified residual</span><span>₹0.00</span></div>
-</div>
-</div>
-<div class="bg-surface px-5 py-2.5 border-t border-border flex flex-wrap items-center justify-between text-[11px] font-mono text-on-surface-variant">
-<div>Engine: <span class="text-on-surface font-semibold">integer-paise, deterministic</span> · floating-point tolerance <span class="text-secondary font-bold">0 (exact)</span></div>
-<a href="/investigate" class="text-primary font-semibold hover:underline">See the investigation queue →</a>
-</div>
-</div>
-</div>
-</section>
+<section class="section alt" id="capabilities"><div class="wrap">
+  <div class="center-head reveal"><span class="eyebrow">The engine</span><h2 class="ah" data-ah>Twelve connected capabilities.</h2><p>From attribution to a re-verifiable certificate — the whole finance-ops loop, closed.</p></div>
+  <div class="caps-top reveal"><div class="count"><span id="cap-range">01–03</span> <span style="color:var(--faint)">/ 12</span></div><div class="caps-nav"><button class="iconbtn" id="cap-prev" style="border:1px solid var(--line)" aria-label="Prev"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button><button class="iconbtn" id="cap-next" style="border:1px solid var(--line)" aria-label="Next"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></button></div></div>
+  <div class="caps-vp reveal"><div class="caps-track" id="caps-track"></div></div><div class="railbar reveal"><span id="cap-rail"></span></div>
+</div></section>
 
-<!-- problem matrix -->
-<section class="py-16 sm:py-20 bg-surface border-b border-border" id="problem">
-<div class="max-w-7xl mx-auto px-4 sm:px-8">
-<div class="max-w-3xl mb-12">
-<span class="text-error font-mono text-[12px] uppercase font-bold tracking-wider">The Indian ingestion trap</span>
-<h2 class="font-display text-2xl sm:text-4xl font-extrabold tracking-tight mt-2 mb-4">Why controllers lose weeks reconciling current accounts</h2>
-<p class="text-base text-on-surface-variant leading-relaxed">Hundreds of lump-sum credits pool into one HDFC/ICICI/Axis current account every morning. When channels commingle, ordinary tools break down.</p>
-</div>
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-<div class="bg-white p-6 rounded-lg border border-border flex flex-col justify-between"><div><div class="w-9 h-9 rounded bg-primary-tint text-primary flex items-center justify-center mb-4 font-mono font-bold text-sm">1</div><h3 class="text-base font-bold mb-2">Razorpay T+2 batch settlements</h3><p class="text-xs text-on-surface-variant leading-relaxed mb-4">A single lumped credit represents hundreds of checkouts minus card MDR, UPI interchange, and 18% GST withheld — matching by amount is impossible.</p></div><div class="text-[11px] font-mono p-2 bg-surface rounded border border-border text-on-surface-variant">Risk: unextracted GST ITC.</div></div>
-<div class="bg-white p-6 rounded-lg border border-border flex flex-col justify-between"><div><div class="w-9 h-9 rounded bg-secondary-tint text-secondary flex items-center justify-center mb-4 font-mono font-bold text-sm">2</div><h3 class="text-base font-bold mb-2">Direct NEFT / RTGS payouts</h3><p class="text-xs text-on-surface-variant leading-relaxed mb-4">B2B distributor credits intermingle with gateway payouts on the same date; fuzzy matchers pair them because amounts coincide.</p></div><div class="text-[11px] font-mono p-2 bg-surface rounded border border-border text-on-surface-variant">Risk: distorted debtor aging.</div></div>
-<div class="bg-white p-6 rounded-lg border border-border flex flex-col justify-between"><div><div class="w-9 h-9 rounded bg-tertiary-tint text-tertiary flex items-center justify-center mb-4 font-mono font-bold text-sm">3</div><h3 class="text-base font-bold mb-2">Direct UPI &amp; QR collections</h3><p class="text-xs text-on-surface-variant leading-relaxed mb-4">Truncated narrations without invoice identifiers flood the statement with micro-transactions.</p></div><div class="text-[11px] font-mono p-2 bg-surface rounded border border-border text-on-surface-variant">Risk: duplicate revenue recognition.</div></div>
-<div class="bg-white p-6 rounded-lg border border-border flex flex-col justify-between"><div><div class="w-9 h-9 rounded bg-primary-tint text-primary flex items-center justify-center mb-4 font-mono font-bold text-sm">4</div><h3 class="text-base font-bold mb-2">Loan drawdowns &amp; sweeps</h3><p class="text-xs text-on-surface-variant leading-relaxed mb-4">Term loans, sweep interest, and overdraft fees share the account; tools mistake sweeps for settlements.</p></div><div class="text-[11px] font-mono p-2 bg-surface rounded border border-border text-on-surface-variant">Risk: debt booked as revenue.</div></div>
-<div class="bg-white p-6 rounded-lg border border-border flex flex-col justify-between"><div><div class="w-9 h-9 rounded bg-error-tint text-error flex items-center justify-center mb-4 font-mono font-bold text-sm">5</div><h3 class="text-base font-bold mb-2">Chargeback clawbacks</h3><p class="text-xs text-on-surface-variant leading-relaxed mb-4">A dispute docks a later, unrelated settlement; heuristics miss the negative deduction and the ledger drifts.</p></div><div class="text-[11px] font-mono p-2 bg-surface rounded border border-border text-on-surface-variant">Risk: unrecognised liabilities.</div></div>
-<div class="bg-on-surface text-white p-6 rounded-lg flex flex-col justify-between"><div><div class="flex items-center gap-2 text-primary font-mono text-[11px] uppercase tracking-wider font-bold mb-3"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]"><path d="M160-120v-80h480v80H160Zm226-194L160-540l84-86 228 226-86 86Zm254-254L414-796l86-84 226 226-86 86Zm184 408L302-682l56-56 522 522-56 56Z"/></svg> Why precision matters</div><h4 class="text-base font-bold mb-2">A wrong "Razorpay" call corrupts the books</h4><p class="text-xs text-gray-300 leading-relaxed">In India an unexplained credit can attract punitive tax. untangle refuses to assert a rail it cannot prove — abstention is a financial safeguard, not a limitation.</p></div><div class="pt-4 border-t border-gray-700 text-[11px] font-mono text-gray-400">Precision over recall, by design.</div></div>
-</div>
-</div>
-</section>
+<section class="section" id="surfaces"><div class="wrap">
+  <div class="center-head reveal"><span class="eyebrow">One engine, three surfaces</span><h2 class="ah" data-ah>Browser, terminal, or an AI agent.</h2><p>The same deterministic engine backs a hosted web app, a headless CLI, and a read-only MCP server.</p></div>
+  <div class="surf reveal">
+    <div class="sf"><div class="h"><span class="i"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18M8 21h8"/></svg></span><b>Web app</b><span>hosted</span></div><div class="term">Upload three files →<br><span class="c">bank.csv · recon.json · ledger.csv</span><br><br>Dashboard, Investigate,<br>Verify &amp; a downloadable<br><span class="a">close certificate</span>.</div><div class="cap2">Blank by default; run the sample or your own files.</div></div>
+    <div class="sf"><div class="h"><span class="i"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg></span><b>CLI</b><span>headless</span></div><div class="term"><span class="c"># reconcile a batch</span><br>python -m engine.cli run \<br>&nbsp;&nbsp;--bank bank.csv \<br>&nbsp;&nbsp;--recon recon.json \<br>&nbsp;&nbsp;--ledger ledger.csv<br><span class="g">→ out/report.json</span></div><div class="cap2">Deterministic, no browser, seed-stable.</div></div>
+    <div class="sf"><div class="h"><span class="i"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 2"/></svg></span><b>MCP server</b><span>agents</span></div><div class="term"><span class="c"># from Claude / ChatGPT</span><br>untangle.<span class="a">reconcile_sample</span>()<br>untangle.list_unresolved_cash()<br>untangle.investigate_variance()<br><span class="c">12 read-only tools</span></div><div class="cap2">stdio &amp; hosted HTTP — never moves money.</div></div>
+  </div>
+</div></section>
 
-<!-- invariants -->
-<section class="py-16 sm:py-20 bg-white border-b border-border" id="invariants">
-<div class="max-w-7xl mx-auto px-4 sm:px-8">
-<div class="text-center max-w-3xl mx-auto mb-14"><span class="text-primary font-mono text-[12px] uppercase font-bold tracking-wider">The engine</span><h2 class="font-display text-2xl sm:text-4xl font-extrabold tracking-tight mt-2 mb-4">Four rules untangle never breaks</h2></div>
-<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-<div class="p-6 sm:p-8 rounded-xl border border-border bg-surface hover:bg-white transition-colors"><div class="flex items-start gap-4"><div class="w-12 h-12 rounded-lg bg-primary-tint text-primary flex items-center justify-center shrink-0"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[26px]"><path d="M549-120 280-400v-80h140q53 0 91.5-34.5T558-600H240v-80h306q-17-35-50.5-57.5T420-760H240v-80h480v80H590q14 17 25 37t17 43h88v80h-81q-8 85-70 142.5T420-400h-29l269 280H549Z"/></svg></div><div><span class="text-[11px] font-mono font-bold text-primary uppercase">Invariant 01</span><h3 class="text-lg font-bold mt-0.5 mb-2">Integer-paise arithmetic</h3><p class="text-xs sm:text-sm text-on-surface-variant leading-relaxed mb-4">Floating point leaks fractions of paise. untangle converts every amount to exact integer paise, conserving money to the paisa.</p><div class="font-mono text-[11px] text-secondary bg-white p-2.5 rounded border border-border">Gross − (MDR + GST + refunds) ≡ net bank credit (residual = 0 paise)</div></div></div></div>
-<div class="p-6 sm:p-8 rounded-xl border border-border bg-surface hover:bg-white transition-colors"><div class="flex items-start gap-4"><div class="w-12 h-12 rounded-lg bg-error-tint text-error flex items-center justify-center shrink-0"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[26px]"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Zm-80 160h160q17 0 28.5-11.5T600-360v-120q0-17-11.5-28.5T560-520v-40q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560v40q-17 0-28.5 11.5T360-480v120q0 17 11.5 28.5T400-320Zm40-200v-40q0-17 11.5-28.5T480-600q17 0 28.5 11.5T520-560v40h-80Z"/></svg></div><div><span class="text-[11px] font-mono font-bold text-error uppercase">Invariant 02</span><h3 class="text-lg font-bold mt-0.5 mb-2">Abstain, never equivocate</h3><p class="text-xs sm:text-sm text-on-surface-variant leading-relaxed mb-4">If two settlements share a net total without a distinct UTR, untangle refuses to guess — it isolates the candidates for a human.</p><div class="font-mono text-[11px] text-error bg-white p-2.5 rounded border border-border">Zero false positives: 5 honest abstentions &gt; 1 bogus auto-match</div></div></div></div>
-<div class="p-6 sm:p-8 rounded-xl border border-border bg-surface hover:bg-white transition-colors"><div class="flex items-start gap-4"><div class="w-12 h-12 rounded-lg bg-tertiary-tint text-tertiary flex items-center justify-center shrink-0"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[26px]"><path d="M280-280h160v-160H280v160Zm240 0h160v-160H520v160ZM280-520h160v-160H280v160Zm240 0h160v-160H520v160ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg></div><div><span class="text-[11px] font-mono font-bold text-tertiary uppercase">Invariant 03</span><h3 class="text-lg font-bold mt-0.5 mb-2">Exact subset-sum decomposition</h3><p class="text-xs sm:text-sm text-on-surface-variant leading-relaxed mb-4">When a payout splits or aggregates orders, untangle proves a unique combination satisfies the net amount — no random combinatorial ambiguity.</p><div class="font-mono text-[11px] text-tertiary bg-white p-2.5 rounded border border-border">Constrained integer partition, verified — not approximated</div></div></div></div>
-<div class="p-6 sm:p-8 rounded-xl border border-border bg-surface hover:bg-white transition-colors"><div class="flex items-start gap-4"><div class="w-12 h-12 rounded-lg bg-secondary-tint text-secondary flex items-center justify-center shrink-0"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[26px]"><path d="M481-781q106 0 200 45.5T838-604q7 9 4.5 16t-8.5 12q-6 5-14 4.5t-14-8.5q-55-78-141.5-119.5T481-741q-97 0-182 41.5T158-580q-6 9-14 10t-14-4q-7-5-8.5-12.5T126-602q62-85 155.5-132T481-781Zm0 94q135 0 232 90t97 223q0 50-35.5 83.5T688-257q-51 0-87.5-33.5T564-374q0-33-24.5-55.5T481-452q-34 0-58.5 22.5T398-374q0 97 57.5 162T604-121q9 3 12 10t1 15q-2 7-8 12t-15 3q-104-26-170-103.5T358-374q0-50 36-84t87-34q51 0 87 34t36 84q0 33 25 55.5t59 22.5q34 0 58-22.5t24-55.5q0-116-85-195t-203-79q-118 0-203 79t-85 194q0 24 4.5 60t21.5 84q3 9-.5 16T208-205q-8 3-15.5-.5T182-217q-15-39-21.5-77.5T154-374q0-133 96.5-223T481-687Zm0-192q64 0 125 15.5T724-819q9 5 10.5 12t-1.5 14q-3 7-10 11t-17-1q-53-27-109.5-41.5T481-839q-58 0-114 13.5T260-783q-8 5-16 2.5T232-791q-4-8-2-14.5t10-11.5q56-30 117-46t124-16Zm0 289q93 0 160 62.5T708-374q0 9-5.5 14.5T688-354q-8 0-14-5.5t-6-14.5q0-75-55.5-125.5T481-550q-76 0-130.5 50.5T296-374q0 81 28 137.5T406-123q6 6 6 14t-6 14q-6 6-14 6t-14-6q-59-62-90.5-126.5T256-374q0-91 66-153.5T481-590Zm-1 196q9 0 14.5 6t5.5 14q0 75 54 123t126 48q6 0 17-1t23-3q9-2 15.5 2.5T744-191q2 8-3 14t-13 8q-18 5-31.5 5.5t-16.5.5q-89 0-154.5-60T460-374q0-8 5.5-14t14.5-6Z"/></svg></div><div><span class="text-[11px] font-mono font-bold text-secondary uppercase">Invariant 04</span><h3 class="text-lg font-bold mt-0.5 mb-2">Hash-bound audit trail</h3><p class="text-xs sm:text-sm text-on-surface-variant leading-relaxed mb-4">Every run carries a content SHA-256 audit root and per-packet proof checks — re-derive the hash in any browser. Signed with ECDSA P-256 when a key is configured, else hash-bound.</p><div class="font-mono text-[11px] text-secondary bg-white p-2.5 rounded border border-border">Re-hashable, tamper-evident — not a Merkle-tree claim we don't make</div></div></div></div>
-</div>
-</div>
-</section>
+<section class="section alt"><div class="wrap"><div class="center-head reveal"><span class="eyebrow">Measured — precision first</span><h2 class="ah" data-ah>Numbers we can defend.</h2><p>On a generator-blind adversarial holdout (n ≈ 294, reproducible from seed 42). Measured on a labelled synthetic benchmark — never a claim about every real statement.</p></div>
+  <div class="metrics reveal"><div class="metric"><div class="v g">1.000</div><div class="l">Razorpay attribution precision</div></div><div class="metric"><div class="v g">0</div><div class="l">decoy false-positives · 181 look-alikes</div></div><div class="metric"><div class="v">±₹0</div><div class="l">residual on every reconciled credit</div></div><div class="metric"><div class="v">0.91</div><div class="l">recall · the rest abstain, never guessed</div></div></div>
+  <p style="text-align:center;margin-top:22px;font-size:13.5px;color:var(--muted)">These figures are the sealed, generator-blind holdout reported in the <a href="https://github.com/vinayaksonthalia/untangle/blob/main/README.md" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">README</a> and reproducible with <code style="font-family:var(--mono);font-size:12px">python -m eval.sealed</code>. Illustrative fee &amp; GST figures follow Razorpay's published settlement-report fields (entity fee, tax, UTR) — see <a href="https://github.com/vinayaksonthalia/untangle/blob/main/data/razorpay-samples/SOURCES.md" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">the sourced sample</a>.</p>
+</div></section>
 
-<!-- evidence tiers -->
-<section class="py-16 sm:py-20 bg-surface border-b border-border" id="tiers">
-<div class="max-w-7xl mx-auto px-4 sm:px-8">
-<div class="text-center max-w-3xl mx-auto mb-12"><span class="text-secondary font-mono text-[12px] uppercase font-bold tracking-wider">Proof classification</span><h2 class="font-display text-2xl sm:text-4xl font-extrabold tracking-tight mt-2 mb-4">Every reconciled credit carries an evidence tier</h2></div>
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-<div class="bg-white rounded-lg border-2 border-secondary/30 p-6 flex flex-col justify-between"><div><div class="flex items-center justify-between mb-3"><span class="px-2.5 py-1 rounded bg-secondary-tint text-secondary font-mono text-[11px] font-bold">TIER A</span><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-secondary text-[22px]"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Zm34-102 102-44 104 44 56-96 110-26-10-112 74-84-74-86 10-112-110-24-58-96-102 44-104-44-56 96-110 24 10 112-74 86 74 84-10 114 110 24 58 96Zm102-318Zm-42 142 226-226-56-58-170 170-86-84-56 56 142 142Z"/></svg></div><h3 class="text-base font-bold mb-2">Direct UTR link</h3><p class="text-xs text-on-surface-variant leading-relaxed mb-4">The Razorpay settlement UTR mirrors the bank statement feed exactly.</p></div><div class="pt-3 border-t border-border font-mono text-[11px]"><div class="text-secondary font-bold">Proven</div></div></div>
-<div class="bg-white rounded-lg border border-border p-6 flex flex-col justify-between"><div><div class="flex items-center justify-between mb-3"><span class="px-2.5 py-1 rounded bg-primary-tint text-primary font-mono text-[11px] font-bold">TIER B</span><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-primary text-[22px]"><path d="M268-240 42-466l57-56 170 170 56 56-57 56Zm226 0L268-466l56-57 170 170 368-368 56 57-424 424Zm0-226-57-56 198-198 57 56-198 198Z"/></svg></div><h3 class="text-base font-bold mb-2">Corroborated reference</h3><p class="text-xs text-on-surface-variant leading-relaxed mb-4">Batch reference corroborated across independent metadata signals.</p></div><div class="pt-3 border-t border-border font-mono text-[11px]"><div class="text-primary font-bold">Proven</div></div></div>
-<div class="bg-white rounded-lg border border-border p-6 flex flex-col justify-between"><div><div class="flex items-center justify-between mb-3"><span class="px-2.5 py-1 rounded bg-tertiary-tint text-tertiary font-mono text-[11px] font-bold">TIER C</span><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-tertiary text-[22px]"><path d="M280-280h160v-160H280v160Zm240 0h160v-160H520v160ZM280-520h160v-160H280v160Zm240 0h160v-160H520v160ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg></div><h3 class="text-base font-bold mb-2">Unique subset-sum</h3><p class="text-xs text-on-surface-variant leading-relaxed mb-4">Exactly one combination of pending orders matches the credit — no alternative exists.</p></div><div class="pt-3 border-t border-border font-mono text-[11px]"><div class="text-tertiary font-bold">Proven by construction</div></div></div>
-<div class="bg-white rounded-lg border-2 border-error/30 p-6 flex flex-col justify-between"><div><div class="flex items-center justify-between mb-3"><span class="px-2.5 py-1 rounded bg-error-tint text-error font-mono text-[11px] font-bold">ABSTAIN</span><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-error text-[22px]"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg></div><h3 class="text-base font-bold mb-2">Needs evidence</h3><p class="text-xs text-on-surface-variant leading-relaxed mb-4">Ambiguous or off by a paisa — the engine isolates it for review instead of guessing.</p></div><div class="pt-3 border-t border-border font-mono text-[11px]"><div class="text-error font-bold">Zero forced guesses</div></div></div>
-</div>
-</div>
-</section>
+<section class="section" id="safety"><div class="wrap"><div class="center-head reveal"><span class="eyebrow">Safer by design</span><h2 class="ah" data-ah>Read-only toward money.</h2><p>What is guaranteed, and what is not — stated plainly.</p></div>
+  <div class="safe reveal"><div class="s"><div class="ic"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h3>Zero write access</h3><p>untangle ingests read-only statements. There is no code path to move, authorise or debit funds, and it never posts to your books.</p></div>
+  <div class="s"><div class="ic"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg></div><h3>Privacy by construction</h3><p>Files are processed in memory and discarded when the session ends. Results stay in your own browser tab; no database stores your statements.</p></div>
+  <div class="s"><div class="ic"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg></div><h3>No overclaims</h3><p>No SOC 2, ISO 27001 or statutory certification is claimed. Benchmarks are synthetic unless named. See <a href="https://github.com/vinayaksonthalia/untangle/blob/main/SAFETY.md" target="_blank" rel="noopener">SAFETY.md</a>.</p></div></div>
+</div></section>
 
-<!-- artifacts -->
-<section class="py-16 sm:py-20 bg-white border-b border-border" id="artifacts">
-<div class="max-w-7xl mx-auto px-4 sm:px-8">
-<div class="text-center max-w-3xl mx-auto mb-14"><span class="text-primary font-mono text-[12px] uppercase font-bold tracking-wider">What you get</span><h2 class="font-display text-2xl sm:text-4xl font-extrabold tracking-tight mt-2 mb-4">Open, balanced, verifiable artifacts</h2><p class="text-base text-on-surface-variant mt-2">No locked portal — files built for your accounting software and an independent verifier.</p></div>
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-<div class="bg-surface rounded-xl border border-border overflow-hidden flex flex-col justify-between"><div class="p-6"><div class="flex items-center justify-between mb-3"><span class="inline-flex items-center gap-1 text-[11px] font-mono text-secondary font-bold bg-secondary-tint px-2 py-0.5 rounded"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px]"><path d="M240-80q-50 0-85-35t-35-85v-120h120v-560l60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60v680q0 50-35 85t-85 35H240Zm480-80q17 0 28.5-11.5T760-200v-560H320v440h360v120q0 17 11.5 28.5T720-160ZM360-600v-80h240v80H360Zm0 120v-80h240v80H360Zm320-120q-17 0-28.5-11.5T640-640q0-17 11.5-28.5T680-680q17 0 28.5 11.5T720-640q0 17-11.5 28.5T680-600Zm0 120q-17 0-28.5-11.5T640-520q0-17 11.5-28.5T680-560q17 0 28.5 11.5T720-520q0 17-11.5 28.5T680-480ZM240-160h360v-80H200v40q0 17 11.5 28.5T240-160Zm-40 0v-80 80Z"/></svg> TALLY XML</span></div><h3 class="text-base font-bold mb-2">Balanced double-entry journal</h3><p class="text-xs text-on-surface-variant leading-relaxed mb-4">Importable into Tally Prime. Splits gateway charges, GST input tax credit, and clearing suspense — debits equal credits.</p><div class="bg-on-surface text-gray-200 p-3.5 rounded text-[11px] font-mono leading-relaxed overflow-x-auto space-y-1"><div class="text-blue-400">&lt;VOUCHER VCHTYPE="Journal"&gt;</div><div class="pl-2 text-green-400">&lt;LEDGERNAME&gt;HDFC Bank A/c&lt;/LEDGERNAME&gt;</div><div class="pl-4 text-white">&lt;AMOUNT&gt;-1240474.00&lt;/AMOUNT&gt;</div><div class="pl-2 text-yellow-400">&lt;LEDGERNAME&gt;Gateway MDR&lt;/LEDGERNAME&gt;</div><div class="pl-4 text-white">&lt;AMOUNT&gt;-25700.00&lt;/AMOUNT&gt;</div><div class="pl-2 text-blue-300">&lt;LEDGERNAME&gt;Input GST 18%&lt;/LEDGERNAME&gt;</div><div class="pl-4 text-white">&lt;AMOUNT&gt;-4626.00&lt;/AMOUNT&gt;</div><div class="text-blue-400">&lt;/VOUCHER&gt;</div></div></div><div class="bg-white p-4 border-t border-border flex items-center justify-between text-[11px] font-mono"><span class="text-secondary font-semibold">✓ debits == credits</span><a href="/api/journal/sample.tally.xml" class="text-primary hover:underline font-bold">Download sample XML</a></div></div>
-<div class="bg-surface rounded-xl border border-border overflow-hidden flex flex-col justify-between"><div class="p-6"><div class="flex items-center justify-between mb-3"><span class="inline-flex items-center gap-1 text-[11px] font-mono text-primary font-bold bg-primary-tint px-2 py-0.5 rounded"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px]"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Zm34-102 102-44 104 44 56-96 110-26-10-112 74-84-74-86 10-112-110-24-58-96-102 44-104-44-56 96-110 24 10 112-74 86 74 84-10 114 110 24 58 96Zm102-318Zm-42 142 226-226-56-58-170 170-86-84-56 56 142 142Z"/></svg> CLOSE CERTIFICATE</span></div><h3 class="text-base font-bold mb-2">Independently verifiable</h3><p class="text-xs text-on-surface-variant leading-relaxed mb-4">A printable close certificate carrying the content SHA-256, the report binding, and per-packet proof checks — re-hashable in any browser.</p><div class="bg-white p-4 rounded border border-border text-[11px] font-mono space-y-2"><div class="flex items-center justify-between border-b border-border pb-2"><span class="font-bold">CLOSE CERTIFICATE</span><span class="text-secondary font-bold">residual ₹0.00</span></div><div class="text-on-surface-variant space-y-1"><div class="flex justify-between"><span>Reconciled slice:</span><span class="text-on-surface font-semibold">to the paise</span></div><div class="flex justify-between"><span>Proof packets:</span><span class="text-secondary font-bold">all passed</span></div><div class="flex justify-between"><span>Content hash:</span><span class="text-primary">ae68…0971</span></div><div class="flex justify-between"><span>Signature:</span><span class="text-on-surface">hash-bound</span></div></div></div></div><div class="bg-white p-4 border-t border-border flex items-center justify-between text-[11px] font-mono"><span class="text-on-surface-variant">SHA-256 content hash</span><a href="/certificate" class="text-primary hover:underline font-bold">View certificate</a></div></div>
-<div class="bg-surface rounded-xl border border-border overflow-hidden flex flex-col justify-between"><div class="p-6"><div class="flex items-center justify-between mb-3"><span class="inline-flex items-center gap-1 text-[11px] font-mono text-tertiary font-bold bg-tertiary-tint px-2 py-0.5 rounded"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px]"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg> EXCEPTION QUEUE</span></div><h3 class="text-base font-bold mb-2">Honest exceptions, with a reason</h3><p class="text-xs text-on-surface-variant leading-relaxed mb-4">What untangle refuses to force is surfaced with a root-cause investigation, a suggested next action, and — where supported — a balanced corrective voucher marked "proposal only, not posted".</p><div class="bg-white p-4 rounded border border-border text-[11px] font-mono space-y-2 text-on-surface-variant"><div class="flex justify-between"><span class="text-on-surface font-semibold">cross_cycle_refund_lag</span><span class="text-secondary">resolved</span></div><div class="flex justify-between"><span class="text-on-surface font-semibold">unexplained</span><span class="text-tertiary">needs evidence</span></div><div class="bg-surface p-2 rounded text-[10px] leading-relaxed">Variance −₹120.00 → cross-cycle refund accounts for it. Corrective voucher drafted, not posted.</div></div></div><div class="bg-white p-4 border-t border-border flex items-center justify-between text-[11px] font-mono"><span class="text-on-surface-variant">root-cause investigation</span><a href="/investigate" class="text-primary hover:underline font-bold">Open the queue</a></div></div>
-</div>
-</div>
-</section>
+<section class="close-cta"><div class="wrap"><h2 class="ah" data-ah>Start your close with zero risk.</h2><p class="reveal d1">See the sample close end to end, or reconcile your own files — processed in memory, never touching live systems.</p><div class="cta-row reveal d1"><a class="btn primary" href="/try-sample">See the sample close →</a><a class="btn ghost" href="/verify">Verify a certificate</a></div><div class="chips reveal d2"><span><i></i> Balanced Tally XML</span><span><i></i> Recoverable GST surfaced</span><span><i></i> Independently verifiable</span></div></div></section>
+</main>
 
-<!-- safety -->
-<section class="py-16 sm:py-20 bg-white border-b border-border" id="safety">
-<div class="max-w-7xl mx-auto px-4 sm:px-8">
-<div class="text-center max-w-3xl mx-auto mb-12"><span class="text-primary font-mono text-[12px] uppercase font-bold tracking-wider">Safer by design</span><h2 class="font-display text-2xl sm:text-4xl font-extrabold tracking-tight mt-2 mb-4">Read-only toward money</h2><p class="text-base text-on-surface-variant">We state exactly what is guaranteed, and what is not. No certifications we don't hold.</p></div>
-<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-<div class="p-6 rounded-lg border border-border bg-surface"><div class="w-10 h-10 rounded bg-primary-tint text-primary flex items-center justify-center mb-4"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[24px]"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q97-30 162-118.5T718-480H480v-315l-240 90v207q0 7 2 18h238v316Z"/></svg></div><h3 class="text-base font-bold mb-2">Zero write access</h3><p class="text-xs text-on-surface-variant leading-relaxed">untangle ingests read-only statements and reports. There is no code path to initiate, authorise, or debit a transfer — and it never posts to your books.</p></div>
-<div class="p-6 rounded-lg border border-border bg-surface"><div class="w-10 h-10 rounded bg-secondary-tint text-secondary flex items-center justify-center mb-4"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[24px]"><path d="m438-338 226-226-57-57-169 169-84-84-57 57 141 141Zm42 258q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z"/></svg></div><h3 class="text-base font-bold mb-2">Privacy by construction</h3><p class="text-xs text-on-surface-variant leading-relaxed">Files are processed in memory and discarded when the session ends. No application database stores your statements; nothing is sent to a third party.</p></div>
-<div class="p-6 rounded-lg border border-border bg-surface"><div class="w-10 h-10 rounded bg-tertiary-tint text-tertiary flex items-center justify-center mb-4"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[24px]"><path d="M440-280h80v-240h-80v240Zm68.5-331.5Q520-623 520-640t-11.5-28.5Q497-680 480-680t-28.5 11.5Q440-657 440-640t11.5 28.5Q463-600 480-600t28.5-11.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg></div><h3 class="text-base font-bold mb-2">No overclaims</h3><p class="text-xs text-on-surface-variant leading-relaxed">No SOC 2, ISO 27001, or statutory certification is claimed. Benchmarks are synthetic unless a real dataset is named. See <a href="https://github.com/vinayaksonthalia/untangle/blob/main/SAFETY.md" class="text-primary hover:underline">SAFETY.md</a>.</p></div>
-</div>
-</div>
-</section>
+<footer class="lfoot"><div class="wrap"><span><span class="brand" style="font-size:16px"><span>un</span><span class="b">tangle</span></span> · Attribution-first reconciliation for Razorpay settlements</span><nav><a href="https://github.com/vinayaksonthalia/untangle" target="_blank" rel="noopener">Source</a><a href="https://github.com/vinayaksonthalia/untangle/blob/main/SAFETY.md" target="_blank" rel="noopener">Safety</a><a href="https://github.com/vinayaksonthalia/untangle/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noopener">Architecture</a><a href="/verify">Verify</a></nav></div></footer>
 
-<!-- final CTA -->
-<section class="py-20 px-4 sm:px-8 bg-on-surface text-white relative overflow-hidden">
-<div class="absolute inset-0" style="background-image:radial-gradient(#2b5edb 1px,transparent 1px);background-size:24px 24px;opacity:.1;"></div>
-<div class="max-w-4xl mx-auto text-center relative z-10 flex flex-col items-center">
-<div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mb-6"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[28px] text-primary"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q97-30 162-118.5T718-480H480v-315l-240 90v207q0 7 2 18h238v316Z"/></svg></div>
-<h2 class="font-display text-3xl sm:text-5xl font-extrabold tracking-tight mb-4">Start your close with zero risk.</h2>
-<p class="text-base sm:text-lg text-gray-300 mb-8 max-w-2xl leading-relaxed">See the sample close end-to-end, or reconcile your own bank statement, Razorpay report, and order ledger — processed in memory, never touching live systems.</p>
-<div class="flex flex-wrap items-center justify-center gap-4 w-full max-w-md mb-8">
-<a class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded text-[14px] font-semibold text-white bg-primary hover:bg-primary-hover transition-colors" href="/try-sample"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[18px]"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg> See the sample close</a>
-<a class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded text-[14px] font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/20 transition-colors" href="/app"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[18px]"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg> Reconcile your files</a>
-</div>
-<div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px] font-mono text-gray-400">
-<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> Balanced Tally XML</span>
-<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> Recoverable GST ITC surfaced</span>
-<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> Independently verifiable</span>
-</div>
-</div>
-</section>
+<div class="cmdk-bg" id="cmdk" role="dialog" aria-modal="true" aria-label="Command menu"><div class="cmdk">
+  <div class="in"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="cmdk-input" placeholder="Go to a screen or section…" autocomplete="off" spellcheck="false"><span style="font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:2px 6px">ESC</span></div>
+  <div class="list" id="cmdk-list"></div>
+  <div class="foot"><span>↑↓ move · ↵ open</span><span style="color:var(--accent)">untangle</span></div>
+</div></div>
 
-<!-- footer -->
-<footer class="bg-surface py-12 px-4 sm:px-8 border-t border-border">
-<div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-on-surface-variant font-mono">
-<div class="flex items-center gap-3"><span class="font-display text-[18px] font-bold"><span class="text-on-surface">un</span><span class="text-primary">tangle</span></span><span class="text-border">|</span><span>Attribution-first reconciliation for Razorpay settlements</span></div>
-<div class="flex flex-wrap items-center gap-5"><a class="hover:text-primary" target="_blank" rel="noopener noreferrer" href="https://github.com/vinayaksonthalia/untangle">Source</a><a class="hover:text-primary" target="_blank" rel="noopener noreferrer" href="https://github.com/vinayaksonthalia/untangle/blob/main/SAFETY.md">Safety</a><a class="hover:text-primary" target="_blank" rel="noopener noreferrer" href="https://github.com/vinayaksonthalia/untangle/blob/main/docs/ARCHITECTURE.md">Architecture</a><a class="hover:text-primary" href="/verify">Verify</a></div>
-</div>
-</footer>
+<script>
+(function(){
+"use strict";
+document.documentElement.classList.add("js");
+var reduce=matchMedia("(prefers-reduced-motion: reduce)").matches, root=document.documentElement;
+try{var s=localStorage.getItem("untangle-theme");if(s)root.setAttribute("data-theme",s);}catch(e){}
+document.getElementById("theme").onclick=function(){var c=root.getAttribute("data-theme"),d=matchMedia("(prefers-color-scheme: dark)").matches;var n=c?(c==="dark"?"light":"dark"):(d?"light":"dark");root.setAttribute("data-theme",n);try{localStorage.setItem("untangle-theme",n);}catch(e){}};
+
+/* animated headings */
+if(!reduce){document.querySelectorAll(".ah[data-ah]").forEach(function(h){
+  var full=h.textContent,frag=document.createDocumentFragment();
+  (function walk(node,dest){[].slice.call(node.childNodes).forEach(function(n){
+    if(n.nodeType===3){n.textContent.split("").forEach(function(ch){if(ch===" "){dest.appendChild(document.createTextNode(" "));return;}var sp=document.createElement("span");sp.className="ln";sp.textContent=ch;dest.appendChild(sp);});}
+    else if(n.nodeType===1){var cl=n.cloneNode(false);cl.className=n.className;walk(n,cl);dest.appendChild(cl);}});})(h,frag);
+  var sr=document.createElement("span");sr.className="sr";sr.textContent=full;h.textContent="";h.appendChild(sr);
+  var vis=document.createElement("span");vis.setAttribute("aria-hidden","true");vis.appendChild(frag);h.appendChild(vis);
+  var L=h.querySelectorAll(".ln"),st=Math.min(17,700/Math.max(1,L.length));L.forEach(function(el,i){el.style.setProperty("--d",(i*st)+"ms");});h.classList.add("arm");
+});
+if("IntersectionObserver" in window){
+  var io1=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add("play");io1.unobserve(e.target);}});},{threshold:.25,rootMargin:"0px 0px -6% 0px"});
+  document.querySelectorAll(".ah.arm").forEach(function(h){var r=h.getBoundingClientRect();if(r.top<innerHeight*0.92)h.classList.add("play");else io1.observe(h);});
+} else { document.querySelectorAll(".ah.arm").forEach(function(h){h.classList.add("play");}); }
+}
+/* reveals */
+var rs=[].slice.call(document.querySelectorAll(".reveal"));
+if(reduce||!("IntersectionObserver" in window)){rs.forEach(function(el){el.classList.add("in");});}
+else{var io2=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add("in");io2.unobserve(e.target);}});},{rootMargin:"0px 0px -8% 0px",threshold:.05});rs.forEach(function(el){var r=el.getBoundingClientRect();if(r.top<innerHeight*0.94)el.classList.add("in");else io2.observe(el);});setTimeout(function(){rs.forEach(function(el){el.classList.add("in");});},1800);}
+
+/* capabilities carousel */
+var caps=[["Attribution with evidence","Tie each credit to a rail only on a genuine, report-backed proof — or abstain.","Tier A · B · C"],["Paise-exact reconciliation","Decompose the proven slice to gross, fee and tax; residual to ±₹0.","integer paise"],["Recoverable fee-GST","Extract the GST charged on the gateway fee as a per-transaction schedule.","input tax credit"],["Split-settlement reconstruction","Recover the legs when one credit is the sum of several settlements.","unique subset-sum"],["Order-ledger cross-check","Reconcile the slice against your order ledger for booking gaps.","uncredited · duplicate"],["Balanced Tally XML journal","Export a balanced double-entry voucher set — debits equal credits.","Tally Prime"],["Proof packets","A per-credit evidence receipt for every verdict; the whole run is auditable.","JSON · CSV"],["Close certificate + verifier","Seal the run into a content-hashed certificate anyone can re-check.","SHA-256"],["Adversarial challenger","Try to disprove each verdict and measure the proof margin before accepting.","counterfactual"],["Active recovery","Turn abstentions into a ranked, honest recovery plan by expected impact.","up to ₹X if confirmed"],["Agentic investigation loop","Diagnose a variance's root cause and draft a corrective voucher proposal.","root-cause"],["MCP for AI agents","Twelve read-only tools exposed to Claude, ChatGPT and Cursor.","stdio · HTTP"]];
+var track=document.getElementById("caps-track");
+caps.forEach(function(c,i){var el=document.createElement("article");el.className="cap";el.innerHTML='<div class="num">'+String(i+1).padStart(2,"0")+' / 12</div><h3>'+c[0]+'</h3><p>'+c[1]+'</p><div class="tag">'+c[2]+'</div>';track.appendChild(el);});
+var cards=track.querySelectorAll(".cap"),start=0;
+function pv(){var w=innerWidth;return w<=580?1:w<=880?2:3;}
+function rc(){var v=pv(),max=caps.length-v;if(start>max)start=max;if(start<0)start=0;var step=cards[0].getBoundingClientRect().width+20;track.style.transform="translateX("+(-start*step)+"px)";cards.forEach(function(c,i){c.classList.toggle("feat",v===3&&i===start+1);});document.getElementById("cap-range").textContent=String(start+1).padStart(2,"0")+"–"+String(start+v).padStart(2,"0");var rail=document.getElementById("cap-rail");rail.style.width=(v/caps.length*100)+"%";rail.style.marginLeft=(start/caps.length*100)+"%";document.getElementById("cap-prev").style.opacity=start<=0?".4":"1";document.getElementById("cap-next").style.opacity=start>=max?".4":"1";}
+document.getElementById("cap-prev").onclick=function(){start--;rc();};document.getElementById("cap-next").onclick=function(){start++;rc();};addEventListener("resize",rc);rc();
+
+/* command palette */
+var items=[{g:"Workspace",n:"See the sample run",k:"/try-sample",u:"/try-sample"},{g:"Workspace",n:"Reconcile your files",k:"/app",u:"/app"},{g:"Workspace",n:"Dashboard",k:"/dashboard",u:"/dashboard"},{g:"Workspace",n:"Investigate",k:"/investigate",u:"/investigate"},{g:"Evidence",n:"Verify a certificate",k:"/verify",u:"/verify"},{g:"On this page",n:"Forensic lens",k:"#forensic",u:"#forensic"},{g:"On this page",n:"Capabilities",k:"#capabilities",u:"#capabilities"},{g:"On this page",n:"Safety",k:"#safety",u:"#safety"},{g:"External",n:"Source on GitHub",k:"github",u:"https://github.com/vinayaksonthalia/untangle"}];
+var bg=document.getElementById("cmdk"),inp=document.getElementById("cmdk-input"),list=document.getElementById("cmdk-list"),sel=0,fil=items.slice(),opener=null;
+function draw(){list.innerHTML="";if(!fil.length){list.innerHTML='<div class="empty">No match.</div>';return;}var g=null;fil.forEach(function(it,i){if(it.g!==g){g=it.g;var hh=document.createElement("div");hh.className="grp";hh.textContent=g;list.appendChild(hh);}var r=document.createElement("div");r.className="row";r.setAttribute("aria-selected",i===sel);r.innerHTML='<span class="nm">'+it.n+'</span><span class="k">'+it.k+'</span>';r.onclick=function(){go(it);};r.onmousemove=function(){sel=i;pt();};list.appendChild(r);});}
+function pt(){list.querySelectorAll(".row").forEach(function(r,i){r.setAttribute("aria-selected",i===sel);});}
+function go(it){close();if(it.u.charAt(0)==="#"){location.hash=it.u;}else if(it.u.charAt(0)==="/"){location.href=it.u;}else{window.open(it.u,"_blank","noopener");}}
+function open(){opener=document.activeElement;bg.classList.add("open");inp.value="";fil=items.slice();sel=0;draw();setTimeout(function(){inp.focus();},20);}
+function close(){bg.classList.remove("open");if(opener&&opener.focus)opener.focus();opener=null;}
+document.getElementById("cmdk-open").onclick=open;
+inp.addEventListener("input",function(){var q=inp.value.trim().toLowerCase();fil=items.filter(function(it){return (it.n+" "+it.k+" "+it.g).toLowerCase().indexOf(q)>-1;});sel=0;draw();});
+addEventListener("keydown",function(e){if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();bg.classList.contains("open")?close():open();return;}if(!bg.classList.contains("open"))return;if(e.key==="Escape")close();else if(e.key==="Tab"){e.preventDefault();inp.focus();}else if(e.key==="ArrowDown"){e.preventDefault();sel=Math.min(sel+1,fil.length-1);pt();}else if(e.key==="ArrowUp"){e.preventDefault();sel=Math.max(sel-1,0);pt();}else if(e.key==="Enter"){e.preventDefault();if(fil[sel])go(fil[sel]);}});
+bg.addEventListener("click",function(e){if(e.target===bg)close();});
+})();
+</script>
 </body>
 </html>
