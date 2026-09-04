@@ -180,12 +180,11 @@ def test_per_row_money_identity_holds(recon_rows: list[ReconRow]) -> None:
 
 
 def test_settlement_closure_through_untangle_index(recon_rows: list[ReconRow]) -> None:
-    """untangle's SettlementIndex reproduces each settlement's net = Σ(credit - debit), exactly.
+    """Check cross-column consistency: amount minus mapped fee (including tax) minus refunds.
 
-    This runs Razorpay's data through untangle's *real* coverage code, not a bespoke sum.
-    The settlement containing a refund is the discriminating case: its net is Σ(credit-debit)
-    with the refund correctly subtracted, NOT Σ(amount-fee-tax) — the sign trap a naive
-    'amount ≈ settlement total' matcher walks straight into.
+    This runs Razorpay's data through untangle's real coverage code, not a bespoke sum. The
+    independent calculation is derived only from the sample's amount, fee, tax, and refund
+    columns; it is not a claim that any externally published settlement total was verified.
     """
     index = SettlementIndex(recon_rows)
 
