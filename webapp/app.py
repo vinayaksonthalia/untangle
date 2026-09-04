@@ -660,7 +660,13 @@ def _store_run(report: dict, bank_credit_by_key: dict, mode: str) -> str:
         if len(_RUNS) >= _RUN_CAP:  # evict oldest to bound memory
             for k in sorted(_RUNS, key=lambda k: _RUNS[k]["created"])[: len(_RUNS) - _RUN_CAP + 1]:
                 _RUNS.pop(k, None)
-        _RUNS[run_id] = {"report": report, "bank": bank_credit_by_key, "mode": mode, "created": now}
+        _RUNS[run_id] = {
+            "report": report,
+            "bank": bank_credit_by_key,
+            "mode": mode,
+            "created": now,
+            "cert_lock": threading.Lock(),
+        }
     return run_id
 
 
@@ -684,7 +690,14 @@ def _run_certificate(run: dict) -> dict:
     is configured) is randomized, so re-issuing per request would otherwise yield a
     different signature each time for the same underlying report.
     """
+    # Resolve the per-run lock under the store lock, but never hold the global lock while
+    # hashing/verifying/signing the report. Legacy in-memory runs may not have the lock.
     with _RUNS_LOCK:
+        cert_lock = run.get("cert_lock")
+        if cert_lock is None:
+            cert_lock = threading.Lock()
+            run["cert_lock"] = cert_lock
+    with cert_lock:
         cert = run.get("cert")
         if cert is None:
             cert = issue_certificate(run["report"])
