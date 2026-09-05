@@ -225,13 +225,15 @@ def claim_next_job(
     is_postgres = bind.dialect.name == "postgresql"
 
     if is_postgres:
+        attempt_token = secrets.token_hex(16)
         row = (
             session.execute(
                 text(
-                    "SELECT job_id, organisation_id, run_id, attempt_token, lease_generation "
-                    "FROM fn_job_claim_next(:worker_id, :lease_seconds)"
+                    "SELECT job_id, public_id, organisation_id, run_id, created_by_principal_id, "
+                    "attempt_token, lease_generation, attempt_count "
+                    "FROM fn_job_claim_next(:worker_id, :lease_seconds, :attempt_token)"
                 ),
-                {"worker_id": worker_id, "lease_seconds": lease_seconds},
+                {"worker_id": worker_id, "lease_seconds": lease_seconds, "attempt_token": attempt_token},
             )
             .mappings()
             .first()
@@ -301,11 +303,10 @@ def heartbeat_job(
     if is_postgres:
         res = session.execute(
             text(
-                "SELECT fn_job_heartbeat(:job_id, :worker_id, :attempt_token, :lease_generation, :lease_seconds)"
+                "SELECT fn_job_heartbeat(:job_id, :attempt_token, :lease_generation, :lease_seconds)"
             ),
             {
                 "job_id": job_id,
-                "worker_id": worker_id,
                 "attempt_token": attempt_token,
                 "lease_generation": lease_generation,
                 "lease_seconds": lease_seconds,
@@ -397,11 +398,10 @@ def transition_job_stage(
     if is_postgres:
         res = session.execute(
             text(
-                "SELECT fn_job_transition_stage(:job_id, :worker_id, :attempt_token, :lease_generation, :new_stage)"
+                "SELECT fn_job_transition_stage(:job_id, :attempt_token, :lease_generation, :new_stage)"
             ),
             {
                 "job_id": job_id,
-                "worker_id": worker_id,
                 "attempt_token": attempt_token,
                 "lease_generation": lease_generation,
                 "new_stage": new_stage,
@@ -452,27 +452,25 @@ def fail_job(
     is_postgres = bind.dialect.name == "postgresql"
 
     if is_postgres:
-        row = (
-            session.execute(
-                text(
-                    "SELECT is_permanent_failure, new_status, new_attempt_count "
-                    "FROM fn_job_fail(:job_id, :worker_id, :attempt_token, :lease_generation, :error_code, :error_summary, :retryable)"
-                ),
-                {
-                    "job_id": job_id,
-                    "worker_id": worker_id,
-                    "attempt_token": attempt_token,
-                    "lease_generation": lease_generation,
-                    "error_code": error_code,
-                    "error_summary": error_summary[:255],
-                    "retryable": retryable,
-                },
-            )
-            .mappings()
-            .first()
-        )
+        result = session.execute(
+            text(
+                "SELECT fn_job_fail(:job_id, :attempt_token, :lease_generation, "
+                ":error_code, :error_summary)"
+            ),
+            {
+                "job_id": job_id,
+                "attempt_token": attempt_token,
+                "lease_generation": lease_generation,
+                "error_code": error_code,
+                "error_summary": error_summary[:255],
+            },
+        ).scalar()
         session.commit()
-        return dict(row) if row else {}
+        return {
+            "is_permanent_failure": bool(result),
+            "new_status": "failed" if result else "stale",
+            "new_attempt_count": 0,
+        }
 
     now = datetime.now(UTC)
     job = session.get(ReconciliationJob, job_id)
@@ -525,11 +523,10 @@ def cancel_ack_job(
     if is_postgres:
         res = session.execute(
             text(
-                "SELECT fn_job_cancel_ack(:job_id, :worker_id, :attempt_token, :lease_generation)"
+                "SELECT fn_job_cancel_ack(:job_id, :attempt_token, :lease_generation)"
             ),
             {
                 "job_id": job_id,
-                "worker_id": worker_id,
                 "attempt_token": attempt_token,
                 "lease_generation": lease_generation,
             },

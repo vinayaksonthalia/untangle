@@ -11,6 +11,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from persistence.context import TenantContext
@@ -122,5 +123,21 @@ def save_idempotency_record(
         expires_at=expires_at,
     )
     session.add(rec)
-    session.flush()
-    return rec
+    try:
+        session.flush()
+    except IntegrityError:
+        # Another request may have won the unique (organisation, key) race.
+        # Roll back the failed INSERT, then replay that committed winner.
+        session.rollback()
+        winner = session.scalar(
+            scoped_select(IdempotencyRecord, context).where(
+                IdempotencyRecord.idempotency_key == idempotency_key
+            )
+        )
+        if winner is not None:
+            if winner.request_hash != request_hash:
+                raise IdempotencyCollisionError(
+                    "Idempotency key reused with conflicting request payload"
+                )
+            return winner
+        raise

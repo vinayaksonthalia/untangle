@@ -590,7 +590,7 @@ class TenantReconciliationService:
                 }
 
                 if idempotency_key:
-                    save_idempotency_record(
+                    saved_idempotency = save_idempotency_record(
                         uow.session,
                         context,
                         idempotency_key=idempotency_key,
@@ -600,6 +600,20 @@ class TenantReconciliationService:
                         response_status_code=202,
                         response_json=response_json,
                     )
+                    # A concurrent request may have won the unique-key race;
+                    # its committed response is authoritative and our staged
+                    # objects must not be retained.
+                    if saved_idempotency.job_id != job.id:
+                        for k in staged_keys:
+                            try:
+                                self.storage.delete_object(k)
+                            except Exception:
+                                pass
+                        return (
+                            saved_idempotency.response_json,
+                            saved_idempotency.response_status_code,
+                            True,
+                        )
 
             return response_json, 202, False
 

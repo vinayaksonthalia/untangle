@@ -74,6 +74,15 @@ BEGIN
     IF to_regclass('public.idempotency_records') IS NOT NULL THEN
         EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON idempotency_records TO untangle_app';
     END IF;
+    -- SECURITY DEFINER job functions run as this non-superuser owner.  Grant only
+    -- the table operations and sequence usage required by their bodies; FORCE RLS
+    -- remains effective because the owner is explicitly not BYPASSRLS.
+    IF to_regclass('public.reconciliation_jobs') IS NOT NULL THEN
+        EXECUTE 'GRANT SELECT, UPDATE ON reconciliation_jobs TO untangle_fn_owner';
+    END IF;
+    IF to_regclass('public.organisation_memberships') IS NOT NULL THEN
+        EXECUTE 'GRANT SELECT ON organisation_memberships TO untangle_fn_owner';
+    END IF;
 END;
 $$;
 
@@ -90,6 +99,7 @@ $$;
 
 -- Sequence Privileges (for autoincrementing IDs)
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO untangle_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO untangle_fn_owner;
 
 -- Ensure future sequences created by migrator grant usage to untangle_app
 ALTER DEFAULT PRIVILEGES FOR ROLE untangle_migrator IN SCHEMA public
