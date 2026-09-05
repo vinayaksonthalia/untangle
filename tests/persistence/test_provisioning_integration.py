@@ -13,6 +13,7 @@ roles and databases. Skipped when unset, so it does not affect the default SQLit
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 
 import pytest
@@ -29,7 +30,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PROVISION_SQL = REPO_ROOT / "scripts/provision_db_roles.sql"
 MIGRATOR = "untangle_migrator"
 APP = "untangle_app"
-TEST_DB = "untangle_provtest"
+# A unique, per-invocation database name so cleanup only ever drops a database this test
+# created — never a pre-existing one, and no collision with a concurrent run on a shared server.
+TEST_DB_PREFIX = "untangle_provtest_"
 MIGRATOR_PW = "provtest_migrator_pw"  # noqa: S105 - throwaway local test role, not a real secret
 
 CRUD = {"SELECT", "INSERT", "UPDATE", "DELETE"}
@@ -77,8 +80,9 @@ def _run_script(conn, path: Path) -> None:
 
 
 def test_fresh_provisioning_then_migration_grants_exact_privileges() -> None:
+    test_db = TEST_DB_PREFIX + uuid.uuid4().hex[:12]
     super_engine = create_engine(_URL, isolation_level="AUTOCOMMIT")
-    test_db_url = make_url(_URL).set(database=TEST_DB)
+    test_db_url = make_url(_URL).set(database=test_db)
     db_super_engine = create_engine(test_db_url, isolation_level="AUTOCOMMIT")
     try:
         # Provision throwaway roles and a fresh, empty database owned by the migrator.
@@ -91,13 +95,14 @@ def test_fresh_provisioning_then_migration_grants_exact_privileges() -> None:
                 f"DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='{APP}') "
                 f"THEN CREATE ROLE {APP} NOSUPERUSER NOBYPASSRLS; END IF; END $$;"
             )
-            conn.exec_driver_sql(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)")
-            conn.exec_driver_sql(f"CREATE DATABASE {TEST_DB} OWNER {MIGRATOR}")
+            # The name is unique to this invocation, so this drop cannot hit an unrelated DB.
+            conn.exec_driver_sql(f"DROP DATABASE IF EXISTS {test_db} WITH (FORCE)")
+            conn.exec_driver_sql(f"CREATE DATABASE {test_db} OWNER {MIGRATOR}")
 
         # 1) FRESH provisioning must succeed on a database with no application tables yet.
         #    Under the previous unconditional grants this aborted with missing-relation errors.
         with db_super_engine.connect() as conn:
-            conn.exec_driver_sql(f"GRANT CONNECT ON DATABASE {TEST_DB} TO {APP}")
+            conn.exec_driver_sql(f"GRANT CONNECT ON DATABASE {test_db} TO {APP}")
             _run_script(conn, PROVISION_SQL)
 
             # Sanity: the tenant tables genuinely do not exist yet.
@@ -111,7 +116,7 @@ def test_fresh_provisioning_then_migration_grants_exact_privileges() -> None:
         from persistence.migrate import upgrade_head
 
         migrator_url = make_url(_URL).set(
-            username=MIGRATOR, password=MIGRATOR_PW, database=TEST_DB
+            username=MIGRATOR, password=MIGRATOR_PW, database=test_db
         )
         upgrade_head(migrator_url.render_as_string(hide_password=False))
 
@@ -144,6 +149,7 @@ def test_fresh_provisioning_then_migration_grants_exact_privileges() -> None:
             _run_script(conn, PROVISION_SQL)
     finally:
         db_super_engine.dispose()
+        # Only ever drops the uniquely-named database this invocation created.
         with super_engine.connect() as conn:
-            conn.exec_driver_sql(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)")
+            conn.exec_driver_sql(f"DROP DATABASE IF EXISTS {test_db} WITH (FORCE)")
         super_engine.dispose()
