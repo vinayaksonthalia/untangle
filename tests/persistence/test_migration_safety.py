@@ -9,24 +9,39 @@ from pathlib import Path
 
 import pytest
 
-from persistence.migrate import (
-    get_alembic_config,
-    get_head_revision,
-    get_migration_provenance,
-)
+from persistence.migrate import get_alembic_config, get_migration_provenance
 
 
-def test_migration_apis_resolve_from_any_working_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Regression: get_alembic_config pins an absolute script_location, so provenance and head
-    discovery work even when the process working directory is not the repository root. Under the
-    previous relative script_location, ScriptDirectory.from_config resolved against the CWD and
-    failed outside the repo root."""
-    monkeypatch.chdir(tmp_path)
-    provenance = get_migration_provenance()
-    assert provenance["revision"] == "0001_initial_tenant_schema"
-    assert get_head_revision() == "0001_initial_tenant_schema"
+def test_migration_apis_resolve_from_a_foreign_working_directory(tmp_path: Path) -> None:
+    """Regression: run provenance and head discovery in a SUBPROCESS whose working directory is
+    a non-repository directory. Under the previous relative script_location this failed with
+    "Path doesn't exist: migrations" because Alembic resolved script_location against the CWD;
+    the absolute script_location fixes it. Repository-root coverage is retained by
+    test_migration_provenance_is_repository_derived below."""
+    repo_root = Path(__file__).resolve().parents[2]
+    program = (
+        "from persistence.migrate import get_migration_provenance, get_head_revision\n"
+        "p = get_migration_provenance()\n"
+        "assert p['revision'] == '0001_initial_tenant_schema', p\n"
+        "assert get_head_revision() == '0001_initial_tenant_schema'\n"
+        "print('PROVENANCE_OK')\n"
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join([str(repo_root), env.get("PYTHONPATH", "")])
+    env.pop("DATABASE_URL", None)
+    env.pop("MIGRATION_DATABASE_URL", None)
+
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=tmp_path,  # deliberately outside the repository
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "PROVENANCE_OK" in result.stdout
 
 
 def test_fresh_provisioning_defers_data_table_grants_to_migration() -> None:
