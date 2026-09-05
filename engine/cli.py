@@ -30,8 +30,9 @@ from engine.llm.narrate import resolve_unknowns
 from engine.models import Rail, RunReport
 from engine.packs import get_default_pack
 from engine.reconcile import reconcile
+from engine.version import ENGINE_VERSION
 
-_ENGINE_VERSION = "1.1.0"
+_ENGINE_VERSION = ENGINE_VERSION
 
 
 def _indian_group(digits: str) -> str:

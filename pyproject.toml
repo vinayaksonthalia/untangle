@@ -1,6 +1,6 @@
 [project]
 name = "untangle"
-version = "0.1.0"
+version = "0.2.0"
 description = "Multi-rail bank-credit attribution & Razorpay-slice reconciliation engine"
 license = {file = "LICENSE"}
 requires-python = ">=3.12"

@@ -64,7 +64,9 @@ zero decoy false-positives across five seeds."
 **Q: "Why a set-sum / constraint solver instead of just widening the amount tolerance?"**
 A: "One bank credit can pay for a *set* of settlements (merges, carry-forwards). Widening a
 tolerance would match coincidental amounts and create false positives. A bounded set-sum
-(≤3 terms, capped candidates) finds the actual covering set or abstains — it never guesses."
+finds the actual covering set or abstains — it never guesses. The established exact 2–3-term
+search handles pools up to 200; exact 4–5-term expansion is limited to pools of 16 or fewer
+with a fixed combination budget."
 
 **Q: "Precision 1.000 is suspicious. Is it leaking the answer?"**
 A: "No — and I had it audited for exactly that. `engine/` never reads the ground truth or

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from engine.models import BankCreditLine, ReconRow
-from engine.reconcile import SettlementIndex, _make_result
+from engine.models import BankCreditLine, Rail, RailAttribution, ReconRow
+from engine.reconcile import SettlementIndex, _make_result, reconcile
 
 
 def _row(sid, utr, net, d="2026-06-10"):
@@ -49,3 +49,22 @@ def test_make_result_rejects_residual_beyond_drift_tolerance():
     row = _row("setl_a", "1780498800xp8vma", 100000)
     line = _line("NEFT 1780498800xp8vma SETTLEMENT", amount=100101)
     assert _make_result(line, ["setl_a"], SettlementIndex([row])) is None
+
+
+def test_reconcile_covers_unique_five_settlement_aggregate():
+    rows = [_row(f"setl_{i}", f"utr_{i}", i * 10000, "2026-06-10") for i in range(1, 6)]
+    line = BankCreditLine("aggregate", date(2026, 6, 10), 150000, "RAZORPAY SETTLEMENT", None, True)
+    attr = RailAttribution(
+        line.key,
+        Rail.RAZORPAY_SETTLEMENT.value,
+        0.9,
+        "C",
+        [],
+    )
+
+    results, unresolved, _ = reconcile({line.key: line}, [attr], rows)
+
+    assert unresolved == []
+    assert len(results) == 1
+    assert results[0].residual_paise == 0
+    assert len(results[0].covered_row_ids) == 5
