@@ -32,6 +32,17 @@ def append_audit_event(
 
     Never place raw financial statements, account numbers, credentials, or PII into metadata.
     """
+    action = {
+        "run.initiated": "create",
+        "run.completed": "complete",
+        "run.failed": "fail",
+        "certificate.issued": "complete",
+        "organisation.deactivated": "delete",
+        "membership.assigned": "delete",
+    }.get(event_type)
+    if action is None:
+        raise ValueError(f"unsupported audit event type {event_type!r}")
+    context.require_run_mutation(action)
     req_id = request_id if request_id is not None else context.request_id
     return insert_with_public_id_retry(
         session,

@@ -27,6 +27,7 @@ def save_uploaded_file_metadata(
     sha256_checksum: str,
 ) -> UploadedFileMetadata:
     """Persist metadata and content hash for an uploaded input file."""
+    context.require_run_mutation("create")
     # Sanitize original_filename (prevent control characters, limit length)
     clean_filename = (
         "".join(c for c in original_filename if c.isprintable())[:255] or "unnamed_file"
@@ -68,6 +69,7 @@ def save_artifact_metadata(
     content_sha256: str,
 ) -> ArtifactMetadata:
     """Persist metadata and content hash for a generated output artifact."""
+    context.require_run_mutation("complete")
     clean_filename = "".join(c for c in filename if c.isprintable())[:255] or "artifact"
 
     return insert_with_public_id_retry(

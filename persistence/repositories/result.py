@@ -37,6 +37,7 @@ def save_result(
     Verifies that the provided report_sha256 strictly equals the SHA-256 of the
     exact canonical_report_text before insertion.
     """
+    context.require_run_mutation("complete")
     calculated_hash = hashlib.sha256(canonical_report_text.encode("utf-8")).hexdigest()
     if calculated_hash != report_sha256:
         raise ResultIntegrityError(

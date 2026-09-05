@@ -25,6 +25,35 @@ class SchemaOutOfDateError(RuntimeError):
     """Raised when application startup detects an unmigrated database."""
 
 
+def get_migration_provenance() -> dict[str, object]:
+    """Return truthful, machine-readable metadata for the repository migration head.
+
+    Creator and timestamp values are embedded in the migration from the introducing Git commit.
+    """
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = get_alembic_config(url=None, require_url=False)
+    script = ScriptDirectory.from_config(cfg)
+    head = script.get_current_head()
+    if head is None:
+        raise RuntimeError("No head migration found in migrations directory")
+    revision = script.get_revision(head)
+    if revision is None:  # pragma: no cover - ScriptDirectory guarantees this for a head
+        raise RuntimeError(f"Migration head {head!r} is missing")
+    down_revision: object = revision.down_revision
+    if isinstance(down_revision, tuple):
+        down_revision = list(down_revision)
+    embedded = getattr(revision.module, "MIGRATION_PROVENANCE", None)
+    if not isinstance(embedded, dict):
+        raise RuntimeError(f"Migration {head!r} is missing machine-readable provenance")
+    return {
+        "revision": revision.revision,
+        "down_revision": down_revision,
+        "source_file": str(Path(revision.path).resolve().relative_to(repo_root)),
+        "summary": revision.doc,
+        **embedded,
+    }
+
+
 def get_alembic_config(url: str | None = None, require_url: bool = True) -> Config:
     """Create an Alembic Config object pointing to the repository migration scripts."""
     repo_root = Path(__file__).resolve().parents[1]

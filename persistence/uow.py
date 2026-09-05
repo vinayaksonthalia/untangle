@@ -30,26 +30,29 @@ class UnitOfWork:
 
     def __enter__(self) -> UnitOfWork:
         self.session = self._session_factory()
-        self.session.begin()
+        try:
+            self.session.begin()
 
-        # Bind transaction-local tenant identity for PostgreSQL RLS
-        # set_config(name, value, is_local=true) scopes setting strictly to current transaction.
-        bind = self.session.get_bind()
-        if bind.dialect.name == "postgresql":
-            self.session.execute(
-                text("SELECT set_config('app.current_tenant_id', :tid, true)"),
-                {"tid": str(self.context.organisation_id)},
-            )
-            # Verify setting took effect immediately
-            active_tid = self.session.execute(
-                text("SELECT current_setting('app.current_tenant_id', true)")
-            ).scalar()
-            if active_tid != str(self.context.organisation_id):
-                raise RuntimeError(
-                    f"Failed to set app.current_tenant_id: expected {self.context.organisation_id}, got {active_tid!r}"
+            # Bind transaction-local tenant identity for PostgreSQL RLS
+            bind = self.session.get_bind()
+            if bind.dialect.name == "postgresql":
+                self.session.execute(
+                    text("SELECT set_config('app.current_tenant_id', :tid, true)"),
+                    {"tid": str(self.context.organisation_id)},
                 )
-
-        return self
+                active_tid = self.session.execute(
+                    text("SELECT current_setting('app.current_tenant_id', true)")
+                ).scalar()
+                if active_tid != str(self.context.organisation_id):
+                    raise RuntimeError(
+                        f"Failed to set app.current_tenant_id: expected {self.context.organisation_id}, got {active_tid!r}"
+                    )
+            return self
+        except BaseException:
+            self.session.rollback()
+            self.session.close()
+            self.session = None
+            raise
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         if self.session is None:

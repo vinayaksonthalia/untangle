@@ -129,8 +129,6 @@ mimetypes.add_type("font/woff2", ".woff2")
 _STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 if not _STATIC_DIR.is_dir():  # fail loudly at import rather than 404 silently in prod
     raise RuntimeError(f"static assets directory missing: {_STATIC_DIR}")
-
-
 class _RevalidatingStatic(StaticFiles):
     """Serve static assets with `Cache-Control: no-cache` so browsers always revalidate.
 
@@ -345,9 +343,7 @@ async def safety_middleware(request: Request, call_next):
             except ValueError:
                 declared = -1
             if declared < 0 or declared > limit:
-                return finish(
-                    JSONResponse({"detail": "Request body is too large."}, status_code=413)
-                )
+                return finish(JSONResponse({"detail": "Request body is too large."}, status_code=413))
         # This middleware is outermost, so admission happens before BodySizeLimitMiddleware reads
         # the body and before FastAPI parses/spools multipart UploadFile values.
         if not _RECONCILE_SEMAPHORE.acquire(timeout=0):
@@ -651,7 +647,6 @@ def _ensure_sample() -> None:
 
 # ---- Browser-tab result bundle ----------------------------------------------
 
-
 def _tab_bundle(report: dict, bank: dict, mode: str) -> dict:
     """Serialize one bounded result bundle for the requesting tab; no private server retention."""
     from engine.journal import journal_json_to_tally_xml
@@ -668,9 +663,7 @@ def _tab_bundle(report: dict, bank: dict, mode: str) -> dict:
         "presentation": {**presentation, "mode": mode},
         "investigations": {**_shape_investigations_payload(report, bank), "mode": mode},
         "certificate": cert,
-        "journal_tally_xml": journal_json_to_tally_xml(
-            report.get("journal") or [], company="Your Company Name"
-        ),
+        "journal_tally_xml": journal_json_to_tally_xml(report.get("journal") or [], company="Your Company Name"),
     }
 
 
@@ -680,10 +673,8 @@ def _bundle_response(bundle: dict) -> Response:
         return Response(
             encoded,
             media_type="application/json",
-            headers={
-                "cache-control": "no-store",
-                "content-disposition": 'attachment; filename="untangle-results.json"',
-            },
+            headers={"cache-control": "no-store",
+                     "content-disposition": 'attachment; filename="untangle-results.json"'},
         )
     response = HTMLResponse(f"""<!doctype html><meta charset=utf-8><title>Processing complete</title>
 <p>Results processed in memory and kept only in this browser tab. Redirecting…</p>
@@ -709,68 +700,45 @@ def _shape_investigations_payload(report: dict, bank_credit_by_key: dict) -> dic
         variance = inv.get("variance_paise", 0)
         bank_credit = bank_credit_by_key.get(inv.get("line_key"))
         expected_net = bank_credit - variance if isinstance(bank_credit, int) else None
-        cases.append(
-            {
-                "line_key": inv.get("line_key"),
-                "root_cause": rc,
-                "root_cause_label": _ROOT_CAUSE_LABELS.get(rc, rc),
-                "resolved": resolved,
-                "confidence": inv.get("confidence", 0.0),
-                "bank_credit_paise": bank_credit,
-                "expected_net_paise": expected_net,
-                "variance_paise": variance,
-                "variance_inr": inv.get("variance_inr", "0.00"),
-                "reasoning_trace": inv.get("reasoning_trace") or [],
-                "candidates_tried": inv.get("candidates_tried") or [],
-                "corrective_entry": inv.get("corrective_entry"),
-                "next_action": (
-                    "Review the proposed voucher and post it in your ledger if the evidence is correct."
-                    if resolved
-                    else "Assign to a reviewer for manual investigation. No corrective voucher was drafted."
-                ),
-            }
-        )
+        cases.append({
+            "line_key": inv.get("line_key"), "root_cause": rc,
+            "root_cause_label": _ROOT_CAUSE_LABELS.get(rc, rc), "resolved": resolved,
+            "confidence": inv.get("confidence", 0.0), "bank_credit_paise": bank_credit,
+            "expected_net_paise": expected_net, "variance_paise": variance,
+            "variance_inr": inv.get("variance_inr", "0.00"),
+            "reasoning_trace": inv.get("reasoning_trace") or [],
+            "candidates_tried": inv.get("candidates_tried") or [],
+            "corrective_entry": inv.get("corrective_entry"),
+            "next_action": ("Review the proposed voucher and post it in your ledger if the evidence is correct."
+                            if resolved else "Assign to a reviewer for manual investigation. No corrective voucher was drafted."),
+        })
     resolved = sum(1 for c in cases if c["resolved"])
-    return {
-        "run_identity": report.get("run_identity") or {},
-        "summary": {"total": len(cases), "resolved": resolved, "abstained": len(cases) - resolved},
-        "cases": cases,
-    }
+    return {"run_identity": report.get("run_identity") or {},
+            "summary": {"total": len(cases), "resolved": resolved, "abstained": len(cases) - resolved},
+            "cases": cases}
 
 
 @app.get("/api/presentation/current")
 def api_presentation_current(request: Request, limit: int = 100, offset: int = 0) -> JSONResponse:
-    return JSONResponse(
-        {"detail": "This legacy endpoint was removed; read the tab-local result bundle."},
-        status_code=410,
-    )
+    return JSONResponse({"detail": "This legacy endpoint was removed; read the tab-local result bundle."}, status_code=410)
 
 
 @app.get("/api/investigations/current")
 def api_investigations_current(request: Request) -> JSONResponse:
     """Removed legacy endpoint; the browser reads investigations from its tab-local bundle."""
-    return JSONResponse(
-        {"detail": "This legacy endpoint was removed; read the tab-local result bundle."},
-        status_code=410,
-    )
+    return JSONResponse({"detail": "This legacy endpoint was removed; read the tab-local result bundle."}, status_code=410)
 
 
 @app.get("/api/certificate/current")
 def api_certificate_current(request: Request) -> JSONResponse:
     """Removed legacy endpoint; the browser reads the certificate from its tab-local bundle."""
-    return JSONResponse(
-        {"detail": "This legacy endpoint was removed; read the tab-local result bundle."},
-        status_code=410,
-    )
+    return JSONResponse({"detail": "This legacy endpoint was removed; read the tab-local result bundle."}, status_code=410)
 
 
 @app.get("/api/journal/current.tally.xml")
 def api_journal_current(request: Request) -> Response:
     """Removed legacy endpoint; the browser downloads Tally XML from its tab-local bundle."""
-    return JSONResponse(
-        {"detail": "This legacy endpoint was removed; download from the tab-local result bundle."},
-        status_code=410,
-    )
+    return JSONResponse({"detail": "This legacy endpoint was removed; download from the tab-local result bundle."}, status_code=410)
 
 
 @app.get("/certificate", response_class=HTMLResponse)
@@ -969,9 +937,7 @@ def api_presentation_sample(limit: int = 100, offset: int = 0) -> JSONResponse:
     with _SAMPLE_CACHE_LOCK:
         report, cert = _sample_report_and_cert(_sample_fingerprint())
     try:
-        presentation = build_presentation_payload(
-            report, certificate=cert, limit=limit, offset=offset
-        )
+        presentation = build_presentation_payload(report, certificate=cert, limit=limit, offset=offset)
     except PresentationSchemaError as exc:
         raise HTTPException(422, str(exc)) from exc
     return JSONResponse(presentation)
@@ -996,9 +962,7 @@ async def api_presentation(
     report = await _run_safely_bytes_async(b, r, ln, slot=slot)
     cert = issue_certificate(report)
     try:
-        presentation = build_presentation_payload(
-            report, certificate=cert, limit=limit, offset=offset
-        )
+        presentation = build_presentation_payload(report, certificate=cert, limit=limit, offset=offset)
     except PresentationSchemaError as exc:
         raise HTTPException(422, str(exc)) from exc
     return JSONResponse(presentation)

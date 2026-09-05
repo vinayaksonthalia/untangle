@@ -17,6 +17,16 @@ class Role(StrEnum):
     AUDITOR = "auditor"
 
 
+# Financial run mutations are deliberately explicit: reviewers and auditors can inspect
+# evidence but cannot create or alter lifecycle state.
+RUN_PERMISSIONS: dict[str, frozenset[Role]] = {
+    "create": frozenset({Role.OWNER, Role.ADMIN, Role.OPERATOR}),
+    "complete": frozenset({Role.OWNER, Role.ADMIN, Role.OPERATOR}),
+    "fail": frozenset({Role.OWNER, Role.ADMIN, Role.OPERATOR}),
+    "delete": frozenset({Role.OWNER, Role.ADMIN}),
+}
+
+
 class TenantContextError(ValueError):
     """Raised when an invalid TenantContext is created or accessed."""
 
@@ -52,3 +62,15 @@ class TenantContext:
     def has_role(self, *allowed: Role) -> bool:
         """Check if the context's role is in the allowed roles."""
         return self.role in allowed
+
+    def can_mutate_run(self, action: str) -> bool:
+        """Return whether this role may perform a named financial-run mutation."""
+        try:
+            allowed = RUN_PERMISSIONS[action]
+        except KeyError as exc:
+            raise TenantContextError(f"unknown run mutation {action!r}") from exc
+        return self.role in allowed
+
+    def require_run_mutation(self, action: str) -> None:
+        if not self.can_mutate_run(action):
+            raise PermissionError(f"role {self.role.value!r} cannot {action} financial runs")

@@ -49,6 +49,17 @@ GRANT SELECT, INSERT ON reconciliation_results TO untangle_app;
 GRANT SELECT, INSERT ON certificates TO untangle_app;
 GRANT SELECT, INSERT ON audit_events TO untangle_app;
 
+-- Schema verification reads only Alembic's bookkeeping table.  It may not exist yet when
+-- this provisioning script runs before the first migration, so apply the grant conditionally;
+-- the initial migration repeats it after creating the table.
+DO $$
+BEGIN
+    IF to_regclass('public.alembic_version') IS NOT NULL THEN
+        EXECUTE 'GRANT SELECT ON TABLE public.alembic_version TO untangle_app';
+    END IF;
+END;
+$$;
+
 -- Sequence Privileges (for autoincrementing IDs)
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO untangle_app;
 
