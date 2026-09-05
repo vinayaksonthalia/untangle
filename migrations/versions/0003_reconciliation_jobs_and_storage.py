@@ -359,6 +359,16 @@ def upgrade() -> None:
                 f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.{table} TO untangle_app;"
             )
 
+        # Creator revalidation is SECURITY DEFINER and FORCE RLS applies to its
+        # non-BYPASSRLS owner.  Permit only the rows needed by that function.
+        op.execute("GRANT SELECT ON public.roles TO untangle_fn_owner;")
+        op.execute("GRANT SELECT ON public.organisation_memberships TO untangle_fn_owner;")
+        op.execute(
+            """CREATE POLICY job_function_owner_membership_select_policy
+               ON public.organisation_memberships FOR SELECT TO untangle_fn_owner
+               USING (status = 'active');"""
+        )
+
         # -------------------------------------------------------------------
         # SECURITY DEFINER Functions owned by untangle_fn_owner
         # -------------------------------------------------------------------
@@ -542,8 +552,6 @@ def upgrade() -> None:
                 UPDATE public.reconciliation_jobs
                 SET status = CASE WHEN p_retryable AND attempt_count < max_attempts THEN 'queued' ELSE 'failed' END,
                     failed_at = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE clock_timestamp() END,
-                    error_code = p_error_code,
-                    error_summary = p_error_summary,
                     attempt_token = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE attempt_token END,
                     worker_id = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE worker_id END,
                     lease_expires_at = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE lease_expires_at END,
@@ -708,6 +716,7 @@ def downgrade() -> None:
             op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY;")
         op.execute("DROP POLICY IF EXISTS job_function_owner_select_policy ON reconciliation_jobs;")
         op.execute("DROP POLICY IF EXISTS job_function_owner_update_policy ON reconciliation_jobs;")
+        op.execute("DROP POLICY IF EXISTS job_function_owner_membership_select_policy ON organisation_memberships;")
 
     op.drop_table("idempotency_records")
     op.drop_table("reconciliation_jobs")

@@ -18,6 +18,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from engine.certificate import _canonical, issue_certificate
@@ -31,7 +32,7 @@ from persistence.config import (
     get_worker_database_url,
 )
 from persistence.context import Role, TenantContext
-from persistence.models import UploadedFileMetadata
+from persistence.models import ArtifactMetadata, UploadedFileMetadata
 from persistence.repositories.artifact import (
     list_uploaded_files_for_run,
     save_artifact_metadata,
@@ -164,7 +165,6 @@ class ReconciliationWorker:
 
         staged_artifact_keys: list[str] = []
         promoted_final_keys: list[str] = []
-        committed = False
 
         try:
             # 1. Revalidate creator permission
@@ -440,8 +440,6 @@ class ReconciliationWorker:
                     lease_generation=lease_generation,
                     completed_at=now,
                 )
-            committed = True
-
             logger.info(f"Job {job_id} completed successfully for run {run_public_id}")
 
         except JobFencingError as exc:
@@ -482,12 +480,32 @@ class ReconciliationWorker:
                     self.storage.delete_object(k)
                 except Exception:
                     pass
-            if not committed:
-                for k in promoted_final_keys:
-                    try:
-                        self.storage.delete_object(k)
-                    except Exception:
-                        pass
+            # Final keys are deterministic and may already be owned by a newer
+            # committed attempt.  Delete only keys with no committed metadata
+            # owner; this cleans ordinary failed attempts while fencing stale
+            # losers away from a successful retry's objects.
+            if promoted_final_keys:
+                try:
+                    cleanup_context = TenantContext(org_id, 1, Role.OPERATOR)
+                    with UnitOfWork(self.app_session_factory, cleanup_context) as cleanup_uow:
+                        assert cleanup_uow.session is not None
+                        owned = set(
+                            cleanup_uow.session.scalars(
+                                select(ArtifactMetadata.object_key).where(
+                                    ArtifactMetadata.object_key.in_(promoted_final_keys)
+                                )
+                            ).all()
+                        )
+                    for key in promoted_final_keys:
+                        if key not in owned:
+                            try:
+                                self.storage.delete_object(key)
+                            except Exception:
+                                pass
+                except Exception:
+                    # Cleanup is best effort; metadata/lifecycle reconciliation
+                    # remains authoritative if the lookup database is down.
+                    pass
 
 
 BackgroundWorkerService = ReconciliationWorker

@@ -52,6 +52,13 @@ from persistence.storage import (
 from persistence.uow import UnitOfWork
 
 
+class _IdempotencyReplay(Exception):
+    """Abort loser transaction; replay winner only after rollback/cleanup."""
+
+    def __init__(self, response: tuple[dict[str, Any], int, bool]) -> None:
+        self.response = response
+
+
 class ReconciliationServiceError(Exception):
     """Base exception for reconciliation service failures."""
 
@@ -620,14 +627,19 @@ class TenantReconciliationService:
                                 self.storage.delete_object(k)
                             except Exception:
                                 pass
-                        return (
-                            saved_idempotency.response_json,
-                            saved_idempotency.response_status_code,
-                            True,
+                        raise _IdempotencyReplay(
+                            (saved_idempotency.response_json, saved_idempotency.response_status_code, True)
                         )
 
             return response_json, 202, False
 
+        except _IdempotencyReplay as replay:
+            for k in staged_keys:
+                try:
+                    self.storage.delete_object(k)
+                except Exception:
+                    pass
+            return replay.response
         except Exception:
             for k in staged_keys:
                 try:

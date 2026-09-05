@@ -143,3 +143,4 @@ def save_idempotency_record(
                 ) from None
             return winner
         raise
+    return rec

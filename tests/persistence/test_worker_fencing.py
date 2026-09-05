@@ -38,6 +38,56 @@ from persistence.uow import UnitOfWork
 from persistence.worker import ReconciliationWorker
 
 
+def test_worker_main_requires_application_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    import persistence.worker as worker_module
+
+    monkeypatch.setattr(worker_module.sys, "argv", ["worker", "--once"])
+    monkeypatch.setattr(worker_module, "get_database_url", lambda: None)
+
+    with pytest.raises(SystemExit) as exc:
+        worker_module.main()
+
+    assert exc.value.code == 1
+
+
+def test_worker_main_uses_distinct_application_and_worker_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import persistence.worker as worker_module
+
+    created_urls: list[str] = []
+    session_factories: list[object] = []
+
+    class FakeWorker:
+        def __init__(self, **kwargs: object) -> None:
+            session_factories.extend(
+                [kwargs["app_session_factory"], kwargs["worker_session_factory"]]
+            )
+
+        def run_once(self) -> bool:
+            return False
+
+    monkeypatch.setattr(worker_module.sys, "argv", ["worker", "--once"])
+    monkeypatch.setattr(worker_module, "get_database_url", lambda: "postgresql://app/db")
+    monkeypatch.setattr(
+        worker_module, "get_worker_database_url", lambda: "postgresql://worker/db"
+    )
+    monkeypatch.setattr(
+        worker_module,
+        "create_db_engine",
+        lambda url: created_urls.append(url) or object(),
+    )
+    monkeypatch.setattr(worker_module, "create_session_factory", lambda engine: object())
+    monkeypatch.setattr(worker_module, "get_storage_backend", lambda: object())
+    monkeypatch.setattr(worker_module, "ReconciliationWorker", FakeWorker)
+
+    worker_module.main()
+
+    assert created_urls == ["postgresql://app/db", "postgresql://worker/db"]
+    assert len(session_factories) == 2
+    assert session_factories[0] is not session_factories[1]
+
+
 @pytest.fixture
 def local_storage(tmp_path: Path) -> LocalStorageBackend:
     return LocalStorageBackend(base_dir=tmp_path / "worker_storage")
@@ -173,6 +223,45 @@ def test_retryable_failure_requeues_with_clean_lifecycle_fields(
         assert requeued.failed_at is None
         assert requeued.error_code is None
         assert requeued.error_summary is None
+
+
+@pytest.mark.parametrize("retryable", [False, True])
+def test_permanent_failure_and_retry_exhaustion_fail_job_and_run(
+    session_factory: sessionmaker[Session],
+    worker_session_factory: sessionmaker[Session],
+    tenant_a: tuple[TenantContext, int],
+    retryable: bool,
+) -> None:
+    """Terminal failures retain diagnostics and transition the parent run too."""
+    ctx, _ = tenant_a
+    with UnitOfWork(session_factory, ctx) as uow:
+        run = create_run(uow.session, ctx)
+        job = create_reconciliation_job(uow.session, ctx, run.id, max_attempts=1)
+        job_id = job.id
+
+    with worker_session_factory() as worker:
+        claimed = claim_next_job(worker, "worker_terminal")
+        assert claimed is not None
+        result = fail_job(
+            worker, job_id, "worker_terminal", claimed["attempt_token"], claimed["lease_generation"],
+            "fatal_error", "terminal failure", retryable=retryable,
+        )
+        assert result["new_status"] == "failed"
+        assert result["is_permanent_failure"] is True
+
+    with session_factory() as session:
+        persisted_job = session.get(ReconciliationJob, job_id)
+        persisted_run = session.get(ReconciliationRun, run.id)
+        assert persisted_job is not None and persisted_run is not None
+        assert persisted_job.status == "failed"
+        assert persisted_job.stage == "completed"
+        assert persisted_job.failed_at is not None
+        assert persisted_job.error_code == "fatal_error"
+        assert persisted_job.error_summary == "terminal failure"
+        assert persisted_run.status == "failed"
+        assert persisted_run.failed_at is not None
+        assert persisted_run.error_code == "fatal_error"
+        assert persisted_run.error_summary == "terminal failure"
 
 
 def test_stale_worker_neutralization_and_preemption(

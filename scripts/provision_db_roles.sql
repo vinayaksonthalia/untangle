@@ -82,6 +82,11 @@ BEGIN
     END IF;
     IF to_regclass('public.organisation_memberships') IS NOT NULL THEN
         EXECUTE 'GRANT SELECT ON organisation_memberships TO untangle_fn_owner';
+        EXECUTE 'DROP POLICY IF EXISTS job_function_owner_membership_select_policy ON public.organisation_memberships';
+        EXECUTE 'CREATE POLICY job_function_owner_membership_select_policy ON public.organisation_memberships FOR SELECT TO untangle_fn_owner USING (status = ''active'')';
+    END IF;
+    IF to_regclass('public.roles') IS NOT NULL THEN
+        EXECUTE 'GRANT SELECT ON roles TO untangle_fn_owner';
     END IF;
 END;
 $$;
