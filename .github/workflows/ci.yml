@@ -13,6 +13,20 @@ jobs:
   test:
     name: test & lint (py${{ matrix.python }})
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: untangle_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     strategy:
       fail-fast: false
       matrix:
@@ -26,6 +40,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,web,mcp]" ruff bandit
+      - name: Provision PostgreSQL test roles and schema
+        env:
+          PGPASSWORD: postgrespassword
+          MIGRATION_DATABASE_URL: postgresql+psycopg://untangle_migrator:ci_migrator_password@localhost:5432/untangle_test
+        run: |
+          psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE untangle_migrator LOGIN PASSWORD 'ci_migrator_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+          CREATE ROLE untangle_app LOGIN PASSWORD 'ci_app_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+          ALTER DATABASE untangle_test OWNER TO untangle_migrator;
+          GRANT CONNECT ON DATABASE untangle_test TO untangle_app;
+          SQL
+          python -m persistence.migrate upgrade head
+          psql -h localhost -U postgres -d untangle_test -v ON_ERROR_STOP=1 -f scripts/provision_db_roles.sql
       - name: Ruff (lint)
         run: ruff check .
       - name: Generate the seeded dataset
@@ -35,12 +62,16 @@ jobs:
       - name: Run one pipeline (produces out/report.json for UI/eval tests)
         run: python -m engine.cli run --bank data/bank_statement.csv --recon data/recon_report.json --ledger data/order_ledger.csv --out out/
       - name: Tests & branch-coverage gate
+        env:
+          POSTGRES_TEST_URL: postgresql+psycopg://untangle_app:ci_app_password@localhost:5432/untangle_test
+          POSTGRES_MIGRATION_TEST_URL: postgresql+psycopg://untangle_migrator:ci_migrator_password@localhost:5432/untangle_test
+          POSTGRES_CONTROL_TEST_URL: postgresql+psycopg://postgres:postgrespassword@localhost:5432/untangle_test
         run: |
           python -m pytest --cov --cov-report=term-missing
           python -m coverage json
           python scripts/branch_coverage_gate.py
       - name: Bandit (Python security SAST)
-        run: bandit -r engine eval ui webapp generator -q --skip B101,B311,B404,B603,B110
+        run: bandit -r engine eval ui webapp generator persistence -q --skip B101,B311,B404,B603,B110
 
   security:
     name: Semgrep (SAST)
@@ -54,4 +85,4 @@ jobs:
         run: |
           python -m pip install --upgrade pip semgrep
           semgrep scan --config p/python --config p/security-audit --severity ERROR --error \
-            engine eval ui webapp generator
+            engine eval ui webapp generator persistence
