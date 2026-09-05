@@ -530,6 +530,21 @@ def upgrade() -> None:
         # only read access to Alembic's bookkeeping table; all DDL remains migration-role-only.
         op.execute("GRANT SELECT ON TABLE alembic_version TO untangle_app")
 
+        # Grant the runtime application role its table-level DML here, after the tables exist.
+        # scripts/provision_db_roles.sql runs BEFORE the first migration (the documented order),
+        # so it cannot grant these; issuing them here makes a fresh database correct on its own.
+        # Row-Level Security still constrains which rows the role can touch. Immutable ledgers
+        # get SELECT/INSERT only; UPDATE and DELETE stay ungranted and are trigger-blocked below.
+        for _crud_table in (
+            "reconciliation_runs",
+            "uploaded_file_metadata",
+            "investigations",
+            "artifact_metadata",
+        ):
+            op.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {_crud_table} TO untangle_app")
+        for _append_only_table in ("reconciliation_results", "certificates", "audit_events"):
+            op.execute(f"GRANT SELECT, INSERT ON {_append_only_table} TO untangle_app")
+
         # Create immutability trigger function raising SQLSTATE P0001
         op.execute(
             """

@@ -59,6 +59,10 @@ def get_alembic_config(url: str | None = None, require_url: bool = True) -> Conf
     repo_root = Path(__file__).resolve().parents[1]
     ini_path = repo_root / "alembic.ini"
     cfg = Config(str(ini_path))
+    # Resolve the migration scripts by absolute path. Alembic otherwise interprets the
+    # ini's relative script_location against the caller's working directory, so the
+    # documented APIs (provenance, head, upgrade) would fail when run outside the repo root.
+    cfg.set_main_option("script_location", str(repo_root / "migrations"))
     if url:
         cfg.set_main_option("sqlalchemy.url", url)
     elif require_url:

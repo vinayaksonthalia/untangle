@@ -38,16 +38,26 @@ GRANT USAGE ON SCHEMA public TO untangle_app;
 -- Control-plane access is deliberately not granted to the data-plane role.
 -- Phase 2 must provide a separately authorized bootstrap path after authentication.
 
--- Tenant Data-Plane: Standard CRUD scoped by Row-Level Security
-GRANT SELECT, INSERT, UPDATE, DELETE ON reconciliation_runs TO untangle_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON uploaded_file_metadata TO untangle_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON investigations TO untangle_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON artifact_metadata TO untangle_app;
-
--- Immutable Ledgers: SELECT and INSERT only. UPDATE and DELETE are not granted (and trigger-blocked)
-GRANT SELECT, INSERT ON reconciliation_results TO untangle_app;
-GRANT SELECT, INSERT ON certificates TO untangle_app;
-GRANT SELECT, INSERT ON audit_events TO untangle_app;
+-- On a fresh database these tables do not exist until the initial Alembic migration runs,
+-- which would abort this script with missing-relation errors. Apply the grants conditionally
+-- so provisioning is safe to run BEFORE or AFTER the first migration; the initial migration
+-- also issues these grants after creating the tables (authoritative for fresh installs).
+-- Presence of reconciliation_runs is used as the proxy for "schema has been migrated".
+DO $$
+BEGIN
+    IF to_regclass('public.reconciliation_runs') IS NOT NULL THEN
+        -- Tenant Data-Plane: Standard CRUD scoped by Row-Level Security
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON reconciliation_runs TO untangle_app';
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON uploaded_file_metadata TO untangle_app';
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON investigations TO untangle_app';
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON artifact_metadata TO untangle_app';
+        -- Immutable Ledgers: SELECT and INSERT only. UPDATE and DELETE are not granted (and trigger-blocked)
+        EXECUTE 'GRANT SELECT, INSERT ON reconciliation_results TO untangle_app';
+        EXECUTE 'GRANT SELECT, INSERT ON certificates TO untangle_app';
+        EXECUTE 'GRANT SELECT, INSERT ON audit_events TO untangle_app';
+    END IF;
+END;
+$$;
 
 -- Schema verification reads only Alembic's bookkeeping table.  It may not exist yet when
 -- this provisioning script runs before the first migration, so apply the grant conditionally;
