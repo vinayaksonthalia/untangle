@@ -5,211 +5,206 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Verify a close certificate — untangle</title>
 <meta name="description" content="Independently re-verify any untangle close certificate: recompute its content hash, check the signature, and confirm nothing was altered since issuance."/>
-<link rel="stylesheet" href="/static/verify.css"/>
+<link rel="stylesheet" href="/static/app.css"/>
+<script src="/static/app.js"></script>
 <style>
-  html, body { margin: 0; padding: 0; }
-  body { overscroll-behavior: none; }
-  ::-webkit-scrollbar { display: none; }
-  @media (prefers-reduced-motion: no-preference) {
-    @keyframes fadeRise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-    .animate-fade-rise { animation: fadeRise 0.6s cubic-bezier(0.16,1,0.3,1) forwards; opacity: 0; }
-    .delay-0{animation-delay:0ms}.delay-70{animation-delay:70ms}.delay-140{animation-delay:140ms}
-  }
-  .tooltip-trigger .tooltip-content { visibility: hidden; opacity: 0; transition: opacity .2s, visibility .2s; }
-  .tooltip-trigger:hover .tooltip-content { visibility: visible; opacity: 1; }
-  :focus-visible { outline: 2px solid #0f172a; outline-offset: 2px; }
+  .vintro{display:grid;grid-template-columns:1fr 260px;gap:28px;align-items:start;margin-bottom:30px}
+  @media(max-width:820px){.vintro{grid-template-columns:1fr}}
+  .vintro .lede2{color:var(--muted);font-size:14.5px;line-height:1.7;max-width:60ch;margin-top:14px}
+  .vintro .lede2 code{font-family:var(--mono);font-size:12.5px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .vintro .aside{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}
+  .vintro .aside svg{width:42px;height:42px;color:var(--accent)}
+  .vintro .aside .t{font-family:var(--display);font-weight:800;font-size:16px}
+  .vintro .aside .s{color:var(--muted);font-size:13px}
+  .ta{width:100%;height:240px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:14px;font-family:var(--mono);font-size:12px;color:var(--ink);resize:vertical;outline:none;line-height:1.6}
+  .ta:focus{border-color:var(--accent)}
+  .linkbtn{display:inline-flex;align-items:center;gap:6px;background:none;border:0;color:var(--muted);font-size:13px;cursor:pointer;font-family:var(--sans)}
+  .linkbtn:hover{color:var(--accent)}
+  .linkbtn svg{width:16px;height:16px}
+  .ta-wrap{position:relative}
+  .paste-btn{position:absolute;right:10px;bottom:10px;display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 10px;color:var(--muted);font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+  .paste-btn:hover{color:var(--ink);border-color:var(--line-strong)}
+  .paste-btn svg{width:14px;height:14px}
+  .accepted{display:flex;flex-wrap:wrap;gap:8px}
+  .vpanel{transition:opacity .4s}
+  .vpanel.locked{opacity:.5;pointer-events:none}
+  .sbadge{display:inline-flex;align-items:center;gap:8px;padding:5px 11px;border-radius:100px;background:var(--panel-2);border:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .sbadge .sd{width:8px;height:8px;border-radius:50%;background:var(--line-strong)}
+  .sbadge.checking{background:var(--amber-tint);color:var(--amber)}.sbadge.checking .sd{background:var(--amber)}
+  .sbadge.pass{background:var(--green-tint);color:var(--green)}.sbadge.pass .sd{background:var(--green)}
+  .sbadge.warn{background:var(--amber-tint);color:var(--amber)}.sbadge.warn .sd{background:var(--amber)}
+  .sbadge.fail{background:var(--red-tint);color:var(--red)}.sbadge.fail .sd{background:var(--red)}
+  .kvline{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;padding-bottom:10px;border-bottom:1px solid var(--line);margin-bottom:12px}
+  .kvline:last-of-type{margin-bottom:0}
+  .kvline .kk{color:var(--muted);font-size:13px;flex-shrink:0}
+  .kvline .vv{font-family:var(--mono);font-size:12px;text-align:right;word-break:break-all}
+  .hashbox{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:14px;font-family:var(--mono);font-size:11.5px;color:var(--muted);word-break:break-all;line-height:1.7;position:relative}
+  .hashbox .hh{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:10px}
+  .hashbox .hh .lab{color:var(--ink)}
+  .copy-btn{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px;color:var(--faint);cursor:pointer}
+  .copy-btn:hover{color:var(--ink)}.copy-btn svg{width:14px;height:14px}
+  .check{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);transition:background .2s}
+  .check .check-icon{width:20px;height:20px;color:var(--faint);flex-shrink:0}
+  .check span{font-size:13px}
+  .check .check-note{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .check.pass{background:var(--green-tint);border-color:color-mix(in srgb,var(--green) 25%,var(--line))}.check.pass .check-icon{color:var(--green)}
+  .check.fail{background:var(--red-tint);border-color:color-mix(in srgb,var(--red) 25%,var(--line))}.check.fail .check-icon{color:var(--red)}
+  .verdict{display:flex;align-items:flex-start;gap:12px;padding:14px;border-radius:9px;border:1px solid var(--line);margin-top:18px}
+  .verdict svg{width:22px;height:22px;margin-top:1px;flex-shrink:0}
+  .verdict h4{font-size:14.5px;font-weight:700}
+  .verdict p{font-size:12.5px;margin-top:3px;color:var(--ink);opacity:.92}
+  .verdict.pass{background:var(--green-tint);border-color:color-mix(in srgb,var(--green) 25%,var(--line));color:var(--green)}
+  .verdict.warn{background:var(--amber-tint);border-color:color-mix(in srgb,var(--amber) 25%,var(--line));color:var(--amber)}
+  .verdict.fail{background:var(--red-tint);border-color:color-mix(in srgb,var(--red) 25%,var(--line));color:var(--red)}
+  .spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
-<body class="bg-background font-body-md text-on-background tabular-nums min-h-screen">
-<aside class="fixed left-0 top-0 h-full w-60 bg-surface border-r border-outline-variant hidden md:flex flex-col py-6 z-20">
-<a href="/" class="px-6 mb-8 flex items-center gap-3" aria-label="untangle — home">
-<div class="w-8 h-8 bg-primary rounded flex items-center justify-center text-on-primary font-bold">u</div>
-<div>
-<div class="font-headline-md text-[20px] leading-6 font-bold"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></div>
-<div class="font-label-caps text-[10px] text-on-surface-variant">Audit Engine v1.0</div>
-</div>
-</a>
-<nav class="flex-1 px-4 space-y-1" aria-label="Primary">
-<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/dashboard">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="dashboard"><path d="M520-600v-240h320v240H520ZM120-440v-400h320v400H120Zm400 320v-400h320v400H520Zm-400 0v-240h320v240H120Zm80-400h160v-240H200v240Zm400 320h160v-240H600v240Zm0-480h160v-80H600v80ZM200-200h160v-80H200v80Zm160-320Zm240-160Zm0 240ZM360-280Z"/></svg><span>Dashboard</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/investigate">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="search"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg><span>Investigate</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/app">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="upload_file"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg><span>Upload</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2 text-primary font-semibold bg-surface-container-low border-r-2 border-primary rounded" aria-current="page" href="/verify">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="verified_user"><path d="m438-338 226-226-57-57-169 169-84-84-57 57 141 141Zm42 258q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z"/></svg><span>Verify</span>
-</a>
-</nav>
-<div class="px-4 mt-auto">
-<div class="px-3 py-2 font-label-caps text-[10px] text-on-surface-variant flex items-center gap-2">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]" data-icon="security"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q97-30 162-118.5T718-480H480v-315l-240 90v207q0 7 2 18h238v316Z"/></svg> Deterministic core
-</div>
-</div>
+<body>
+<div class="shell">
+
+<aside class="side">
+  <a href="/" class="brand" aria-label="untangle — home">
+    <span class="mark">u</span>
+    <span><span class="name"><span>un</span><span class="b">tangle</span></span><span class="ver">Audit engine v1.0</span></span>
+  </a>
+  <nav aria-label="Primary">
+    <a href="/dashboard"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M520-600v-240h320v240H520ZM120-440v-400h320v400H120Zm400 320v-400h320v400H520Zm-400 0v-240h320v240H120Z"/></svg>Dashboard</a>
+    <a href="/investigate"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg>Investigate</a>
+    <a href="/app"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520Z"/></svg>Upload</a>
+    <a class="on" aria-current="page" href="/verify"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m438-338 226-226-57-57-169 169-84-84-57 57 141 141Zm42 258q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Z"/></svg>Verify</a>
+    <a href="/certificate"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Z"/></svg>Certificate</a>
+  </nav>
+  <div class="foot">
+    <span class="note"><svg viewBox="0 -960 960 960" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Z"/></svg> Deterministic core</span>
+  </div>
 </aside>
 
-<main class="md:ml-60 flex-1 flex flex-col min-w-0">
-<div class="md:hidden flex items-center gap-1 border-b border-outline-variant bg-surface px-3 h-12 overflow-x-auto shrink-0">
-<a href="/" class="font-headline-md text-[16px] font-bold mr-2 shrink-0"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></a>
-<a href="/dashboard" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Dashboard</a>
-<a href="/investigate" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Investigate</a>
-<a href="/app" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Upload</a>
-<a href="/verify" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Verify</a>
-</div>
-<header class="h-16 border-b border-outline-variant bg-surface flex items-center justify-end gap-3 px-8 sticky top-0 z-10">
-<a href="/app" class="hidden sm:inline-flex h-10 items-center px-4 bg-surface text-primary border border-outline-variant font-data-tabular text-data-tabular rounded hover:bg-surface-container-low transition-colors">Upload files</a>
-<a href="/try-sample" class="inline-flex h-10 items-center px-4 bg-primary text-on-primary font-data-tabular text-data-tabular rounded hover:bg-audit-blue transition-colors">Try sample</a>
-</header>
+<main class="main">
+  <div class="mtabs">
+    <a href="/" class="brand"><span>un</span><span class="b">tangle</span></a>
+    <a href="/dashboard">Dashboard</a>
+    <a href="/investigate">Investigate</a>
+    <a href="/app">Upload</a>
+    <a class="on" href="/verify">Verify</a>
+    <a href="/certificate">Certificate</a>
+  </div>
 
-<div class="p-8 flex-1 overflow-auto relative">
-<div class="absolute inset-0 opacity-[0.03] pointer-events-none" style="background-image: radial-gradient(#0b1c30 1px, transparent 1px); background-size: 24px 24px;"></div>
-<div class="relative z-10 max-w-[1400px] mx-auto w-full">
+  <header class="topbar">
+    <div class="left"><span class="scope"><span class="d"></span>Independent verifier</span></div>
+    <div class="right">
+      <button class="kbd" id="cmdk-open" aria-label="Open command palette"><kbd>⌘</kbd><kbd>K</kbd></button>
+      <button class="iconbtn" id="theme" aria-label="Toggle colour theme"><svg viewBox="0 -960 960 960" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M480-280q-83 0-141.5-58.5T280-480q0-83 58.5-141.5T480-680q83 0 141.5 58.5T680-480q0 83-58.5 141.5T480-280Zm0-80q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35Zm-280 40H40v-80h160v80Zm720 0H760v-80h160v80ZM440-760v-160h80v160h-80Zm0 720v-160h80v160h-80Z"/></svg></button>
+      <a href="/try-sample" class="btn primary sm">Try sample</a>
+    </div>
+  </header>
 
-<div class="mb-12 flex flex-col md:flex-row items-start gap-8 animate-fade-rise delay-0">
-<div class="flex-1">
-<p class="font-label-caps text-label-caps text-on-surface-variant mb-4 tracking-widest uppercase">Independent verification</p>
-<h1 class="font-display-lg text-display-lg text-on-surface mb-6">Verify a close certificate</h1>
-<p class="font-body-md text-body-md text-on-surface-variant max-w-2xl leading-relaxed">
-Paste any untangle close certificate below. This page re-runs the same proof logic your
-browser can inspect: it recomputes the certificate's content hash and compares it to the
-claimed hash, checks the signature if one is present, and reports the proof-packet binding —
-A matching hash on a <em>signed</em> certificate confirms it came from untangle and is
-unaltered; on an <em>unsigned</em> certificate it confirms only that the file is internally
-consistent. The certificate is sent to untangle's <code>/api/verify</code> endpoint and
-verified in memory — it is not persisted, but treat it as a sensitive document.
-</p>
-</div>
-<div class="w-full md:w-64 shrink-0 bg-surface-container-low rounded-lg p-6 flex flex-col items-center justify-center text-center border border-outline-variant">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[48px] text-primary mb-3"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Zm-80 160h160q17 0 28.5-11.5T600-360v-120q0-17-11.5-28.5T560-520v-40q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560v40q-17 0-28.5 11.5T360-480v120q0 17 11.5 28.5T400-320Zm40-200v-40q0-17 11.5-28.5T480-600q17 0 28.5 11.5T520-560v40h-80Z"/></svg>
-<span class="font-label-caps text-label-caps text-on-surface">Don't trust. Verify.</span>
-<span class="font-body-sm text-body-sm text-on-surface-variant mt-1">The verdict is deterministic and reproducible.</span>
-</div>
-</div>
+  <div class="page">
+    <div class="vintro">
+      <div>
+        <span class="eyebrow">Independent verification</span>
+        <h1 class="ah" data-ah>Don't trust. Verify.</h1>
+        <p class="lede2">Paste any untangle close certificate below. This page re-runs the same proof logic your browser can inspect: it recomputes the certificate's content hash and compares it to the claimed hash, checks the signature if one is present, and reports the proof-packet binding. A matching hash on a <em>signed</em> certificate confirms it came from untangle and is unaltered; on an <em>unsigned</em> certificate it confirms only that the file is internally consistent. The certificate is sent to <code>/api/verify</code> and verified in memory — it is not persisted, but treat it as a sensitive document.</p>
+      </div>
+      <div class="aside">
+        <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm-80-236h160q17 0 28.5-11.5T600-360v-120q0-17-11.5-28.5T560-520v-40q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560v40q-17 0-28.5 11.5T360-480v120q0 17 11.5 28.5T400-320Zm40-200v-40q0-17 11.5-28.5T480-600q17 0 28.5 11.5T520-560v40h-80Z"/></svg>
+        <span class="t">Reproducible verdict</span>
+        <span class="s">The result is deterministic — re-run it anywhere and get the same answer.</span>
+      </div>
+    </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-<!-- Input -->
-<div class="lg:col-span-7 space-y-6 animate-fade-rise delay-70">
-<div class="bg-surface rounded-lg p-6 relative overflow-hidden border border-outline-variant">
-<div class="absolute top-0 left-0 w-1 h-full bg-secondary"></div>
-<div class="flex items-center justify-between mb-4">
-<h2 class="font-title-sm text-title-sm text-on-surface">Certificate JSON</h2>
-<button type="button" id="upload-btn" class="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors active:scale-[0.98]">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[18px]"><path d="M440-320v-326L336-542l-56-58 200-200 200 200-56 58-104-104v326h-80ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>
-<span class="font-body-sm text-body-sm font-medium">Load .json file</span>
-</button>
-<input type="file" id="file-input" accept="application/json,.json" class="hidden"/>
-</div>
-<div class="relative mb-6">
-<label for="certificate-input" class="sr-only">Certificate JSON</label>
-<textarea id="certificate-input" class="w-full h-64 bg-surface-bright text-on-surface font-label-caps text-label-caps p-4 rounded-lg resize-none outline-none border border-transparent focus:border-primary/20 focus:ring-4 focus:ring-primary/10 transition-all shadow-inner" placeholder="Paste the certificate JSON — the object with certificate, content_sha256 and signed keys."></textarea>
-<button type="button" class="absolute bottom-4 right-4 flex items-center gap-2 bg-surface-container-highest px-3 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors active:scale-[0.98] paste-btn">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px] icon-base"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h167q11-35 43-57.5t70-22.5q40 0 71.5 22.5T594-840h166q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560h-80v120H280v-120h-80v560Zm308.5-571.5Q520-783 520-800t-11.5-28.5Q497-840 480-840t-28.5 11.5Q440-817 440-800t11.5 28.5Q463-760 480-760t28.5-11.5Z"/></svg>
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px] icon-check hidden text-secondary"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>
-<span class="font-label-caps text-[10px]">PASTE FROM CLIPBOARD</span>
-</button>
-</div>
-<div class="flex flex-wrap gap-3">
-<button type="button" id="verify-action" class="flex-1 bg-primary text-on-primary font-body-md text-body-md py-3 rounded-lg hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.98] transition-all flex items-center justify-center gap-3">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" id="verify-icon"><path d="M481-781q106 0 200 45.5T838-604q7 9 4.5 16t-8.5 12q-6 5-14 4.5t-14-8.5q-55-78-141.5-119.5T481-741q-97 0-182 41.5T158-580q-6 9-14 10t-14-4q-7-5-8.5-12.5T126-602q62-85 155.5-132T481-781Zm0 94q135 0 232 90t97 223q0 50-35.5 83.5T688-257q-51 0-87.5-33.5T564-374q0-33-24.5-55.5T481-452q-34 0-58.5 22.5T398-374q0 97 57.5 162T604-121q9 3 12 10t1 15q-2 7-8 12t-15 3q-104-26-170-103.5T358-374q0-50 36-84t87-34q51 0 87 34t36 84q0 33 25 55.5t59 22.5q34 0 58-22.5t24-55.5q0-116-85-195t-203-79q-118 0-203 79t-85 194q0 24 4.5 60t21.5 84q3 9-.5 16T208-205q-8 3-15.5-.5T182-217q-15-39-21.5-77.5T154-374q0-133 96.5-223T481-687Zm0-192q64 0 125 15.5T724-819q9 5 10.5 12t-1.5 14q-3 7-10 11t-17-1q-53-27-109.5-41.5T481-839q-58 0-114 13.5T260-783q-8 5-16 2.5T232-791q-4-8-2-14.5t10-11.5q56-30 117-46t124-16Zm0 289q93 0 160 62.5T708-374q0 9-5.5 14.5T688-354q-8 0-14-5.5t-6-14.5q0-75-55.5-125.5T481-550q-76 0-130.5 50.5T296-374q0 81 28 137.5T406-123q6 6 6 14t-6 14q-6 6-14 6t-14-6q-59-62-90.5-126.5T256-374q0-91 66-153.5T481-590Zm-1 196q9 0 14.5 6t5.5 14q0 75 54 123t126 48q6 0 17-1t23-3q9-2 15.5 2.5T744-191q2 8-3 14t-13 8q-18 5-31.5 5.5t-16.5.5q-89 0-154.5-60T460-374q0-8 5.5-14t14.5-6Z"/></svg>
-<span id="verify-label">Verify certificate</span>
-</button>
-<button type="button" id="sample-btn" class="px-4 py-3 rounded-lg border border-outline-variant text-on-surface font-body-sm hover:bg-surface-container-low transition-colors active:scale-[0.98]">Load a sample</button>
-</div>
-<p id="input-error" class="hidden mt-3 font-body-sm text-body-sm text-error"></p>
-</div>
-<div class="bg-surface-container-low rounded-lg p-6 border border-outline-variant">
-<h3 class="font-label-caps text-label-caps text-on-surface-variant mb-4">Accepted input</h3>
-<div class="flex flex-wrap gap-2">
-<span class="px-3 py-1.5 bg-surface-container rounded-lg font-label-caps text-[10px] text-on-surface">JSON (RFC 8259)</span>
-<span class="px-3 py-1.5 bg-surface-container rounded-lg font-label-caps text-[10px] text-on-surface">Envelope: { certificate, content_sha256, signed }</span>
-</div>
-<p class="font-body-sm text-body-sm text-on-surface-variant mt-3">Get a sample from <a class="text-secondary underline" href="/api/certificate/sample">/api/certificate/sample</a>, or export one from a reconciliation run.</p>
-</div>
-</div>
+    <div class="g12">
+      <!-- Input -->
+      <div class="sp7 col">
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <h3 style="font-family:var(--display);font-size:15.5px;font-weight:700">Certificate JSON</h3>
+            <button type="button" id="upload-btn" class="linkbtn"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M440-320v-326L336-542l-56-58 200-200 200 200-56 58-104-104v326h-80ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg> Load .json file</button>
+            <input type="file" id="file-input" accept="application/json,.json" hidden/>
+          </div>
+          <div class="ta-wrap">
+            <label for="certificate-input" class="sr">Certificate JSON</label>
+            <textarea id="certificate-input" class="ta" placeholder="Paste the certificate JSON — the object with certificate, content_sha256 and signed keys."></textarea>
+            <button type="button" class="paste-btn"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true" class="icon-base"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h167q11-35 43-57.5t70-22.5q40 0 71.5 22.5T594-840h166q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm280-640q17 0 28.5-11.5T520-800q0-17-11.5-28.5T480-840q-17 0-28.5 11.5T440-800q0 17 11.5 28.5T480-760Z"/></svg><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true" class="icon-check" hidden style="color:var(--green)"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg><span>Paste from clipboard</span></button>
+          </div>
+          <div class="col" style="gap:12px;margin-top:16px">
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <button type="button" id="verify-action" class="btn primary" style="flex:1"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true" id="verify-icon"><path d="M481-781q106 0 200 45.5T838-604q7 9 4.5 16t-8.5 12q-6 5-14 4.5t-14-8.5q-55-78-141.5-119.5T481-741q-97 0-182 41.5T158-580q-6 9-14 10t-14-4q-7-5-8.5-12.5T126-602q62-85 155.5-132T481-781Zm0 94q135 0 232 90t97 223q0 50-35.5 83.5T688-257q-51 0-87.5-33.5T564-374q0-33-24.5-55.5T481-452q-34 0-58.5 22.5T398-374q0 97 57.5 162T604-121q9 3 12 10t1 15q-2 7-8 12t-15 3q-104-26-170-103.5T358-374q0-50 36-84t87-34q51 0 87 34t36 84q0 33 25 55.5t59 22.5q34 0 58-22.5t24-55.5q0-116-85-195t-203-79q-118 0-203 79t-85 194q0 24 4.5 60t21.5 84q3 9-.5 16T208-205q-8 3-15.5-.5T182-217q-15-39-21.5-77.5T154-374q0-133 96.5-223T481-687Z"/></svg><span id="verify-label">Verify certificate</span></button>
+              <button type="button" id="sample-btn" class="btn ghost">Load a sample</button>
+            </div>
+            <p id="input-error" class="inline-err" hidden style="text-align:left"></p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="eyebrow" style="margin-bottom:12px">Accepted input</div>
+          <div class="accepted">
+            <span class="chip">JSON (RFC 8259)</span>
+            <span class="chip">Envelope: { certificate, content_sha256, signed }</span>
+          </div>
+          <p class="muted" style="font-size:13px;margin-top:12px">Get a sample from <a class="accent" href="/api/certificate/sample">/api/certificate/sample</a>, or export one from a reconciliation run.</p>
+        </div>
+      </div>
 
-<!-- Results -->
-<div class="lg:col-span-5 relative animate-fade-rise delay-140">
-<div class="bg-surface rounded-lg overflow-hidden opacity-50 pointer-events-none transition-all duration-500 ease-in-out border border-outline-variant" id="verification-results">
-<div class="bg-surface-container-high px-6 py-4 flex items-center justify-between">
-<span class="font-title-sm text-title-sm text-on-surface">Proof diagnostics</span>
-<div class="px-3 py-1.5 rounded-full bg-outline-variant/20 flex items-center gap-2" id="status-badge">
-<span class="w-2 h-2 rounded-full bg-outline"></span>
-<span class="font-label-caps text-[10px] text-on-surface-variant" id="status-text">AWAITING INPUT</span>
-</div>
-</div>
-<div class="p-6 space-y-6">
-<div class="space-y-4">
-<div class="flex justify-between items-end border-b border-surface-container-high pb-2 gap-3">
-<span class="font-body-sm text-body-sm text-on-surface-variant shrink-0">Content fingerprint</span>
-<span class="font-data-tabular text-label-caps text-on-surface text-right break-all" id="res-id">—</span>
-</div>
-<div class="flex justify-between items-end border-b border-surface-container-high pb-2 gap-3">
-<span class="font-body-sm text-body-sm text-on-surface-variant shrink-0">Signature</span>
-<span class="font-data-tabular text-label-caps text-on-surface text-right" id="res-auth">—</span>
-</div>
-<div class="flex justify-between items-end border-b border-surface-container-high pb-2 gap-3">
-<span class="font-body-sm text-body-sm text-on-surface-variant shrink-0">Proof packets</span>
-<span class="font-data-tabular text-label-caps text-on-surface text-right" id="res-packets">—</span>
-</div>
-</div>
-<div class="bg-surface-container rounded-lg p-4 font-data-tabular text-label-caps text-on-surface-variant break-all leading-relaxed relative">
-<div class="flex justify-between items-start mb-2">
-<p class="text-on-surface tooltip-trigger cursor-help border-b border-dashed border-on-surface-variant/50 relative">Content hash (SHA-256)
-<span class="tooltip-content absolute top-full left-0 mt-1 w-56 bg-inverse-surface text-inverse-on-surface p-2 rounded-md shadow-lg font-body-sm normal-case text-left font-normal z-50">SHA-256 hash of the certificate body, recomputed here and compared to the claimed hash.</span>
-</p>
-<button type="button" class="text-outline hover:text-on-surface transition-colors bg-surface-container-highest p-1 rounded copy-btn active:scale-[0.98]" data-copy-target="res-hash"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px] icon-base"><path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z"/></svg><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px] icon-check hidden text-secondary"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg></button>
-</div>
-<span class="block" id="res-hash">—</span>
-</div>
-<div class="space-y-2">
-<h4 class="font-label-caps text-label-caps text-on-surface-variant mb-3">Checks</h4>
-<div class="flex items-center gap-3 p-3 rounded-lg bg-surface-container-low transition-all" id="check-hash">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px] text-outline check-icon"><path d="M322.5-437.5Q340-455 340-480t-17.5-42.5Q305-540 280-540t-42.5 17.5Q220-505 220-480t17.5 42.5Q255-420 280-420t42.5-17.5Zm200 0Q540-455 540-480t-17.5-42.5Q505-540 480-540t-42.5 17.5Q420-505 420-480t17.5 42.5Q455-420 480-420t42.5-17.5Zm200 0Q740-455 740-480t-17.5-42.5Q705-540 680-540t-42.5 17.5Q620-505 620-480t17.5 42.5Q655-420 680-420t42.5-17.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
-<span class="font-body-sm text-body-sm text-on-surface">Content-hash integrity</span>
-<span class="font-body-sm text-body-sm text-on-surface-variant ml-auto check-note"></span>
-</div>
-<div class="flex items-center gap-3 p-3 rounded-lg bg-surface-container-low transition-all" id="check-sig">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px] text-outline check-icon"><path d="M322.5-437.5Q340-455 340-480t-17.5-42.5Q305-540 280-540t-42.5 17.5Q220-505 220-480t17.5 42.5Q255-420 280-420t42.5-17.5Zm200 0Q540-455 540-480t-17.5-42.5Q505-540 480-540t-42.5 17.5Q420-505 420-480t17.5 42.5Q455-420 480-420t42.5-17.5Zm200 0Q740-455 740-480t-17.5-42.5Q705-540 680-540t-42.5 17.5Q620-505 620-480t17.5 42.5Q655-420 680-420t42.5-17.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
-<span class="font-body-sm text-body-sm text-on-surface">Signature</span>
-<span class="font-body-sm text-body-sm text-on-surface-variant ml-auto check-note"></span>
-</div>
-<div class="flex items-center gap-3 p-3 rounded-lg bg-surface-container-low transition-all" id="check-binding">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px] text-outline check-icon"><path d="M322.5-437.5Q340-455 340-480t-17.5-42.5Q305-540 280-540t-42.5 17.5Q220-505 220-480t17.5 42.5Q255-420 280-420t42.5-17.5Zm200 0Q540-455 540-480t-17.5-42.5Q505-540 480-540t-42.5 17.5Q420-505 420-480t17.5 42.5Q455-420 480-420t42.5-17.5Zm200 0Q740-455 740-480t-17.5-42.5Q705-540 680-540t-42.5 17.5Q620-505 620-480t17.5 42.5Q655-420 680-420t42.5-17.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
-<span class="font-body-sm text-body-sm text-on-surface">Proof-packet binding</span>
-<span class="font-body-sm text-body-sm text-on-surface-variant ml-auto check-note"></span>
-</div>
-</div>
-<div class="hidden mt-6 p-4 rounded-lg flex items-start gap-3" id="final-verdict">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="mt-0.5" id="verdict-icon"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Zm34-102 102-44 104 44 56-96 110-26-10-112 74-84-74-86 10-112-110-24-58-96-102 44-104-44-56 96-110 24 10 112-74 86 74 84-10 114 110 24 58 96Zm102-318Zm-42 142 226-226-56-58-170 170-86-84-56 56 142 142Z"/></svg>
-<div>
-<h4 class="font-title-sm text-title-sm font-semibold" id="verdict-title">—</h4>
-<p class="font-body-sm text-body-sm mt-1 opacity-90" id="verdict-text">—</p>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
+      <!-- Results -->
+      <div class="sp5">
+        <div class="card pad0 vpanel locked" id="verification-results">
+          <div class="card-h">
+            <h3>Proof diagnostics</h3>
+            <div class="sbadge" id="status-badge"><span class="sd"></span><span id="status-text">Awaiting input</span></div>
+          </div>
+          <div class="card-b col" style="gap:20px">
+            <div>
+              <div class="kvline"><span class="kk">Content fingerprint</span><span class="vv" id="res-id">—</span></div>
+              <div class="kvline"><span class="kk">Signature</span><span class="vv" id="res-auth">—</span></div>
+              <div class="kvline"><span class="kk">Proof packets</span><span class="vv" id="res-packets">—</span></div>
+            </div>
+            <div class="hashbox">
+              <div class="hh">
+                <span class="lab">Content hash (SHA-256)</span>
+                <button type="button" class="copy-btn" data-copy-target="res-hash"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true" class="icon-base"><path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Z"/></svg><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true" class="icon-check" hidden style="color:var(--green)"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg></button>
+              </div>
+              <span id="res-hash">—</span>
+            </div>
+            <div class="col" style="gap:8px">
+              <div class="eyebrow" style="margin-bottom:2px">Checks</div>
+              <div class="check" id="check-hash">
+                <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true" class="check-icon"><path d="M322.5-437.5Q340-455 340-480t-17.5-42.5Q305-540 280-540t-42.5 17.5Q220-505 220-480t17.5 42.5Q255-420 280-420t42.5-17.5Zm200 0Q540-455 540-480t-17.5-42.5Q505-540 480-540t-42.5 17.5Q420-505 420-480t17.5 42.5Q455-420 480-420t42.5-17.5Zm200 0Q740-455 740-480t-17.5-42.5Q705-540 680-540t-42.5 17.5Q620-505 620-480t17.5 42.5Q655-420 680-420t42.5-17.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"/></svg>
+                <span>Content-hash integrity</span><span class="check-note"></span>
+              </div>
+              <div class="check" id="check-sig">
+                <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true" class="check-icon"><path d="M322.5-437.5Q340-455 340-480t-17.5-42.5Q305-540 280-540t-42.5 17.5Q220-505 220-480t17.5 42.5Q255-420 280-420t42.5-17.5Zm200 0Q540-455 540-480t-17.5-42.5Q505-540 480-540t-42.5 17.5Q420-505 420-480t17.5 42.5Q455-420 480-420t42.5-17.5Zm200 0Q740-455 740-480t-17.5-42.5Q705-540 680-540t-42.5 17.5Q620-505 620-480t17.5 42.5Q655-420 680-420t42.5-17.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"/></svg>
+                <span>Signature</span><span class="check-note"></span>
+              </div>
+              <div class="check" id="check-binding">
+                <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true" class="check-icon"><path d="M322.5-437.5Q340-455 340-480t-17.5-42.5Q305-540 280-540t-42.5 17.5Q220-505 220-480t17.5 42.5Q255-420 280-420t42.5-17.5Zm200 0Q540-455 540-480t-17.5-42.5Q505-540 480-540t-42.5 17.5Q420-505 420-480t17.5 42.5Q455-420 480-420t42.5-17.5Zm200 0Q740-455 740-480t-17.5-42.5Q705-540 680-540t-42.5 17.5Q620-505 620-480t17.5 42.5Q655-420 680-420t42.5-17.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"/></svg>
+                <span>Proof-packet binding</span><span class="check-note"></span>
+              </div>
+            </div>
+            <div class="verdict" id="final-verdict" hidden>
+              <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true" id="verdict-icon"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Z"/></svg>
+              <div>
+                <h4 id="verdict-title">—</h4>
+                <p id="verdict-text">—</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </main>
+</div>
 
-<footer class="md:ml-60 bg-surface-container-lowest border-t border-outline-variant py-12 mt-8">
-<div class="max-w-[1400px] mx-auto px-container-padding flex flex-col md:flex-row md:items-start justify-between gap-8">
-<div class="max-w-sm">
-<div class="font-headline-md text-headline-md tracking-tight mb-2"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></div>
-<p class="font-body-sm text-on-surface-variant">Attribution-first reconciliation for Razorpay settlements. Deterministic verdicts, calibrated abstention, and a close anyone can independently re-verify.</p>
+<!-- command palette -->
+<div class="cmdk-bg" id="cmdk" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="cmdk">
+    <div class="in">
+      <svg viewBox="0 -960 960 960" width="18" height="18" fill="currentColor" aria-hidden="true" style="color:var(--faint)"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg>
+      <input id="cmdk-input" type="text" placeholder="Search actions, screens, exports…" autocomplete="off" spellcheck="false"/>
+    </div>
+    <div class="list" id="cmdk-list"></div>
+    <div class="foot"><span>↑↓ to navigate · ↵ to open</span><span>esc to close</span></div>
+  </div>
 </div>
-<nav aria-label="Footer" class="flex flex-col gap-2 font-body-sm text-on-surface-variant">
-<a class="hover:text-on-surface transition-colors" target="_blank" rel="noopener noreferrer" href="https://github.com/vinayaksonthalia/untangle">Source</a>
-<a class="hover:text-on-surface transition-colors" target="_blank" rel="noopener noreferrer" href="https://github.com/vinayaksonthalia/untangle/blob/main/docs/ARCHITECTURE.md">Architecture</a>
-<a class="hover:text-on-surface transition-colors" target="_blank" rel="noopener noreferrer" href="https://github.com/vinayaksonthalia/untangle/blob/main/SECURITY.md">Security</a>
-<a class="hover:text-on-surface transition-colors" target="_blank" rel="noopener noreferrer" href="https://github.com/vinayaksonthalia/untangle/blob/main/LICENSE">License (Apache-2.0)</a>
-</nav>
-</div>
-</footer>
 
 <script>
   const $ = (id) => document.getElementById(id);
@@ -222,8 +217,8 @@ verified in memory — it is not persisted, but treat it as a sensitive document
       if (!text || text === '—') return;
       navigator.clipboard && navigator.clipboard.writeText(text).then(() => {
         const base = btn.querySelector('.icon-base'), chk = btn.querySelector('.icon-check');
-        if (base && chk) { base.classList.add('hidden'); chk.classList.remove('hidden');
-          setTimeout(() => { chk.classList.add('hidden'); base.classList.remove('hidden'); }, 1500); }
+        if (base && chk) { base.hidden = true; chk.hidden = false;
+          setTimeout(() => { chk.hidden = true; base.hidden = false; }, 1500); }
       });
     });
   });
@@ -252,28 +247,25 @@ verified in memory — it is not persisted, but treat it as a sensitive document
     } catch (e) { showError('Could not load the sample certificate.'); }
   });
 
-  function showError(msg) { const e = $('input-error'); e.textContent = msg; e.classList.remove('hidden'); }
-  function clearError() { $('input-error').classList.add('hidden'); }
+  function showError(msg) { const e = $('input-error'); e.textContent = msg; e.hidden = false; }
+  function clearError() { $('input-error').hidden = true; }
 
   const ICON = { pass: 'check_circle', fail: 'warning', neutral: 'pending' };
-  const COLOR = { pass: 'text-secondary', fail: 'text-error', neutral: 'text-outline' };
   // Icons are inline <svg>; swap their geometry by cloning a hidden template's paths.
   function swapIcon(svgEl, name) {
     const tmpl = document.querySelector('svg[data-icon="' + name + '"]');
     if (tmpl && svgEl) svgEl.innerHTML = tmpl.innerHTML;
   }
-  function setIcon(svgEl, state) {
-    svgEl.classList.remove('text-secondary', 'text-error', 'text-outline');
-    svgEl.classList.add(COLOR[state]);
-    swapIcon(svgEl, ICON[state]);
-  }
   function setCheck(rowId, state, note) {
     const row = $(rowId);
-    const icon = row.querySelector('.check-icon');
-    setIcon(icon, state);
+    row.classList.remove('pass', 'fail', 'neutral');
+    row.classList.add(state);
+    swapIcon(row.querySelector('.check-icon'), ICON[state]);
     row.querySelector('.check-note').textContent = note || '';
-    row.classList.remove('bg-secondary/5', 'bg-error/5', 'bg-surface-container-low');
-    row.classList.add(state === 'pass' ? 'bg-secondary/5' : state === 'fail' ? 'bg-error/5' : 'bg-surface-container-low');
+  }
+  function setStatus(state, text) {
+    $('status-badge').className = 'sbadge' + (state ? ' ' + state : '');
+    $('status-text').textContent = text;
   }
 
   async function verify() {
@@ -284,12 +276,10 @@ verified in memory — it is not persisted, but treat it as a sensitive document
     try { envelope = JSON.parse(raw); }
     catch (e) { showError('That is not valid JSON. Paste the certificate object exactly as issued.'); return; }
 
-    const results = $('verification-results');
-    results.classList.remove('opacity-50', 'pointer-events-none');
-    $('status-badge').className = 'px-3 py-1.5 rounded-full bg-tertiary-fixed-dim/20 flex items-center gap-2';
-    $('status-text').textContent = 'CHECKING';
+    $('verification-results').classList.remove('locked');
+    setStatus('checking', 'Checking');
     swapIcon($('verify-icon'), 'refresh');
-    $('verify-icon').classList.add('animate-spin');
+    $('verify-icon').classList.add('spin');
     $('verify-label').textContent = 'Verifying…';
 
     let r;
@@ -309,8 +299,7 @@ verified in memory — it is not persisted, but treat it as a sensitive document
     } else { $('res-packets').textContent = '—'; }
 
     // Check 1: content-hash integrity (the core tamper-evidence)
-    setCheck('check-hash', r.hash_matches ? 'pass' : 'fail',
-      r.hash_matches ? 'matches claimed' : 'does NOT match');
+    setCheck('check-hash', r.hash_matches ? 'pass' : 'fail', r.hash_matches ? 'matches claimed' : 'does NOT match');
 
     // Check 2: signature
     if (!r.signed) setCheck('check-sig', 'neutral', 'unsigned');
@@ -322,31 +311,23 @@ verified in memory — it is not persisted, but treat it as a sensitive document
     else setCheck('check-binding', 'neutral', av.packets_passed != null ? 'self-attested' : 'no report attached');
 
     // Overall verdict (honest, nuanced)
-    const badge = $('status-badge'), verdict = $('final-verdict'), vIcon = $('verdict-icon');
-    verdict.classList.remove('hidden', 'bg-secondary/10', 'text-secondary', 'border', 'border-secondary/20', 'bg-error/10', 'text-error', 'border-error/20');
+    const verdict = $('final-verdict'), vIcon = $('verdict-icon');
+    verdict.hidden = false;
     if (r.ok && r.signed && r.authenticated) {
-      // hash matches AND an authenticated signature: provenance + integrity
-      badge.className = 'px-3 py-1.5 rounded-full bg-secondary/10 flex items-center gap-2';
-      $('status-text').className = 'font-label-caps text-[10px] text-secondary';
-      $('status-text').textContent = 'VERIFIED';
-      verdict.classList.add('bg-secondary/10', 'text-secondary', 'border', 'border-secondary/20');
+      setStatus('pass', 'Verified');
+      verdict.className = 'verdict pass';
       swapIcon(vIcon, 'verified');
       $('verdict-title').textContent = 'Verified — signed & unaltered';
       $('verdict-text').textContent = 'The recomputed content hash matches and the signature is authenticated against the issuer key — this certificate came from untangle and is unaltered since issuance.';
     } else if (r.ok) {
-      // hash matches but UNSIGNED: internal consistency only, NOT provenance
-      badge.className = 'px-3 py-1.5 rounded-full bg-tertiary-fixed-dim/30 flex items-center gap-2';
-      $('status-text').className = 'font-label-caps text-[10px] text-on-tertiary-container';
-      $('status-text').textContent = 'UNSIGNED';
-      verdict.classList.add('bg-tertiary-fixed-dim/20', 'text-on-tertiary-container', 'border', 'border-tertiary-fixed-dim/40');
+      setStatus('warn', 'Unsigned');
+      verdict.className = 'verdict warn';
       swapIcon(vIcon, 'warning');
       $('verdict-title').textContent = 'Hash consistent — but unsigned';
       $('verdict-text').textContent = 'The recomputed hash matches the claimed hash, so the file is internally consistent. But it is unsigned: anyone can edit the certificate and recompute this hash, so this does NOT prove it came from untangle or that it was not regenerated. Only an authenticated signature proves origin.';
     } else {
-      badge.className = 'px-3 py-1.5 rounded-full bg-error/10 flex items-center gap-2';
-      $('status-text').className = 'font-label-caps text-[10px] text-error';
-      $('status-text').textContent = 'FAILED';
-      verdict.classList.add('bg-error/10', 'text-error', 'border', 'border-error/20');
+      setStatus('fail', 'Failed');
+      verdict.className = 'verdict fail';
       swapIcon(vIcon, 'warning');
       $('verdict-title').textContent = 'Verification failed';
       $('verdict-text').textContent = !r.hash_matches
@@ -357,8 +338,8 @@ verified in memory — it is not persisted, but treat it as a sensitive document
   }
 
   function resetButton() {
-    $('verify-icon').textContent = 'fingerprint';
-    $('verify-icon').classList.remove('animate-spin');
+    swapIcon($('verify-icon'), 'fingerprint');
+    $('verify-icon').classList.remove('spin');
     $('verify-label').textContent = 'Verify certificate';
   }
 
@@ -367,12 +348,12 @@ verified in memory — it is not persisted, but treat it as a sensitive document
 
 <!-- icon templates for JS state swaps (kept out of view) -->
 <div hidden aria-hidden="true">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" data-icon="check_circle"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" data-icon="warning"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm330.5-51.5Q520-263 520-280t-11.5-28.5Q497-320 480-320t-28.5 11.5Q440-297 440-280t11.5 28.5Q463-240 480-240t28.5-11.5ZM440-360h80v-200h-80v200Zm40-100Z"/></svg>
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" data-icon="pending"><path d="M322.5-437.5Q340-455 340-480t-17.5-42.5Q305-540 280-540t-42.5 17.5Q220-505 220-480t17.5 42.5Q255-420 280-420t42.5-17.5Zm200 0Q540-455 540-480t-17.5-42.5Q505-540 480-540t-42.5 17.5Q420-505 420-480t17.5 42.5Q455-420 480-420t42.5-17.5Zm200 0Q740-455 740-480t-17.5-42.5Q705-540 680-540t-42.5 17.5Q620-505 620-480t17.5 42.5Q655-420 680-420t42.5-17.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" data-icon="fingerprint"><path d="M481-781q106 0 200 45.5T838-604q7 9 4.5 16t-8.5 12q-6 5-14 4.5t-14-8.5q-55-78-141.5-119.5T481-741q-97 0-182 41.5T158-580q-6 9-14 10t-14-4q-7-5-8.5-12.5T126-602q62-85 155.5-132T481-781Zm0 94q135 0 232 90t97 223q0 50-35.5 83.5T688-257q-51 0-87.5-33.5T564-374q0-33-24.5-55.5T481-452q-34 0-58.5 22.5T398-374q0 97 57.5 162T604-121q9 3 12 10t1 15q-2 7-8 12t-15 3q-104-26-170-103.5T358-374q0-50 36-84t87-34q51 0 87 34t36 84q0 33 25 55.5t59 22.5q34 0 58-22.5t24-55.5q0-116-85-195t-203-79q-118 0-203 79t-85 194q0 24 4.5 60t21.5 84q3 9-.5 16T208-205q-8 3-15.5-.5T182-217q-15-39-21.5-77.5T154-374q0-133 96.5-223T481-687Zm0-192q64 0 125 15.5T724-819q9 5 10.5 12t-1.5 14q-3 7-10 11t-17-1q-53-27-109.5-41.5T481-839q-58 0-114 13.5T260-783q-8 5-16 2.5T232-791q-4-8-2-14.5t10-11.5q56-30 117-46t124-16Zm0 289q93 0 160 62.5T708-374q0 9-5.5 14.5T688-354q-8 0-14-5.5t-6-14.5q0-75-55.5-125.5T481-550q-76 0-130.5 50.5T296-374q0 81 28 137.5T406-123q6 6 6 14t-6 14q-6 6-14 6t-14-6q-59-62-90.5-126.5T256-374q0-91 66-153.5T481-590Zm-1 196q9 0 14.5 6t5.5 14q0 75 54 123t126 48q6 0 17-1t23-3q9-2 15.5 2.5T744-191q2 8-3 14t-13 8q-18 5-31.5 5.5t-16.5.5q-89 0-154.5-60T460-374q0-8 5.5-14t14.5-6Z"/></svg>
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" data-icon="refresh"><path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z"/></svg>
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" data-icon="verified"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Zm34-102 102-44 104 44 56-96 110-26-10-112 74-84-74-86 10-112-110-24-58-96-102 44-104-44-56 96-110 24 10 112-74 86 74 84-10 114 110 24 58 96Zm102-318Zm-42 142 226-226-56-58-170 170-86-84-56 56 142 142Z"/></svg>
+  <svg viewBox="0 -960 960 960" fill="currentColor" data-icon="check_circle"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"/></svg>
+  <svg viewBox="0 -960 960 960" fill="currentColor" data-icon="warning"><path d="m40-120 440-760 440 760H40Zm138-80h604L480-720 178-200Zm302-40q17 0 28.5-11.5T520-280q0-17-11.5-28.5T480-320q-17 0-28.5 11.5T440-280q0 17 11.5 28.5T480-240Zm-40-120h80v-200h-80v200Z"/></svg>
+  <svg viewBox="0 -960 960 960" fill="currentColor" data-icon="pending"><path d="M322.5-437.5Q340-455 340-480t-17.5-42.5Q305-540 280-540t-42.5 17.5Q220-505 220-480t17.5 42.5Q255-420 280-420t42.5-17.5Zm200 0Q540-455 540-480t-17.5-42.5Q505-540 480-540t-42.5 17.5Q420-505 420-480t17.5 42.5Q455-420 480-420t42.5-17.5Zm200 0Q740-455 740-480t-17.5-42.5Q705-540 680-540t-42.5 17.5Q620-505 620-480t17.5 42.5Q655-420 680-420t42.5-17.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"/></svg>
+  <svg viewBox="0 -960 960 960" fill="currentColor" data-icon="fingerprint"><path d="M481-781q106 0 200 45.5T838-604q7 9 4.5 16t-8.5 12q-6 5-14 4.5t-14-8.5q-55-78-141.5-119.5T481-741q-97 0-182 41.5T158-580q-6 9-14 10t-14-4q-7-5-8.5-12.5T126-602q62-85 155.5-132T481-781Zm0 94q135 0 232 90t97 223q0 50-35.5 83.5T688-257q-51 0-87.5-33.5T564-374q0-33-24.5-55.5T481-452q-34 0-58.5 22.5T398-374q0 97 57.5 162T604-121q9 3 12 10t1 15q-2 7-8 12t-15 3q-104-26-170-103.5T358-374q0-50 36-84t87-34q51 0 87 34t36 84q0 33 25 55.5t59 22.5q34 0 58-22.5t24-55.5q0-116-85-195t-203-79q-118 0-203 79t-85 194q0 24 4.5 60t21.5 84q3 9-.5 16T208-205q-8 3-15.5-.5T182-217q-15-39-21.5-77.5T154-374q0-133 96.5-223T481-687Z"/></svg>
+  <svg viewBox="0 -960 960 960" fill="currentColor" data-icon="refresh"><path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z"/></svg>
+  <svg viewBox="0 -960 960 960" fill="currentColor" data-icon="verified"><path d="m344-60-76-128-144-32 14-148-98-112 98-112-14-148 144-32 76-128 136 58 136-58 76 128 144 32-14 148 98 112-98 112 14 148-144 32-76 128-136-58-136 58Zm34-102 102-44 104 44 56-96 110-26-10-112 74-84-74-86 10-112-110-24-58-96-102 44-104-44-56 96-110 24 10 112-74 86 74 84-10 114 110 24 58 96Zm102-318Zm-42 142 226-226-56-58-170 170-86-84-56 56 142 142Z"/></svg>
 </div>
 </body>
 </html>

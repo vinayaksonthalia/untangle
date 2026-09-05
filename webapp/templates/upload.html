@@ -5,203 +5,214 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Upload your files — untangle</title>
 <meta name="description" content="Upload your bank statement, Razorpay settlement report, and order ledger. untangle reconciles them in memory and returns your results — nothing is stored."/>
-<link rel="stylesheet" href="/static/upload.css"/>
+<link rel="stylesheet" href="/static/app.css"/>
+<script src="/static/app.js"></script>
 <style>
-  html, body { margin: 0; padding: 0; }
-  body { overscroll-behavior: none; }
-  ::-webkit-scrollbar { display: none; }
-  @media (prefers-reduced-motion: no-preference) {
-    @keyframes fadeInUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-    .animate-fade-in-up { animation: fadeInUp 0.5s cubic-bezier(0.16,1,0.3,1) forwards; opacity: 0; }
-  }
-  :focus-visible { outline: 2px solid #0f172a; outline-offset: 2px; }
+  .ugrid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  @media(max-width:900px){.ugrid{grid-template-columns:1fr}}
+  .slot{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px;height:100%;display:flex;flex-direction:column}
+  .slot .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
+  .slot .ic{width:40px;height:40px;border-radius:9px;background:var(--accent-tint);color:var(--accent);display:flex;align-items:center;justify-content:center}
+  .slot .ic svg{width:22px;height:22px}
+  .slot h3{font-family:var(--display);font-size:15.5px;font-weight:700;margin-bottom:6px}
+  .slot .desc{color:var(--muted);font-size:13px;flex:1;margin-bottom:14px}
+  .req{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--panel-2);border:1px solid var(--line);padding:3px 7px;border-radius:5px}
+  .drop{border:1.5px dashed var(--line-strong);border-radius:9px;padding:22px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;display:block}
+  .drop:hover,.drop.drag{border-color:var(--accent);background:var(--accent-tint)}
+  .drop svg{width:26px;height:26px;color:var(--faint);margin-bottom:6px}
+  .drop .browse{color:var(--accent);font-weight:600;font-size:13px}
+  .drop .hint{color:var(--faint);font-size:12px;margin-top:3px}
+  .fstatus{margin-top:14px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:11px 12px}
+  .fstatus .in{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .fstatus .nm{display:flex;align-items:center;gap:8px;overflow:hidden;font-size:13px}
+  .fstatus .nm svg{width:16px;height:16px;color:var(--green);flex-shrink:0}
+  .fstatus .nm span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fstatus .clear{background:none;border:0;color:var(--muted);cursor:pointer}
+  .fstatus .clear:hover{color:var(--red)}.fstatus .clear svg{width:16px;height:16px}
+  .ufoot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding-top:24px;margin-top:24px;border-top:1px solid var(--line)}
+  .flog{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;font-size:13px;color:var(--muted)}
+  .flog li{display:flex;align-items:center;gap:8px}
+  .flog li.italic{font-style:italic}
+  .flog li.on{color:var(--ink)}
+  .flog .mk.ok{color:var(--green)}
+  .flog .nm{font-family:var(--mono);font-size:12px}
+  .flog .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .side-note{margin-top:20px;padding-top:18px;border-top:1px solid var(--line);display:flex;gap:12px;align-items:flex-start}
+  .side-note svg{width:22px;height:22px;color:var(--accent);flex-shrink:0}
+  .side-note .t{font-size:13px;font-weight:600}
+  .side-note .s{font-size:12px;color:var(--muted);margin-top:2px}
+  .hidden{display:none!important}
+  .arrowlink{display:inline-flex;align-items:center;gap:8px;color:var(--accent);font-weight:600;font-size:14px}
+  .arrowlink svg{width:18px;height:18px}
 </style>
 </head>
-<body class="bg-background font-body-md text-on-background min-h-screen flex">
-<aside class="fixed left-0 top-0 h-full w-60 bg-surface border-r border-outline-variant hidden md:flex flex-col py-6 z-20">
-<a href="/" class="px-6 mb-8 flex items-center gap-3" aria-label="untangle — home">
-<div class="w-8 h-8 bg-primary rounded flex items-center justify-center text-on-primary font-bold">u</div>
-<div>
-<div class="font-headline-md text-[20px] leading-6 font-bold"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></div>
-<div class="font-label-caps text-[10px] text-on-surface-variant">Audit Engine v1.0</div>
-</div>
-</a>
-<nav class="flex-1 px-4 space-y-1" aria-label="Primary">
-<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/dashboard">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="dashboard"><path d="M520-600v-240h320v240H520ZM120-440v-400h320v400H120Zm400 320v-400h320v400H520Zm-400 0v-240h320v240H120Zm80-400h160v-240H200v240Zm400 320h160v-240H600v240Zm0-480h160v-80H600v80ZM200-200h160v-80H200v80Zm160-320Zm240-160Zm0 240ZM360-280Z"/></svg><span>Dashboard</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/investigate">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="search"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg><span>Investigate</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2 text-primary font-semibold bg-surface-container-low border-r-2 border-primary rounded" aria-current="page" href="/app">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="upload_file"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg><span>Upload</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/verify">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="verified_user"><path d="m438-338 226-226-57-57-169 169-84-84-57 57 141 141Zm42 258q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z"/></svg><span>Verify</span>
-</a>
-</nav>
-<div class="px-4 mt-auto">
-<div class="px-3 py-2 font-label-caps text-[10px] text-on-surface-variant flex items-center gap-2">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]" data-icon="security"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q97-30 162-118.5T718-480H480v-315l-240 90v207q0 7 2 18h238v316Z"/></svg> Deterministic core
-</div>
-</div>
+<body>
+<div class="shell">
+
+<aside class="side">
+  <a href="/" class="brand" aria-label="untangle — home">
+    <span class="mark">u</span>
+    <span><span class="name"><span>un</span><span class="b">tangle</span></span><span class="ver">Audit engine v1.0</span></span>
+  </a>
+  <nav aria-label="Primary">
+    <a href="/dashboard"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M520-600v-240h320v240H520ZM120-440v-400h320v400H120Zm400 320v-400h320v400H520Zm-400 0v-240h320v240H120Z"/></svg>Dashboard</a>
+    <a href="/investigate"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg>Investigate</a>
+    <a class="on" aria-current="page" href="/app"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520Z"/></svg>Upload</a>
+    <a href="/verify"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m438-338 226-226-57-57-169 169-84-84-57 57 141 141Zm42 258q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Z"/></svg>Verify</a>
+    <a href="/certificate"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Z"/></svg>Certificate</a>
+  </nav>
+  <div class="foot">
+    <span class="note"><svg viewBox="0 -960 960 960" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Z"/></svg> Deterministic core</span>
+  </div>
 </aside>
 
-<main class="md:ml-60 flex-1 flex flex-col min-w-0">
-<div class="md:hidden flex items-center gap-1 border-b border-outline-variant bg-surface px-3 h-12 overflow-x-auto shrink-0">
-<a href="/" class="font-headline-md text-[16px] font-bold mr-2 shrink-0"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></a>
-<a href="/dashboard" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Dashboard</a>
-<a href="/investigate" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Investigate</a>
-<a href="/app" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Upload</a>
-<a href="/verify" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Verify</a>
-</div>
-<header class="h-16 border-b border-outline-variant bg-surface flex items-center justify-end px-8 sticky top-0 z-10">
-<a href="/try-sample" class="inline-flex h-10 items-center px-4 bg-surface text-primary border border-outline-variant font-data-tabular text-data-tabular rounded hover:bg-surface-container-low transition-colors">Try sample instead</a>
-</header>
+<main class="main">
+  <div class="mtabs">
+    <a href="/" class="brand"><span>un</span><span class="b">tangle</span></a>
+    <a href="/dashboard">Dashboard</a>
+    <a href="/investigate">Investigate</a>
+    <a class="on" href="/app">Upload</a>
+    <a href="/verify">Verify</a>
+    <a href="/certificate">Certificate</a>
+  </div>
 
-<div class="p-8 flex-1 overflow-auto">
-<div class="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
-<div class="lg:col-span-8">
-<h1 class="font-display-lg text-display-lg text-on-background mb-3 tracking-tight">Upload your files</h1>
-<p class="font-body-md text-body-md text-on-surface-variant max-w-2xl leading-relaxed mb-8">
-Three files: your bank statement, the Razorpay settlement report (in untangle's expected schema),
-and your order ledger. They're sent to untangle's <code>/reconcile</code> endpoint, reconciled and
-discarded when your report renders — not persisted to any database and never sent to a third party.
-(A large multipart upload may be briefly spooled to a temporary file by the server, which is removed
-when the request ends.)
-Results are saved in this browser tab, not in a server run database. Use “Clear this tab’s results”
-on a shared device; browser session restore or duplicating a tab may preserve a copy.
-Large completed results download as JSON instead of opening the dashboard. If tab storage
-is unavailable, a download is offered so your completed result is not lost.
-</p>
+  <header class="topbar">
+    <div class="left"><span class="scope"><span class="d"></span>Your files, in memory</span></div>
+    <div class="right">
+      <button class="kbd" id="cmdk-open" aria-label="Open command palette"><kbd>⌘</kbd><kbd>K</kbd></button>
+      <button class="iconbtn" id="theme" aria-label="Toggle colour theme"><svg viewBox="0 -960 960 960" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M480-280q-83 0-141.5-58.5T280-480q0-83 58.5-141.5T480-680q83 0 141.5 58.5T680-480q0 83-58.5 141.5T480-280Zm0-80q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35Zm-280 40H40v-80h160v80Zm720 0H760v-80h160v80ZM440-760v-160h80v160h-80Zm0 720v-160h80v160h-80Z"/></svg></button>
+      <a href="/try-sample" class="btn ghost sm">Try sample instead</a>
+    </div>
+  </header>
 
-<form action="/reconcile" method="post" enctype="multipart/form-data" id="upload-form">
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-<!-- Bank statement (CSV) -->
-<div class="animate-fade-in-up" style="animation-delay:0ms">
-<div class="bg-surface rounded-lg p-6 h-full flex flex-col border border-outline-variant">
-<div class="flex justify-between items-start mb-5">
-<div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[22px]"><path d="M200-280v-280h80v280h-80Zm240 0v-280h80v280h-80ZM80-120v-80h800v80H80Zm600-160v-280h80v280h-80ZM80-640v-80l400-200 400 200v80H80Zm178-80h444-444Zm0 0h444L480-830 258-720Z"/></svg></div>
-<span class="bg-surface-container px-2 py-1 rounded text-on-surface-variant font-label-caps text-label-caps">REQUIRED</span>
-</div>
-<h3 class="font-title-sm text-title-sm text-on-surface mb-2">Bank statement</h3>
-<p class="font-body-sm text-body-sm text-on-surface-variant mb-4 flex-1">Credits from your current account, as a <strong>CSV</strong>.</p>
-<label for="file-bank" class="drop border-2 border-dashed border-outline-variant rounded-lg p-6 text-center cursor-pointer hover:border-primary hover:bg-surface-container-lowest transition-all block" data-slot="bank">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline mb-2 text-[28px]" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg>
-<p class="font-body-sm text-body-sm text-primary font-medium">Browse files</p>
-<p class="font-body-sm text-[12px] text-on-surface-variant mt-1">or drag and drop · CSV</p>
-</label>
-<input type="file" id="file-bank" name="bank" accept=".csv,text/csv" required class="sr-only"/>
-<div class="hidden mt-4 bg-surface-container-lowest rounded-lg p-3 border border-outline-variant" data-status="bank">
-<div class="flex items-center justify-between">
-<div class="flex items-center gap-2 overflow-hidden">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px] text-secondary" aria-hidden="true"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
-<span class="font-body-sm text-body-sm text-on-surface truncate" data-name="bank"></span>
-</div>
-<button type="button" class="clear text-on-surface-variant hover:text-error transition-colors" data-slot="bank" aria-label="Remove bank statement"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]" aria-hidden="true"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg></button>
-</div>
-</div>
-</div>
-</div>
-<!-- Razorpay settlement report (JSON) -->
-<div class="animate-fade-in-up" style="animation-delay:70ms">
-<div class="bg-surface rounded-lg p-6 h-full flex flex-col border border-outline-variant">
-<div class="flex justify-between items-start mb-5">
-<div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[22px]"><path d="M560-440q-50 0-85-35t-35-85q0-50 35-85t85-35q50 0 85 35t35 85q0 50-35 85t-85 35ZM280-320q-33 0-56.5-23.5T200-400v-320q0-33 23.5-56.5T280-800h560q33 0 56.5 23.5T920-720v320q0 33-23.5 56.5T840-320H280Zm80-80h400q0-33 23.5-56.5T840-480v-160q-33 0-56.5-23.5T760-720H360q0 33-23.5 56.5T280-640v160q33 0 56.5 23.5T360-400Zm440 240H120q-33 0-56.5-23.5T40-240v-440h80v440h680v80ZM280-400v-320 320Z"/></svg></div>
-<span class="bg-surface-container px-2 py-1 rounded text-on-surface-variant font-label-caps text-label-caps">REQUIRED</span>
-</div>
-<h3 class="font-title-sm text-title-sm text-on-surface mb-2">Razorpay settlement report</h3>
-<p class="font-body-sm text-body-sm text-on-surface-variant mb-4 flex-1">The settlement recon report in untangle's expected <strong>JSON</strong> schema — the join key <strong>type</strong> + <strong>entity_id</strong>, plus fee, tax, settled_at, settlement_utr… (untangle's schema, not a raw provider export).</p>
-<label for="file-recon" class="drop border-2 border-dashed border-outline-variant rounded-lg p-6 text-center cursor-pointer hover:border-primary hover:bg-surface-container-lowest transition-all block" data-slot="recon">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline mb-2 text-[28px]" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg>
-<p class="font-body-sm text-body-sm text-primary font-medium">Browse files</p>
-<p class="font-body-sm text-[12px] text-on-surface-variant mt-1">or drag and drop · JSON</p>
-</label>
-<input type="file" id="file-recon" name="recon" accept=".json,application/json" required class="sr-only"/>
-<div class="hidden mt-4 bg-surface-container-lowest rounded-lg p-3 border border-outline-variant" data-status="recon">
-<div class="flex items-center justify-between">
-<div class="flex items-center gap-2 overflow-hidden">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px] text-secondary" aria-hidden="true"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
-<span class="font-body-sm text-body-sm text-on-surface truncate" data-name="recon"></span>
-</div>
-<button type="button" class="clear text-on-surface-variant hover:text-error transition-colors" data-slot="recon" aria-label="Remove settlement report"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]" aria-hidden="true"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg></button>
-</div>
-</div>
-</div>
-</div>
-<!-- Order ledger (CSV) -->
-<div class="animate-fade-in-up" style="animation-delay:140ms">
-<div class="bg-surface rounded-lg p-6 h-full flex flex-col border border-outline-variant">
-<div class="flex justify-between items-start mb-5">
-<div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[22px]"><path d="M348.5-291.5Q360-303 360-320t-11.5-28.5Q337-360 320-360t-28.5 11.5Q280-337 280-320t11.5 28.5Q303-280 320-280t28.5-11.5Zm0-160Q360-463 360-480t-11.5-28.5Q337-520 320-520t-28.5 11.5Q280-497 280-480t11.5 28.5Q303-440 320-440t28.5-11.5Zm0-160Q360-623 360-640t-11.5-28.5Q337-680 320-680t-28.5 11.5Q280-657 280-640t11.5 28.5Q303-600 320-600t28.5-11.5ZM440-280h240v-80H440v80Zm0-160h240v-80H440v80Zm0-160h240v-80H440v80ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg></div>
-<span class="bg-surface-container px-2 py-1 rounded text-on-surface-variant font-label-caps text-label-caps">REQUIRED</span>
-</div>
-<h3 class="font-title-sm text-title-sm text-on-surface mb-2">Order ledger</h3>
-<p class="font-body-sm text-body-sm text-on-surface-variant mb-4 flex-1">Your order manifest (order_id, <strong>amount_paise</strong>, status), as a <strong>CSV</strong>.</p>
-<label for="file-ledger" class="drop border-2 border-dashed border-outline-variant rounded-lg p-6 text-center cursor-pointer hover:border-primary hover:bg-surface-container-lowest transition-all block" data-slot="ledger">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-outline mb-2 text-[28px]" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg>
-<p class="font-body-sm text-body-sm text-primary font-medium">Browse files</p>
-<p class="font-body-sm text-[12px] text-on-surface-variant mt-1">or drag and drop · CSV</p>
-</label>
-<input type="file" id="file-ledger" name="ledger" accept=".csv,text/csv" required class="sr-only"/>
-<div class="hidden mt-4 bg-surface-container-lowest rounded-lg p-3 border border-outline-variant" data-status="ledger">
-<div class="flex items-center justify-between">
-<div class="flex items-center gap-2 overflow-hidden">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px] text-secondary" aria-hidden="true"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>
-<span class="font-body-sm text-body-sm text-on-surface truncate" data-name="ledger"></span>
-</div>
-<button type="button" class="clear text-on-surface-variant hover:text-error transition-colors" data-slot="ledger" aria-label="Remove order ledger"><svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]" aria-hidden="true"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg></button>
-</div>
-</div>
-</div>
-</div>
-</div>
+  <div class="page">
+    <div class="g12">
+      <div class="sp8">
+        <div class="pagehead" style="margin-bottom:18px">
+          <div>
+            <span class="eyebrow">Reconcile your files</span>
+            <h1 class="ah" data-ah>Three files in. Proof out.</h1>
+          </div>
+        </div>
+        <p class="muted" style="font-size:14px;max-width:64ch;margin-bottom:24px;line-height:1.7">
+          Your bank statement, the Razorpay settlement report (in untangle's expected schema), and your order ledger. They're sent to <code style="font-family:var(--mono);font-size:12.5px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:1px 5px">/reconcile</code>, reconciled and discarded when your report renders — not persisted to any database and never sent to a third party. Results are saved in this browser tab, not in a server database; use “Clear this tab’s results” on a shared device. Large completed results download as JSON instead of opening the dashboard.
+        </p>
 
-<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-8 mt-8 border-t border-outline-variant">
-<a href="/try-sample" class="flex items-center gap-2 text-primary font-body-sm text-body-sm hover:underline">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[18px]" aria-hidden="true"><path d="M200-120q-51 0-72.5-45.5T138-250l222-270v-240h-40q-17 0-28.5-11.5T280-800q0-17 11.5-28.5T320-840h320q17 0 28.5 11.5T680-800q0 17-11.5 28.5T640-760h-40v240l222 270q32 39 10.5 84.5T760-120H200Zm0-80h560L520-492v-268h-80v268L200-200Zm280-280Z"/></svg> Don't have files? Run the bundled sample
-</a>
-<button type="submit" id="submit-btn" disabled class="bg-primary text-on-primary px-6 h-row-height-standard rounded-lg font-body-md text-body-md font-medium opacity-50 cursor-not-allowed transition-all flex items-center gap-2">
-Begin reconciliation <svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" aria-hidden="true"><path d="M647-440H160v-80h487L423-744l57-56 320 320-320 320-57-56 224-224Z"/></svg>
-</button>
-</div>
-<p id="submit-note" class="font-body-sm text-body-sm text-on-surface-variant mt-3">Select all three files to begin.</p>
-</form>
-</div>
+        <form action="/reconcile" method="post" enctype="multipart/form-data" id="upload-form">
+          <div class="ugrid">
+            <!-- Bank statement (CSV) -->
+            <div class="slot reveal">
+              <div class="top">
+                <span class="ic"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M200-280v-280h80v280h-80Zm240 0v-280h80v280h-80ZM80-120v-80h800v80H80Zm600-160v-280h80v280h-80ZM80-640v-80l400-200 400 200v80H80Z"/></svg></span>
+                <span class="req">Required</span>
+              </div>
+              <h3>Bank statement</h3>
+              <p class="desc">Credits from your current account, as a <strong>CSV</strong>.</p>
+              <label for="file-bank" class="drop" data-slot="bank">
+                <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Z"/></svg>
+                <div class="browse">Browse files</div>
+                <div class="hint">or drag and drop · CSV</div>
+              </label>
+              <input type="file" id="file-bank" name="bank" accept=".csv,text/csv" required class="sr"/>
+              <div class="fstatus hidden" data-status="bank">
+                <div class="in">
+                  <span class="nm"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"/></svg><span data-name="bank"></span></span>
+                  <button type="button" class="clear" data-slot="bank" aria-label="Remove bank statement"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg></button>
+                </div>
+              </div>
+            </div>
+            <!-- Razorpay settlement report (JSON) -->
+            <div class="slot reveal d1">
+              <div class="top">
+                <span class="ic"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M560-440q-50 0-85-35t-35-85q0-50 35-85t85-35q50 0 85 35t35 85q0 50-35 85t-85 35ZM280-320q-33 0-56.5-23.5T200-400v-320q0-33 23.5-56.5T280-800h560q33 0 56.5 23.5T920-720v320q0 33-23.5 56.5T840-320H280Zm80-80h400q0-33 23.5-56.5T840-480v-160q-33 0-56.5-23.5T760-720H360q0 33-23.5 56.5T280-640v160q33 0 56.5 23.5T360-400Zm440 240H120q-33 0-56.5-23.5T40-240v-440h80v440h680v80Z"/></svg></span>
+                <span class="req">Required</span>
+              </div>
+              <h3>Settlement report</h3>
+              <p class="desc">The recon report in untangle's expected <strong>JSON</strong> schema — join key <strong>type</strong> + <strong>entity_id</strong>, plus fee, tax, settled_at, settlement_utr.</p>
+              <label for="file-recon" class="drop" data-slot="recon">
+                <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Z"/></svg>
+                <div class="browse">Browse files</div>
+                <div class="hint">or drag and drop · JSON</div>
+              </label>
+              <input type="file" id="file-recon" name="recon" accept=".json,application/json" required class="sr"/>
+              <div class="fstatus hidden" data-status="recon">
+                <div class="in">
+                  <span class="nm"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"/></svg><span data-name="recon"></span></span>
+                  <button type="button" class="clear" data-slot="recon" aria-label="Remove settlement report"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg></button>
+                </div>
+              </div>
+            </div>
+            <!-- Order ledger (CSV) -->
+            <div class="slot reveal d2">
+              <div class="top">
+                <span class="ic"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M320-280q17 0 28.5-11.5T360-320q0-17-11.5-28.5T320-360q-17 0-28.5 11.5T280-320q0 17 11.5 28.5T320-280Zm0-160q17 0 28.5-11.5T360-480q0-17-11.5-28.5T320-520q-17 0-28.5 11.5T280-480q0 17 11.5 28.5T320-440Zm0-160q17 0 28.5-11.5T360-640q0-17-11.5-28.5T320-680q-17 0-28.5 11.5T280-640q0 17 11.5 28.5T320-600Zm120 320h240v-80H440v80Zm0-160h240v-80H440v80Zm0-160h240v-80H440v80ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Z"/></svg></span>
+                <span class="req">Required</span>
+              </div>
+              <h3>Order ledger</h3>
+              <p class="desc">Your order manifest (order_id, <strong>amount_paise</strong>, status), as a <strong>CSV</strong>.</p>
+              <label for="file-ledger" class="drop" data-slot="ledger">
+                <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Z"/></svg>
+                <div class="browse">Browse files</div>
+                <div class="hint">or drag and drop · CSV</div>
+              </label>
+              <input type="file" id="file-ledger" name="ledger" accept=".csv,text/csv" required class="sr"/>
+              <div class="fstatus hidden" data-status="ledger">
+                <div class="in">
+                  <span class="nm"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"/></svg><span data-name="ledger"></span></span>
+                  <button type="button" class="clear" data-slot="ledger" aria-label="Remove order ledger"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
 
-<!-- Side panel: real selection log + honest privacy -->
-<aside class="lg:col-span-4 lg:sticky lg:top-24 self-start">
-<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-6 flex flex-col">
-<h4 class="font-label-caps text-label-caps text-on-surface-variant mb-4 tracking-widest">Selected files</h4>
-<ul id="file-log" class="space-y-3 font-body-sm text-body-sm text-on-surface-variant">
-<li class="italic">Nothing selected yet.</li>
-</ul>
-<div class="mt-6 pt-6 border-t border-outline-variant flex items-start gap-3 bg-surface-container-low p-4 rounded-lg">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-secondary text-[24px]" aria-hidden="true"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Zm-80 160h160q17 0 28.5-11.5T600-360v-120q0-17-11.5-28.5T560-520v-40q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560v40q-17 0-28.5 11.5T360-480v120q0 17 11.5 28.5T400-320Zm40-200v-40q0-17 11.5-28.5T480-600q17 0 28.5 11.5T520-560v40h-80Z"/></svg>
-<div>
-<p class="font-body-sm text-body-sm font-semibold text-on-surface">Reconciled, then discarded</p>
-<p class="font-body-sm text-[12px] text-on-surface-variant">Your files are reconciled server-side and dropped when the request ends — not persisted or shared. A large upload may be briefly spooled to a temp file, then removed.</p>
-</div>
-</div>
-</div>
-</aside>
-</div>
-</div>
+          <div class="ufoot">
+            <a href="/try-sample" class="arrowlink"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M200-120q-51 0-72.5-45.5T138-250l222-270v-240h-40q-17 0-28.5-11.5T280-800q0-17 11.5-28.5T320-840h320q17 0 28.5 11.5T680-800q0 17-11.5 28.5T640-760h-40v240l222 270q32 39 10.5 84.5T760-120H200Z"/></svg> Don't have files? Run the bundled sample</a>
+            <button type="submit" id="submit-btn" disabled class="btn primary">Begin reconciliation <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M647-440H160v-80h487L423-744l57-56 320 320-320 320-57-56 224-224Z"/></svg></button>
+          </div>
+          <p id="submit-note" class="muted" style="font-size:13px;margin-top:12px">Select all three files to begin.</p>
+        </form>
+      </div>
+
+      <!-- Side panel: real selection log + honest privacy -->
+      <aside class="sp4">
+        <div class="card" style="position:sticky;top:80px">
+          <div class="eyebrow" style="margin-bottom:14px">Selected files</div>
+          <ul id="file-log" class="flog"><li class="italic">Nothing selected yet.</li></ul>
+          <div class="side-note">
+            <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm-80-400h160q17 0 28.5-11.5T600-360v-120q0-17-11.5-28.5T560-520v-40q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560v40q-17 0-28.5 11.5T360-480v120q0 17 11.5 28.5T400-320Z"/></svg>
+            <div>
+              <div class="t">Reconciled, then discarded</div>
+              <div class="s">Your files are reconciled server-side and dropped when the request ends — not persisted or shared. A large upload may be briefly spooled to a temp file, then removed.</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
 </main>
+</div>
+
+<!-- command palette -->
+<div class="cmdk-bg" id="cmdk" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="cmdk">
+    <div class="in">
+      <svg viewBox="0 -960 960 960" width="18" height="18" fill="currentColor" aria-hidden="true" style="color:var(--faint)"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg>
+      <input id="cmdk-input" type="text" placeholder="Search actions, screens, exports…" autocomplete="off" spellcheck="false"/>
+    </div>
+    <div class="list" id="cmdk-list"></div>
+    <div class="foot"><span>↑↓ to navigate · ↵ to open</span><span>esc to close</span></div>
+  </div>
+</div>
 
 <script>
   const SLOTS = ['bank', 'recon', 'ledger'];
   const LABEL = { bank: 'Bank statement', recon: 'Settlement report', ledger: 'Order ledger' };
-  const $ = (s, r = document) => r.querySelector(s);
 
   function refresh() {
     const chosen = SLOTS.filter((s) => document.getElementById('file-' + s).files.length > 0);
     const btn = document.getElementById('submit-btn');
     const ready = chosen.length === SLOTS.length;
     btn.disabled = !ready;
-    btn.classList.toggle('opacity-50', !ready);
-    btn.classList.toggle('cursor-not-allowed', !ready);
-    btn.classList.toggle('hover:bg-audit-blue', ready);
     document.getElementById('submit-note').textContent = ready
       ? 'Ready — your files will be reconciled in memory.'
       : `Select all three files to begin (${chosen.length}/3 selected).`;
@@ -215,18 +226,18 @@ Begin reconciliation <svg viewBox="0 -960 960 960" width="1em" height="1em" fill
     SLOTS.forEach((s) => {
       const f = document.getElementById('file-' + s).files[0];
       const li = document.createElement('li');
-      li.className = 'flex items-center gap-2 ' + (f ? 'text-on-surface' : 'opacity-50');
+      li.className = f ? 'on' : '';
       const mark = document.createElement('span');
       mark.setAttribute('aria-hidden', 'true');
+      mark.className = 'mk' + (f ? ' ok' : '');
       mark.textContent = f ? '✓' : '○';
-      if (f) mark.className = 'text-secondary';
       li.appendChild(mark);
       const text = document.createElement('span');
-      text.className = 'truncate';
+      text.className = 'txt';
       if (f) {
         text.append(LABEL[s] + ': ');
         const nm = document.createElement('span');
-        nm.className = 'font-data-tabular';
+        nm.className = 'nm';
         nm.textContent = f.name;                       // user-controlled → textContent, never innerHTML
         text.appendChild(nm);
         text.append(' · ' + (f.size / 1024).toFixed(0) + ' KB');
@@ -251,8 +262,8 @@ Begin reconciliation <svg viewBox="0 -960 960 960" width="1em" height="1em" fill
     }
     input.addEventListener('change', show);
     document.querySelector(`.clear[data-slot="${slot}"]`).addEventListener('click', () => { input.value = ''; show(); });
-    ['dragover', 'dragenter'].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add('border-primary'); }));
-    ['dragleave', 'drop'].forEach((e) => drop.addEventListener(e, () => drop.classList.remove('border-primary')));
+    ['dragover', 'dragenter'].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach((e) => drop.addEventListener(e, () => drop.classList.remove('drag')));
     drop.addEventListener('drop', (ev) => {
       ev.preventDefault();
       if (ev.dataTransfer.files.length) { input.files = ev.dataTransfer.files; show(); }

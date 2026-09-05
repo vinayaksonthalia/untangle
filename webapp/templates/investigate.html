@@ -5,104 +5,143 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Investigate variance — untangle</title>
 <meta name="description" content="untangle checks deterministic hypotheses against the supplied settlement evidence, resolves each variance to a balanced corrective voucher, or abstains. It never guesses and never moves money."/>
-<link rel="stylesheet" href="/static/investigate.css"/>
+<link rel="stylesheet" href="/static/app.css"/>
+<script src="/static/app.js"></script>
 <style>
-  html, body { margin: 0; padding: 0; }
-  body { overscroll-behavior: none; }
-  ::-webkit-scrollbar { width: 8px; height: 8px; }
-  ::-webkit-scrollbar-thumb { background: #c6c6cd; border-radius: 9999px; }
-  :focus-visible { outline: 2px solid #0f172a; outline-offset: 2px; }
-  .qpill[aria-current="true"] { background: #0b1c30; color: #fff; border-color: #0b1c30; }
-  @media (prefers-reduced-motion: no-preference) {
-    @keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-    .tl-item { animation: fadeInUp 0.4s cubic-bezier(0.16,1,0.3,1) forwards; }
-  }
+  .qrow{display:flex;flex-wrap:wrap;gap:8px}
+  .qpill{display:inline-flex;align-items:center;gap:8px;padding:7px 13px;border-radius:100px;border:1px solid var(--line);background:var(--panel);font-family:var(--mono);font-size:12.5px;color:var(--muted);cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+  .qpill:hover{background:var(--panel-2);color:var(--ink)}
+  .qpill[aria-current="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+  .qdot{width:8px;height:8px;border-radius:50%}
+  .qdot.ok{background:var(--green)}.qdot.warn{background:var(--amber)}
+  .qpill[aria-current="true"] .qdot{background:#fff}
+  .istrip{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;border:1px solid var(--line);background:var(--panel);border-radius:var(--radius);margin-bottom:22px}
+  .istrip .stats{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+  .istrip .stat .l{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+  .istrip .stat .v{font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums;margin-top:2px}
+  .istrip .vr{width:1px;height:30px;background:var(--line)}
+  .istrip .var{font-family:var(--display);font-weight:800;font-size:19px;font-variant-numeric:tabular-nums;color:var(--amber)}
+  .icols{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  @media(max-width:1000px){.icols{grid-template-columns:1fr}}
+  .icols h2{font-family:var(--display);font-size:15.5px;font-weight:700;margin-bottom:14px}
+  .trace{position:relative;margin-left:4px;display:flex;flex-direction:column;gap:16px;padding-bottom:6px}
+  .trace .rail{position:absolute;left:0;top:6px;bottom:6px;width:1px;background:var(--line)}
+  .tl-item{position:relative;padding-left:22px}
+  .tl-item .tdot{position:absolute;left:-4px;top:6px;width:10px;height:10px;border-radius:50%;box-shadow:0 0 0 3px var(--ground)}
+  .tl-item .tlabel{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+  .tl-item .tbox{font-size:13px;padding:11px 13px;border-radius:9px;border:1px solid var(--line);background:var(--panel);line-height:1.55}
+  .tbox.match{background:var(--green-tint);border-color:color-mix(in srgb,var(--green) 30%,var(--line))}
+  .tbox.prop{background:var(--accent-tint);border-color:color-mix(in srgb,var(--accent) 25%,var(--line))}
+  .tbox.delta{background:var(--amber-tint);border-color:color-mix(in srgb,var(--amber) 25%,var(--line))}
+  .tdot.match{background:var(--green)}.tdot.prop{background:var(--accent)}.tdot.delta{background:var(--amber)}.tdot.plain{background:var(--line-strong)}
+  .rc-card{position:relative;overflow:hidden}
+  .rc-card .bar{position:absolute;left:0;top:0;bottom:0;width:3px}
+  .cand{display:flex;align-items:center;gap:12px;padding:9px 0}
+  .cand .mk{flex-shrink:0;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px}
+  .cand .mk.ok{background:var(--green);color:#fff}.cand .mk.no{background:var(--panel-2);color:var(--muted);border:1px solid var(--line)}
+  .cand .nm{flex:1;min-width:0;font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+  .cand .nm.ok{color:var(--ink);font-weight:600}
+  .cand .st{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+  .cand .st.ok{color:var(--green)}.cand .st.no{color:var(--faint)}
+  .voucher{font-family:var(--mono);font-size:13px}
+  .voucher .vline{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .voucher .vline:last-child{border-bottom:0}
+  .voucher .vline.credit{color:var(--muted);padding-left:16px}
+  .reassure{margin-top:32px;padding-top:16px;border-top:1px solid var(--line);text-align:center;font-family:var(--mono);font-size:11px;color:var(--faint);display:flex;align-items:center;justify-content:center;gap:8px}
+  .reassure svg{color:var(--accent)}
 </style>
 </head>
-<body class="bg-background text-on-background font-body-md min-h-screen flex">
+<body>
+<div class="shell">
 
-<!-- Sidebar app shell -->
-<aside class="fixed left-0 top-0 h-full w-60 bg-surface border-r border-outline-variant hidden md:flex flex-col py-6 z-20">
-<a href="/" class="px-6 mb-8 flex items-center gap-3" aria-label="untangle — home">
-<div class="w-8 h-8 bg-primary rounded flex items-center justify-center text-on-primary font-bold">u</div>
-<div>
-<div class="font-headline-md text-[20px] leading-6 font-bold"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></div>
-<div class="font-label-caps text-[10px] text-on-surface-variant">Audit Engine v1.0</div>
-</div>
-</a>
-<nav class="flex-1 px-4 space-y-1" aria-label="Primary">
-<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/dashboard">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="dashboard"><path d="M520-600v-240h320v240H520ZM120-440v-400h320v400H120Zm400 320v-400h320v400H520Zm-400 0v-240h320v240H120Zm80-400h160v-240H200v240Zm400 320h160v-240H600v240Zm0-480h160v-80H600v80ZM200-200h160v-80H200v80Zm160-320Zm240-160Zm0 240ZM360-280Z"/></svg><span>Dashboard</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2 text-primary font-semibold bg-surface-container-low border-r-2 border-primary rounded" aria-current="page" href="/investigate">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="search"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg><span>Investigate</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/app">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="upload_file"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/></svg><span>Upload</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-low transition-colors rounded" href="/verify">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[20px]" data-icon="verified_user"><path d="m438-338 226-226-57-57-169 169-84-84-57 57 141 141Zm42 258q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Zm0-316Z"/></svg><span>Verify</span>
-</a>
-</nav>
-<div class="px-4 mt-auto">
-<div class="px-3 py-2 font-label-caps text-[10px] text-on-surface-variant flex items-center gap-2">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[16px]" data-icon="security"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q97-30 162-118.5T718-480H480v-315l-240 90v207q0 7 2 18h238v316Z"/></svg>
-Deterministic core
-</div>
-</div>
+<aside class="side">
+  <a href="/" class="brand" aria-label="untangle — home">
+    <span class="mark">u</span>
+    <span><span class="name"><span>un</span><span class="b">tangle</span></span><span class="ver">Audit engine v1.0</span></span>
+  </a>
+  <nav aria-label="Primary">
+    <a href="/dashboard"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M520-600v-240h320v240H520ZM120-440v-400h320v400H120Zm400 320v-400h320v400H520Zm-400 0v-240h320v240H120Z"/></svg>Dashboard</a>
+    <a class="on" aria-current="page" href="/investigate"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg>Investigate</a>
+    <a href="/app"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520Z"/></svg>Upload</a>
+    <a href="/verify"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="m438-338 226-226-57-57-169 169-84-84-57 57 141 141Zm42 258q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Z"/></svg>Verify</a>
+    <a href="/certificate"><svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Z"/></svg>Certificate</a>
+  </nav>
+  <div class="foot">
+    <span class="note"><svg viewBox="0 -960 960 960" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Z"/></svg> Deterministic core</span>
+  </div>
 </aside>
 
-<!-- Main -->
-<main class="md:ml-60 flex-1 flex flex-col min-w-0">
-<div class="md:hidden flex items-center gap-1 border-b border-outline-variant bg-surface px-3 h-12 overflow-x-auto shrink-0">
-<a href="/" class="font-headline-md text-[16px] font-bold mr-2 shrink-0"><span class="text-on-surface">un</span><span class="text-[#2b5edb]">tangle</span></a>
-<a href="/dashboard" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Dashboard</a>
-<a href="/investigate" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Investigate</a>
-<a href="/app" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Upload</a>
-<a href="/verify" class="px-2.5 py-1 rounded text-on-surface-variant text-[13px] shrink-0">Verify</a>
-</div>
-<header class="h-16 border-b border-outline-variant bg-surface flex items-center justify-between px-8 sticky top-0 z-10">
-<div class="flex items-center gap-4">
-<span class="font-label-caps text-[10px] text-on-surface-variant bg-surface-container px-2 py-1 rounded">CREDIT_ID</span>
-<span class="font-data-tabular text-data-tabular text-on-surface" id="credit-id-text">—</span>
-</div>
-<div class="font-label-caps text-[10px] text-on-surface-variant" id="queue-count">—</div>
-</header>
+<main class="main">
+  <div class="mtabs">
+    <a href="/" class="brand"><span>un</span><span class="b">tangle</span></a>
+    <a href="/dashboard">Dashboard</a>
+    <a class="on" href="/investigate">Investigate</a>
+    <a href="/app">Upload</a>
+    <a href="/verify">Verify</a>
+    <a href="/certificate">Certificate</a>
+  </div>
 
-<div class="p-8 flex-1 overflow-auto">
-<div class="max-w-[1400px] mx-auto">
+  <header class="topbar">
+    <div class="left">
+      <span class="chip">credit_id</span>
+      <span class="mono" id="credit-id-text" style="font-size:13px">—</span>
+    </div>
+    <div class="right">
+      <span class="eyebrow" id="queue-count" style="letter-spacing:.06em">—</span>
+      <button class="kbd" id="cmdk-open" aria-label="Open command palette"><kbd>⌘</kbd><kbd>K</kbd></button>
+      <button class="iconbtn" id="theme" aria-label="Toggle colour theme"><svg viewBox="0 -960 960 960" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M480-280q-83 0-141.5-58.5T280-480q0-83 58.5-141.5T480-680q83 0 141.5 58.5T680-480q0 83-58.5 141.5T480-280Zm0-80q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35Zm-280 40H40v-80h160v80Zm720 0H760v-80h160v80ZM440-760v-160h80v160h-80Zm0 720v-160h80v160h-80Z"/></svg></button>
+    </div>
+  </header>
 
-<!-- Investigation queue selector -->
-<div class="mb-6">
-<div class="font-label-caps text-[10px] text-on-surface-variant mb-2">INVESTIGATION QUEUE</div>
-<div class="flex flex-wrap gap-2" id="queue" role="tablist" aria-label="Investigation queue"></div>
-</div>
+  <div class="page">
+    <div class="pagehead">
+      <div>
+        <span class="eyebrow">Root-cause investigation</span>
+        <h1 class="ah" data-ah>Prove the variance, or abstain.</h1>
+        <p>untangle checks deterministic hypotheses against the supplied settlement evidence, resolves each variance to a balanced corrective voucher — or abstains. It never guesses and never moves money.</p>
+      </div>
+    </div>
 
-<!-- Case file: the strip + reasoning columns + reassurance. Replaced wholesale by the empty state. -->
-<div id="case-file">
-<!-- Header strip: the variance under investigation -->
-<div class="bg-surface border border-outline-variant rounded-lg mb-6 p-4 flex flex-wrap items-center justify-between gap-4" id="strip"></div>
+    <!-- Investigation queue selector -->
+    <div style="margin-bottom:22px">
+      <div class="eyebrow" style="margin-bottom:10px">Investigation queue</div>
+      <div class="qrow" id="queue" role="tablist" aria-label="Investigation queue"></div>
+    </div>
 
-<!-- Two columns -->
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-<section>
-<h2 class="font-title-sm text-title-sm mb-4">Agent reasoning trace</h2>
-<div class="relative ml-1 space-y-5 pb-2" id="trace"></div>
-</section>
-<div class="space-y-6" id="cards"></div>
-</div>
+    <!-- Case file: strip + reasoning columns + reassurance. Replaced wholesale by the empty state. -->
+    <div id="case-file">
+      <div class="istrip" id="strip"></div>
 
-<!-- Reassurance -->
-<div class="mt-10 pt-4 border-t border-outline-variant text-center font-label-caps text-[10px] text-outline flex items-center justify-center gap-2">
-<svg viewBox="0 -960 960 960" width="1em" height="1em" fill="currentColor" aria-hidden="true" focusable="false" class="text-[14px]" data-icon="security"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q97-30 162-118.5T718-480H480v-315l-240 90v207q0 7 2 18h238v316Z"/></svg>
-Deterministic core · the LLM writes the explanation, never the numbers. Every step above is reproducible.
-</div>
-</div>
+      <div class="icols">
+        <section>
+          <h2>Agent reasoning trace</h2>
+          <div class="trace" id="trace"></div>
+        </section>
+        <div class="col" id="cards"></div>
+      </div>
 
-<p class="font-body-sm text-error text-center mt-6" id="load-error" hidden></p>
-</div>
-</div>
+      <div class="reassure">
+        <svg viewBox="0 -960 960 960" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Z"/></svg>
+        Deterministic core · the LLM writes the explanation, never the numbers. Every step above is reproducible.
+      </div>
+
+      <p class="inline-err" id="load-error" hidden style="margin-top:22px"></p>
+    </div>
+  </div>
 </main>
+</div>
+
+<!-- command palette -->
+<div class="cmdk-bg" id="cmdk" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="cmdk">
+    <div class="in">
+      <svg viewBox="0 -960 960 960" width="18" height="18" fill="currentColor" aria-hidden="true" style="color:var(--faint)"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/></svg>
+      <input id="cmdk-input" type="text" placeholder="Search actions, screens, exports…" autocomplete="off" spellcheck="false"/>
+    </div>
+    <div class="list" id="cmdk-list"></div>
+    <div class="foot"><span>↑↓ to navigate · ↵ to open</span><span>esc to close</span></div>
+  </div>
+</div>
 
 <script>
   const $ = (id) => document.getElementById(id);
@@ -122,12 +161,11 @@ Deterministic core · the LLM writes the explanation, never the numbers. Every s
     const q = $('queue');
     q.replaceChildren();
     CASES.forEach((c, i) => {
-      const dot = c.resolved ? 'bg-secondary' : 'bg-tertiary-fixed-dim';
-      const b = el('button', 'qpill inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-outline-variant bg-surface font-data-tabular text-[13px] text-on-surface-variant transition-colors hover:bg-surface-container-low');
+      const b = el('button', 'qpill');
       b.type = 'button';
       b.setAttribute('role', 'tab');
       b.setAttribute('aria-current', i === 0 ? 'true' : 'false');
-      b.append(el('span', `w-2 h-2 rounded-full ${dot}`));
+      b.append(el('span', 'qdot ' + (c.resolved ? 'ok' : 'warn')));
       b.append(el('span', null, c.root_cause_label));
       b.addEventListener('click', () => select(i));
       q.append(b);
@@ -138,63 +176,47 @@ Deterministic core · the LLM writes the explanation, never the numbers. Every s
   function renderStrip(c) {
     const strip = $('strip');
     strip.replaceChildren();
-    const left = el('div', 'flex items-center gap-6 flex-wrap');
-    const stat = (label, value, valueCls) => {
-      const d = el('div');
-      d.append(el('div', 'font-label-caps text-[10px] text-on-surface-variant', label));
-      d.append(el('div', 'font-data-tabular text-data-tabular tabular-nums ' + (valueCls || 'text-on-surface'), value));
+    const stats = el('div', 'stats');
+    const stat = (label, value) => {
+      const d = el('div', 'stat');
+      d.append(el('div', 'l', label));
+      d.append(el('div', 'v', value));
       return d;
     };
-    const div = () => el('div', 'h-8 w-px bg-outline-variant');
-    left.append(stat('ROOT CAUSE', c.root_cause_label, c.resolved ? 'text-on-surface' : 'text-on-tertiary-container'));
-    left.append(div());
-    left.append(stat('BANK CREDIT', inrPaise(c.bank_credit_paise)));
-    left.append(div());
-    left.append(stat('EXPECTED SETTLEMENT', inrPaise(c.expected_net_paise)));
-    strip.append(left);
+    const vr = () => el('div', 'vr');
+    stats.append(stat('Root cause', c.root_cause_label));
+    stats.append(vr());
+    stats.append(stat('Bank credit', inrPaise(c.bank_credit_paise)));
+    stats.append(vr());
+    stats.append(stat('Expected settlement', inrPaise(c.expected_net_paise)));
+    strip.append(stats);
 
-    const right = el('div', 'flex items-center gap-4 flex-wrap');
-    right.append(el('div', 'font-headline-md text-headline-md tabular-nums text-[#F59E0B]', 'Variance ' + signed(c.variance_paise)));
-    if (c.resolved) {
-      const badge = el('div', 'bg-secondary/10 text-secondary font-label-caps text-label-caps px-3 py-1 rounded-full border border-secondary/20 inline-flex items-center gap-2');
-      badge.append(el('span', null, '✓')); badge.append(el('span', null, 'Root cause found · deterministic'));
-      right.append(badge);
-    } else {
-      const badge = el('div', 'bg-tertiary-fixed-dim/25 text-on-tertiary-container font-label-caps text-label-caps px-3 py-1 rounded-full border border-tertiary-fixed-dim/40 inline-flex items-center gap-2');
-      badge.append(el('span', null, '⚠')); badge.append(el('span', null, 'No supported cause · abstained'));
-      right.append(badge);
-    }
+    const right = el('div', 'stats');
+    right.append(el('div', 'var', 'Variance ' + signed(c.variance_paise)));
+    right.append(el('span', 'pill ' + (c.resolved ? 'green' : 'amber'), c.resolved ? '✓ Root cause found · deterministic' : '⚠ No supported cause · abstained'));
     strip.append(right);
   }
 
   // ---- reasoning trace timeline -------------------------------------------------
-  function dotColor(step) {
+  function tone(step) {
     const s = step.toLowerCase();
-    if (s.includes('match:')) return 'bg-secondary';
-    if (s.includes('drafted') || s.includes('proposal')) return 'bg-primary';
-    if (s.includes('delta') || s.includes('variance')) return 'bg-tertiary-fixed-dim';
-    return 'bg-outline-variant';
-  }
-  function boxTone(step) {
-    const s = step.toLowerCase();
-    if (s.includes('match:')) return 'bg-secondary/10 border-secondary text-on-surface';
-    if (s.includes('drafted') || s.includes('proposal')) return 'bg-primary/5 border-primary/20 text-on-surface';
-    if (s.includes('delta') || s.includes('variance')) return 'bg-tertiary-fixed-dim/10 border-tertiary-fixed-dim/30 text-on-surface';
-    return 'bg-surface border-outline-variant text-on-surface';
+    if (s.includes('match:')) return 'match';
+    if (s.includes('drafted') || s.includes('proposal')) return 'prop';
+    if (s.includes('delta') || s.includes('variance')) return 'delta';
+    return 'plain';
   }
   function renderTrace(c) {
     const t = $('trace');
     t.replaceChildren();
-    const line = el('div', 'absolute left-0 top-2 bottom-2 w-px bg-outline-variant');
-    t.append(line);
+    t.append(el('div', 'rail'));
     (c.reasoning_trace || []).forEach((step, i) => {
-      const item = el('div', 'tl-item relative pl-6');
-      item.style.animationDelay = (i * 0.08) + 's';
-      item.append(el('span', `absolute -left-[5px] top-2 w-2.5 h-2.5 rounded-full ring-2 ring-background ${dotColor(step)}`));
+      const tn = tone(step);
+      const item = el('div', 'tl-item reveal');
+      item.append(el('span', 'tdot ' + tn));
       const label = (step.match(/^(Step\s+\d+)/i) || [])[1] || ('Step ' + (i + 1));
-      item.append(el('div', 'font-label-caps text-[10px] text-on-surface-variant mb-1', label.toUpperCase()));
+      item.append(el('div', 'tlabel', label.toUpperCase()));
       const body = step.replace(/^Step\s+\d+:\s*/i, '');
-      item.append(el('div', 'font-body-sm text-body-sm p-3 rounded-lg border ' + boxTone(step), body));
+      item.append(el('div', 'tbox ' + tn, body));
       t.append(item);
     });
   }
@@ -206,29 +228,31 @@ Deterministic core · the LLM writes the explanation, never the numbers. Every s
     const m = matched(c);
 
     // Root cause card
-    const rc = el('div', 'bg-surface border border-outline-variant rounded-lg p-6 relative overflow-hidden');
-    rc.append(el('div', 'absolute left-0 top-0 bottom-0 w-1 ' + (c.resolved ? 'bg-secondary' : 'bg-tertiary-fixed-dim')));
-    const rcHead = el('div', 'flex items-center justify-between gap-2 mb-2');
-    rcHead.append(el('h3', 'font-title-sm text-title-sm', 'Root cause'));
-    rcHead.append(el('span', 'font-label-caps text-[10px] px-2 py-1 rounded ' + (c.resolved ? 'bg-secondary/10 text-secondary' : 'bg-tertiary-fixed-dim/25 text-on-tertiary-container'), c.root_cause));
+    const rc = el('div', 'card rc-card');
+    const bar = el('div', 'bar'); bar.style.background = c.resolved ? 'var(--green)' : 'var(--amber)'; rc.append(bar);
+    const rcHead = el('div', 'card-h');
+    rcHead.style.padding = '0 0 12px';
+    rcHead.style.borderBottom = 'none';
+    rcHead.append(el('h3', null, 'Root cause'));
+    rcHead.append(el('span', 'pill ' + (c.resolved ? 'green' : 'amber'), c.root_cause));
     rc.append(rcHead);
-    rc.append(el('p', 'font-body-md text-on-surface-variant mb-4',
-      c.resolved
-        ? (m ? m.reason : 'Supported evidence accounts for the full variance.')
-        : 'untangle checked the available hypotheses and none closed this variance. It abstained rather than guess; no corrective voucher was drafted.'));
-    rc.append(el('div', 'font-label-caps text-[10px] text-outline', '⌾ narrated by LLM · decided by rules'));
+    rc.append(el('p', 'muted', c.resolved
+      ? (m ? m.reason : 'Supported evidence accounts for the full variance.')
+      : 'untangle checked the available hypotheses and none closed this variance. It abstained rather than guess; no corrective voucher was drafted.'));
+    const foot = el('div', 'eyebrow', '⌾ narrated by LLM · decided by rules');
+    foot.style.marginTop = '14px';
+    rc.append(foot);
     cards.append(rc);
 
-    // Candidates checked (the negative space, compact)
-    const cc = el('div', 'bg-surface border border-outline-variant rounded-lg overflow-hidden');
-    cc.append(el('div', 'p-4 border-b border-outline-variant font-title-sm text-title-sm', 'Candidates checked'));
-    const list = el('div', 'p-4 flex flex-col gap-2');
+    // Candidates checked
+    const cc = el('div', 'card pad0');
+    const ccH = el('div', 'card-h'); ccH.append(el('h3', null, 'Candidates checked')); cc.append(ccH);
+    const list = el('div', 'card-b');
     (c.candidates_tried || []).forEach((x) => {
-      const row = el('div', 'flex items-center gap-3');
-      row.append(el('span', 'shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[11px] ' + (x.matched ? 'bg-secondary text-on-primary' : 'bg-surface-container text-on-surface-variant'), x.matched ? '✓' : '✗'));
-      const nm = el('span', 'flex-1 min-w-0 font-data-tabular text-[13px] ' + (x.matched ? 'text-on-surface font-semibold' : 'text-on-surface-variant'), (window._RL && window._RL[x.root_cause]) || x.root_cause);
-      row.append(nm);
-      row.append(el('span', 'font-label-caps text-[10px] ' + (x.matched ? 'text-secondary' : 'text-on-surface-variant'), x.matched ? 'Matched' : 'Ruled out'));
+      const row = el('div', 'cand');
+      row.append(el('span', 'mk ' + (x.matched ? 'ok' : 'no'), x.matched ? '✓' : '✗'));
+      row.append(el('span', 'nm ' + (x.matched ? 'ok' : ''), (window._RL && window._RL[x.root_cause]) || x.root_cause));
+      row.append(el('span', 'st ' + (x.matched ? 'ok' : 'no'), x.matched ? 'Matched' : 'Ruled out'));
       list.append(row);
     });
     cc.append(list);
@@ -236,22 +260,25 @@ Deterministic core · the LLM writes the explanation, never the numbers. Every s
 
     // Proposed corrective entry
     const ce = c.corrective_entry;
-    const vc = el('div', 'bg-surface border border-outline-variant rounded-lg overflow-hidden');
-    vc.append(el('div', 'p-4 border-b border-outline-variant bg-surface-container-lowest font-title-sm text-title-sm', 'Proposed corrective entry'));
+    const vc = el('div', 'card pad0');
+    const vcH = el('div', 'card-h'); vcH.append(el('h3', null, 'Proposed corrective entry')); vc.append(vcH);
     if (ce && (ce.lines || []).length) {
-      const rows = el('div', 'p-4 bg-surface-container-low font-data-tabular text-[13px]');
-      (ce.lines || []).forEach((ln, i) => {
+      const rows = el('div', 'card-b voucher');
+      (ce.lines || []).forEach((ln) => {
         const dr = ln.debit_inr && ln.debit_inr !== '0.00';
-        const r = el('div', 'flex justify-between py-2 ' + (i < ce.lines.length - 1 ? 'border-b border-outline-variant/50 ' : '') + (dr ? 'text-on-surface' : 'text-on-surface-variant pl-4'));
+        const r = el('div', 'vline' + (dr ? '' : ' credit'));
         r.append(el('span', null, (dr ? 'Debit ' : 'Credit ') + (ln.ledger || '')));
-        r.append(el('span', 'tabular-nums text-right', dr ? '₹' + ln.debit_inr : '₹' + ln.credit_inr));
+        r.append(el('span', 'tnum', dr ? '₹' + ln.debit_inr : '₹' + ln.credit_inr));
         rows.append(r);
       });
       vc.append(rows);
-      const foot = el('div', 'p-4 border-t border-outline-variant flex flex-col gap-3');
-      foot.append(el('div', 'text-center font-label-caps text-[10px] text-outline', (ce.balanced ? 'balances to ₹0 · ' : '') + 'proposal only, not posted'));
-      const btns = el('div', 'flex gap-3 justify-end');
-      const copy = el('button', 'px-4 py-2 font-body-sm bg-primary text-on-primary rounded hover:bg-audit-blue transition-colors', 'Copy voucher');
+      const foot2 = el('div', 'card-b');
+      foot2.style.borderTop = '1px solid var(--line)';
+      const note = el('div', 'eyebrow', (ce.balanced ? 'balances to ₹0 · ' : '') + 'proposal only, not posted');
+      note.style.textAlign = 'center'; foot2.append(note);
+      const btns = el('div', 'col');
+      btns.style.marginTop = '12px';
+      const copy = el('button', 'btn primary block', 'Copy voucher');
       copy.type = 'button';
       copy.addEventListener('click', () => {
         const text = (ce.lines || []).map((l) => `${l.debit_inr !== '0.00' ? 'Debit' : 'Credit'} ${l.ledger}\t${l.debit_inr !== '0.00' ? '₹' + l.debit_inr : '₹' + l.credit_inr}`).join('\n');
@@ -260,10 +287,12 @@ Deterministic core · the LLM writes the explanation, never the numbers. Every s
         setTimeout(() => { copy.textContent = 'Copy voucher'; }, 1500);
       });
       btns.append(copy);
-      foot.append(btns);
-      vc.append(foot);
+      foot2.append(btns);
+      vc.append(foot2);
     } else {
-      vc.append(el('div', 'p-6 text-center font-body-sm text-on-surface-variant', 'No corrective voucher was drafted. No supported hypothesis closed this variance, so untangle abstained rather than guess.'));
+      const em = el('div', 'card-b muted', 'No corrective voucher was drafted. No supported hypothesis closed this variance, so untangle abstained rather than guess.');
+      em.style.textAlign = 'center';
+      vc.append(em);
     }
     cards.append(vc);
   }
@@ -282,15 +311,17 @@ Deterministic core · the LLM writes the explanation, never the numbers. Every s
     $('credit-id-text').textContent = '—';
     $('queue-count').textContent = 'No active run';
     const root = $('case-file'); root.replaceChildren();
-    const card = el('div','bg-surface rounded-lg border border-outline-variant p-12 text-center flex flex-col items-center gap-4');
+    const card = el('div', 'card');
+    const es = el('div', 'empty-state');
     const h = el('div');
-    h.append(el('h2','font-headline-lg text-headline-lg text-on-surface','No variances to investigate'));
-    h.append(el('p','font-body-md text-on-surface-variant mt-2 max-w-md', msg));
-    card.append(h);
-    const btns = el('div','flex items-center gap-3 mt-2');
-    const a1 = el('a','inline-flex h-10 items-center px-5 bg-primary text-on-primary font-data-tabular text-data-tabular rounded hover:bg-audit-blue transition-colors','Reconcile your files'); a1.href='/app';
-    const a2 = el('a','inline-flex h-10 items-center px-5 bg-surface-container-low text-on-surface border border-outline-variant font-data-tabular text-data-tabular rounded hover:bg-surface-container transition-colors','See the sample'); a2.href='/try-sample';
-    btns.append(a1); btns.append(a2); card.append(btns);
+    h.append(el('h2', null, 'No variances to investigate'));
+    h.append(el('p', null, msg));
+    es.append(h);
+    const btns = el('div', 'row');
+    const a1 = el('a', 'btn primary', 'Reconcile your files'); a1.href = '/app';
+    const a2 = el('a', 'btn ghost', 'See the sample'); a2.href = '/try-sample';
+    btns.append(a1); btns.append(a2); es.append(btns);
+    card.append(es);
     root.append(card);
   }
 
