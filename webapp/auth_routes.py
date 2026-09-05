@@ -54,7 +54,8 @@ router = APIRouter(prefix="/api", tags=["auth"])
 OIDC_STATE_COOKIE_PROD = "__Host-untangle_oidc_state"
 OIDC_STATE_COOKIE_DEV = "untangle_oidc_state"
 CSRF_COOKIE_NAME = "untangle_csrf"
-DEFAULT_OIDC_CLIENT_SECRET = "dev_secret"
+# Local/test-only sentinel; hosted mode rejects it before OIDC initialization.
+DEFAULT_OIDC_CLIENT_SECRET = "dev_secret"  # nosec B105
 
 
 def is_secure_connection(request: Request) -> bool:
