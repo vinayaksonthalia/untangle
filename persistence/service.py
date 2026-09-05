@@ -21,7 +21,13 @@ from persistence.repositories.audit import append_audit_event
 from persistence.repositories.certificate import save_certificate
 from persistence.repositories.investigation import save_investigations
 from persistence.repositories.result import save_result
-from persistence.repositories.run import complete_run, create_run, fail_run
+from persistence.repositories.run import (
+    InvalidRunStateError,
+    complete_run,
+    create_run,
+    fail_run,
+    lock_run_for_update,
+)
 from persistence.uow import UnitOfWork
 
 
@@ -130,13 +136,18 @@ class TenantReconciliationService:
 
         except Exception as exc:
             # Handle failure during Phase 2
-            self._record_failure(
-                context,
-                run_id,
-                run_public_id,
-                error_code=type(exc).__name__,
-                error_summary=str(exc)[:255],
-            )
+            try:
+                self._record_failure(
+                    context,
+                    run_id,
+                    run_public_id,
+                    error_code="RECONCILIATION_FAILED",
+                    error_summary=(
+                        "The deterministic reconciliation engine could not process the input."
+                    ),
+                )
+            except ReconciliationServiceError as record_error:
+                exc.add_note(str(record_error))
             raise
 
         # -------------------------------------------------------------------
@@ -145,6 +156,25 @@ class TenantReconciliationService:
         try:
             with UnitOfWork(self.session_factory, context) as uow:
                 assert uow.session is not None
+
+                # Lock before inserting any one-to-one completion records. If a caller
+                # retries after an uncertain commit, return the already committed result
+                # instead of colliding with immutable unique rows.
+                locked_run = lock_run_for_update(uow.session, context, run_id)
+                if locked_run is None:
+                    raise InvalidRunStateError("The reconciliation run no longer exists.")
+                if locked_run.status == "completed":
+                    if locked_run.reconciliation_hash != report_sha256:
+                        raise InvalidRunStateError(
+                            "A completed run cannot be replaced by different output."
+                        )
+                    return {
+                        "run_public_id": run_public_id,
+                        "report": report,
+                        "certificate": cert_envelope,
+                        "presentation": presentation,
+                        "report_sha256": report_sha256,
+                    }
 
                 # Persist canonical results
                 save_result(
@@ -225,13 +255,16 @@ class TenantReconciliationService:
 
         except Exception as exc:
             # Handle failure during Phase 3
-            self._record_failure(
-                context,
-                run_id,
-                run_public_id,
-                error_code="PERSISTENCE_FAILURE",
-                error_summary=str(exc)[:255],
-            )
+            try:
+                self._record_failure(
+                    context,
+                    run_id,
+                    run_public_id,
+                    error_code="PERSISTENCE_FAILURE",
+                    error_summary="The reconciliation output could not be persisted.",
+                )
+            except ReconciliationServiceError as record_error:
+                exc.add_note(str(record_error))
             raise
 
         return {
@@ -255,13 +288,15 @@ class TenantReconciliationService:
         try:
             with UnitOfWork(self.session_factory, context) as uow:
                 assert uow.session is not None
-                fail_run(
+                run = fail_run(
                     uow.session,
                     context,
                     run_id,
                     error_code=error_code,
                     error_summary=error_summary,
                 )
+                if run.status == "completed":
+                    return
                 append_audit_event(
                     uow.session,
                     context,
@@ -270,6 +305,7 @@ class TenantReconciliationService:
                     subject_public_id=run_public_id,
                     metadata_json={"error_code": error_code},
                 )
-        except Exception:
-            # Defensive logging / pass to avoid masking original failure
-            pass
+        except Exception as exc:
+            raise ReconciliationServiceError(
+                "The original operation failed and its failure state could not be recorded."
+            ) from exc

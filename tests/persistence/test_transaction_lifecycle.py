@@ -153,6 +153,24 @@ def test_completed_run_is_never_overwritten_by_failed(
         assert failed_run.status == "completed"
         assert failed_run.error_code is None
 
+    # The service-level failure recorder must not append a false failure event
+    # after another worker has already committed completion.
+    service._record_failure(
+        ctx,
+        run.id,
+        run_public_id,
+        error_code="LATE_ERROR",
+        error_summary="sanitized",
+    )
+    with UnitOfWork(session_factory, ctx) as uow:
+        false_failure = uow.session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.subject_public_id == run_public_id,
+                AuditEvent.event_type == "run.failed",
+            )
+        )
+        assert false_failure is None
+
 
 def test_complete_run_is_idempotent(
     session_factory: sessionmaker[Session],
@@ -204,7 +222,11 @@ def test_engine_failure_transitions_run_to_failed(
         failed_run = runs[0]
         assert failed_run.status == "failed"
         assert failed_run.failed_at is not None
-        assert failed_run.error_code is not None
+        assert failed_run.error_code == "RECONCILIATION_FAILED"
+        assert failed_run.error_summary == (
+            "The deterministic reconciliation engine could not process the input."
+        )
+        assert "garbage" not in failed_run.error_summary
 
         # Verify no partial results or certificates were committed
         res = uow.session.scalar(

@@ -147,13 +147,13 @@ def upgrade() -> None:
         sa.Column(
             "organisation_id",
             sa.BigInteger(),
-            sa.ForeignKey("organisations.id", ondelete="CASCADE"),
+            sa.ForeignKey("organisations.id", ondelete="RESTRICT"),
             nullable=False,
         ),
         sa.Column(
             "principal_id",
             sa.BigInteger(),
-            sa.ForeignKey("principals.id", ondelete="CASCADE"),
+            sa.ForeignKey("principals.id", ondelete="RESTRICT"),
             nullable=False,
         ),
         sa.Column("role_code", sa.String(32), sa.ForeignKey("roles.code"), nullable=False),
@@ -557,6 +557,7 @@ def upgrade() -> None:
                 f"""
                 CREATE POLICY tenant_isolation_policy ON {table}
                     FOR ALL
+                    TO untangle_app
                     USING (organisation_id = NULLIF(current_setting('app.current_tenant_id', true), '')::bigint)
                     WITH CHECK (organisation_id = NULLIF(current_setting('app.current_tenant_id', true), '')::bigint);
                 """
