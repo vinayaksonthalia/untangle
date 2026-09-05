@@ -163,6 +163,8 @@ class ReconciliationWorker:
         hb_thread.start()
 
         staged_artifact_keys: list[str] = []
+        promoted_final_keys: list[str] = []
+        committed = False
 
         try:
             # 1. Revalidate creator permission
@@ -290,16 +292,19 @@ class ReconciliationWorker:
                 org_public_id, run_public_id, "tally_xml", tally_sha, "xml"
             )
             tally_meta = self.storage.copy_object(tally_stage_key, tally_final_key)
+            promoted_final_keys.append(tally_final_key)
 
             report_final_key = generate_artifact_object_key(
                 org_public_id, run_public_id, "report_json", report_sha256, "json"
             )
             report_meta = self.storage.copy_object(report_stage_key, report_final_key)
+            promoted_final_keys.append(report_final_key)
 
             cert_final_key = generate_artifact_object_key(
                 org_public_id, run_public_id, "certificate_json", cert_sha, "json"
             )
             cert_meta = self.storage.copy_object(cert_stage_key, cert_final_key)
+            promoted_final_keys.append(cert_final_key)
 
             # Pre-commit cancellation check
             with self.worker_session_factory() as c_session:
@@ -435,6 +440,7 @@ class ReconciliationWorker:
                     lease_generation=lease_generation,
                     completed_at=now,
                 )
+            committed = True
 
             logger.info(f"Job {job_id} completed successfully for run {run_public_id}")
 
@@ -476,6 +482,12 @@ class ReconciliationWorker:
                     self.storage.delete_object(k)
                 except Exception:
                     pass
+            if not committed:
+                for k in promoted_final_keys:
+                    try:
+                        self.storage.delete_object(k)
+                    except Exception:
+                        pass
 
 
 BackgroundWorkerService = ReconciliationWorker

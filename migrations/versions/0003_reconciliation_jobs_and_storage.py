@@ -41,6 +41,22 @@ def upgrade() -> None:
     bind = op.get_bind()
     is_postgres = bind.dialect.name == "postgresql"
 
+    # The revision id is 33 characters long, while Alembic's bootstrap table
+    # in older installs used VARCHAR(32).  Widen it before Alembic records this
+    # revision, otherwise an otherwise valid migration fails at commit time.
+    if is_postgres:
+        op.alter_column(
+            "alembic_version",
+            "version_num",
+            existing_type=sa.String(32),
+            type_=sa.String(128),
+        )
+    elif bind.dialect.name == "sqlite":
+        with op.batch_alter_table("alembic_version") as batch_op:
+            batch_op.alter_column(
+                "version_num", existing_type=sa.String(32), type_=sa.String(128)
+            )
+
     # 1. Extend reconciliation_runs with reporting periods, legal hold, and provenance
     with op.batch_alter_table("reconciliation_runs") as batch_op:
         batch_op.add_column(sa.Column("reporting_period_start", sa.Date(), nullable=True))
@@ -325,6 +341,20 @@ def upgrade() -> None:
                     WITH CHECK (organisation_id = NULLIF(current_setting('app.current_tenant_id', true), '')::bigint);
                 """
             )
+            if table == "reconciliation_jobs":
+                # SECURITY DEFINER job functions run as a non-login,
+                # non-BYPASSRLS owner and claim/transition jobs across tenants.
+                # The owner has no function EXECUTE grants; worker access is
+                # exposed only through the narrowly granted functions below.
+                op.execute(
+                    """
+                    CREATE POLICY job_function_owner_select_policy ON reconciliation_jobs
+                        FOR SELECT TO untangle_fn_owner USING (true);
+                    CREATE POLICY job_function_owner_update_policy ON reconciliation_jobs
+                        FOR UPDATE TO untangle_fn_owner
+                        USING (true) WITH CHECK (true);
+                    """
+                )
             op.execute(
                 f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.{table} TO untangle_app;"
             )
@@ -498,7 +528,8 @@ def upgrade() -> None:
                 p_attempt_token TEXT,
                 p_lease_generation INT,
                 p_error_code TEXT,
-                p_error_summary TEXT
+                p_error_summary TEXT,
+                p_retryable BOOLEAN DEFAULT false
             )
             RETURNS BOOLEAN
             LANGUAGE plpgsql
@@ -509,10 +540,15 @@ def upgrade() -> None:
                 v_rows INT;
             BEGIN
                 UPDATE public.reconciliation_jobs
-                SET status = 'failed',
-                    failed_at = clock_timestamp(),
+                SET status = CASE WHEN p_retryable AND attempt_count < max_attempts THEN 'queued' ELSE 'failed' END,
+                    failed_at = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE clock_timestamp() END,
                     error_code = p_error_code,
                     error_summary = p_error_summary,
+                    attempt_token = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE attempt_token END,
+                    worker_id = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE worker_id END,
+                    lease_expires_at = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE lease_expires_at END,
+                    started_at = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE started_at END,
+                    stage = CASE WHEN p_retryable AND attempt_count < max_attempts THEN 'queued' ELSE 'completed' END,
                     updated_at = clock_timestamp()
                 WHERE id = p_job_id
                   AND attempt_token = p_attempt_token
@@ -522,9 +558,9 @@ def upgrade() -> None:
                 RETURN v_rows > 0;
             END;
             $$;
-            ALTER FUNCTION public.fn_job_fail(BIGINT, TEXT, INT, TEXT, TEXT) OWNER TO untangle_fn_owner;
-            REVOKE ALL ON FUNCTION public.fn_job_fail(BIGINT, TEXT, INT, TEXT, TEXT) FROM PUBLIC;
-            GRANT EXECUTE ON FUNCTION public.fn_job_fail(BIGINT, TEXT, INT, TEXT, TEXT) TO untangle_worker;
+            ALTER FUNCTION public.fn_job_fail(BIGINT, TEXT, INT, TEXT, TEXT, BOOLEAN) OWNER TO untangle_fn_owner;
+            REVOKE ALL ON FUNCTION public.fn_job_fail(BIGINT, TEXT, INT, TEXT, TEXT, BOOLEAN) FROM PUBLIC;
+            GRANT EXECUTE ON FUNCTION public.fn_job_fail(BIGINT, TEXT, INT, TEXT, TEXT, BOOLEAN) TO untangle_worker;
             """
         )
 
@@ -657,7 +693,7 @@ def downgrade() -> None:
         op.execute("DROP FUNCTION IF EXISTS public.fn_job_complete(BIGINT, TEXT, INT);")
         op.execute("DROP FUNCTION IF EXISTS public.fn_job_revalidate_creator(BIGINT, TEXT, INT);")
         op.execute("DROP FUNCTION IF EXISTS public.fn_job_cancel_ack(BIGINT, TEXT, INT);")
-        op.execute("DROP FUNCTION IF EXISTS public.fn_job_fail(BIGINT, TEXT, INT, TEXT, TEXT);")
+        op.execute("DROP FUNCTION IF EXISTS public.fn_job_fail(BIGINT, TEXT, INT, TEXT, TEXT, BOOLEAN);")
         op.execute("DROP FUNCTION IF EXISTS public.fn_job_transition_stage(BIGINT, TEXT, INT, TEXT);")
         op.execute("DROP FUNCTION IF EXISTS public.fn_job_check_cancellation(BIGINT, TEXT, INT);")
         op.execute("DROP FUNCTION IF EXISTS public.fn_job_heartbeat(BIGINT, TEXT, INT, INT);")
@@ -667,6 +703,8 @@ def downgrade() -> None:
             op.execute(f"DROP POLICY IF EXISTS tenant_isolation_policy ON {table};")
             op.execute(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY;")
             op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY;")
+        op.execute("DROP POLICY IF EXISTS job_function_owner_select_policy ON reconciliation_jobs;")
+        op.execute("DROP POLICY IF EXISTS job_function_owner_update_policy ON reconciliation_jobs;")
 
     op.drop_table("idempotency_records")
     op.drop_table("reconciliation_jobs")

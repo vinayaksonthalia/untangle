@@ -28,9 +28,9 @@ ADVISORY_NOTICE = (
 )
 
 MUTATING_INTENT_PATTERNS = (
-    r"\b(?:approve|post)\s+(?:(?:the|a|an|this|that|all)\s+)*(?:journal|voucher|entry|ledger)\b",
+    r"\b(?:approve|post)\s+(?:(?:the|a|an|this|that|all)\s+)*(?:journal|voucher|entry|ledger|transfer|payment|payout)\b",
     r"\b(?:certify|sign)\s+(?:(?:the|a|an|this|that|all)\s+)*(?:close|period|certificate)\b",
-    r"\b(?:transfer|move|send|pay|refund|disburse)\s+(?:(?:the|a|an|this|that|all)\s+)*(?:money|funds|amount|paise|inr)\b",
+    r"\b(?:transfer|move|send|pay|refund|disburse)\s+(?:(?:the|a|an|this|that|all)\s+)*(?:money|funds|amount|paise|inr|transfer|payment|payout)\b",
     r"\b(?:override|force|change|alter|modify)\s+(?:(?:the|a|an|this|that|all)\s+)*(?:reconciliation|match|status|verdict|decision)\b",
     r"\b(?:delete|drop|purge|truncate)\s+(?:(?:the|a|an|this|that|all)\s+)*(?:run|organisation|tenant|database)\b",
 )

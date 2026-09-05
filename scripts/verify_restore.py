@@ -257,6 +257,10 @@ def main() -> int:
             shutil.copyfile(src_path, temp_db_path)
             target_url = f"sqlite:///{temp_db_path}"
             print(f"Restored backup copy to temporary database: {target_url}")
+            # Forward-apply any migrations missing from the restored backup;
+            # the source backup remains untouched and verification observes
+            # the same upgrade path used in production.
+            run_migrations(target_url)
 
         elif not target_url:
             # Create a clean isolated temporary sqlite database and run full migrations

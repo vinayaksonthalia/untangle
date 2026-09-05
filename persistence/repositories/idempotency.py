@@ -122,13 +122,15 @@ def save_idempotency_record(
         created_at=now,
         expires_at=expires_at,
     )
-    session.add(rec)
     try:
-        session.flush()
+        # Isolate the speculative INSERT in a savepoint so a unique-key race
+        # cannot clear the caller's tenant-bound outer transaction/RLS setting.
+        with session.begin_nested():
+            session.add(rec)
+            session.flush()
     except IntegrityError:
         # Another request may have won the unique (organisation, key) race.
         # Roll back the failed INSERT, then replay that committed winner.
-        session.rollback()
         winner = session.scalar(
             scoped_select(IdempotencyRecord, context).where(
                 IdempotencyRecord.idempotency_key == idempotency_key

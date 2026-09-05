@@ -455,7 +455,7 @@ def fail_job(
         result = session.execute(
             text(
                 "SELECT fn_job_fail(:job_id, :attempt_token, :lease_generation, "
-                ":error_code, :error_summary)"
+                ":error_code, :error_summary, :retryable)"
             ),
             {
                 "job_id": job_id,
@@ -463,6 +463,7 @@ def fail_job(
                 "lease_generation": lease_generation,
                 "error_code": error_code,
                 "error_summary": error_summary[:255],
+                "retryable": retryable,
             },
         ).scalar()
         session.commit()

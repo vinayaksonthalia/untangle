@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy.orm import Session, sessionmaker
 
 from engine.certificate import _canonical, certificate_note, issue_certificate
+from engine.version import ENGINE_VERSION
 from persistence.context import TenantContext
 from persistence.repositories.artifact import (
     save_artifact_metadata,
@@ -415,7 +416,7 @@ class TenantReconciliationService:
         idempotency_key: str | None = None,
         reporting_period_start: date | None = None,
         reporting_period_end: date | None = None,
-        engine_version: str | None = "1.0.0",
+        engine_version: str | None = None,
         schema_version: str | None = "1.0.0",
         rule_pack_id: str | None = None,
         rule_pack_version: str | None = None,
@@ -426,6 +427,8 @@ class TenantReconciliationService:
 
         Returns (response_json, http_status_code, is_idempotent_replay).
         """
+        if engine_version is None:
+            engine_version = ENGINE_VERSION
         if (
             reporting_period_start is not None
             and reporting_period_end is not None
@@ -477,9 +480,17 @@ class TenantReconciliationService:
         )
 
         staged_keys = [k_bank, k_recon, k_ledger]
-        meta_bank = self.storage.store_bytes(k_bank, bank_bytes, "text/csv")
-        meta_recon = self.storage.store_bytes(k_recon, recon_bytes, "application/json")
-        meta_ledger = self.storage.store_bytes(k_ledger, ledger_bytes, "text/csv")
+        try:
+            meta_bank = self.storage.store_bytes(k_bank, bank_bytes, "text/csv")
+            meta_recon = self.storage.store_bytes(k_recon, recon_bytes, "application/json")
+            meta_ledger = self.storage.store_bytes(k_ledger, ledger_bytes, "text/csv")
+        except Exception:
+            for key in staged_keys:
+                try:
+                    self.storage.delete_object(key)
+                except Exception:
+                    pass
+            raise
 
         # 3. Create run and job atomically in database with compensation on rollback
         try:

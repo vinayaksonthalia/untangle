@@ -2,6 +2,10 @@
 
 This script guides the official submission video for judges and evaluators. It demonstrates both Untangle's **instant public demo** and the **enterprise multi-tenant platform**.
 
+Scope note: Paytm and Cashfree entries in the demo dataset are synthetic,
+narration-based examples only. They are not native Paytm or Cashfree statement
+format integrations, and this demo makes no provider-format support claim.
+
 ---
 
 ## Act 1 — The Problem & Instant Public Demo (0:00–1:45)
