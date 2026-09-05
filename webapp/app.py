@@ -104,6 +104,12 @@ async def lifespan(app: FastAPI):
     # Run the FastMCP session manager for the app's lifetime (stateless — no per-client state
     # accumulates). One app instance → one run; tests use a single module-scoped client, so this is
     # never re-entered.
+    db_url = os.environ.get("DATABASE_URL", "").strip()
+    if db_url:
+        from persistence.migrate import verify_schema_current
+
+        verify_schema_current(db_url)
+
     if _MCP_AVAILABLE:
         _ensure_demo_data()  # the sandbox points at data/ — make sure it exists in a fresh container
         async with mcp.session_manager.run():
