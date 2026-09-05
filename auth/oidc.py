@@ -314,9 +314,19 @@ class OidcManager:
             raise OidcTokenError(
                 f"Issuer mismatch: expected {self.issuer_url}, got {claims.get('iss')}"
             )
+        # Audience: accept a scalar aud equal to our client_id, or a list containing it. A scalar
+        # aud that is NOT our client_id must be rejected — the previous check let it through because
+        # the membership branch was gated on isinstance(aud, list) (Qodo #4).
         aud = claims.get("aud")
-        if aud != self.client_id and (isinstance(aud, list) and self.client_id not in aud):
+        aud_values = aud if isinstance(aud, list) else [aud]
+        if self.client_id not in aud_values:
             raise OidcTokenError(f"Audience mismatch: expected {self.client_id}, got {aud}")
+        # OIDC: when the ID token carries multiple audiences, the authorized party (azp) MUST be
+        # present and equal to our client_id (Qodo #6).
+        if isinstance(aud, list) and len(aud) > 1 and claims.get("azp") != self.client_id:
+            raise OidcTokenError(
+                "azp claim must equal the client_id when the ID token has multiple audiences"
+            )
 
         token_nonce = claims.get("nonce")
         if not token_nonce or hash_token(token_nonce) != nonce_hash:
@@ -329,7 +339,7 @@ class OidcManager:
                 auth_session,
                 event_type="auth.oidc.callback_failed",
                 subject_type="id_token",
-                subject_identifier=claims.get("sub", "")[:64],
+                subject_identifier=str(claims.get("sub") or "")[:64],
                 ip_hash=hash_ip(ip_address),
                 user_agent_truncated=truncate_user_agent(user_agent),
                 details={"error": "unverified_email"},
@@ -341,7 +351,11 @@ class OidcManager:
         if not email:
             raise OidcTokenError("Missing email claim in ID token")
 
-        subject = str(claims.get("sub"))
+        # A missing 'sub' must be rejected — never coerced to the literal string "None", which
+        # would collapse all subject-less tokens onto a single (issuer, "None") identity (Qodo #5).
+        subject = claims.get("sub")
+        if not isinstance(subject, str) or not subject:
+            raise OidcTokenError("Missing subject (sub) claim in ID token")
         display_name = claims.get("name") or claims.get("preferred_username") or email
 
         # 4. Resolve Federated Identity via untangle_auth connection

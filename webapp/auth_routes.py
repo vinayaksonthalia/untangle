@@ -237,7 +237,20 @@ def auth_callback(
     token_hash = hash_token(raw_session_token)
     csrf_token = generate_csrf_token(secret_key, token_hash)
 
-    target_redirect = return_to if return_to and return_to.startswith("/") else "/dashboard"
+    # Only accept a same-site absolute path. Reject scheme-relative ("//host") and
+    # backslash-tricked ("/\\host") targets, which browsers resolve to an external origin —
+    # otherwise the callback is an open redirect to an attacker site (Qodo #9).
+    def _safe_return_to(candidate: str) -> str:
+        if (
+            candidate
+            and candidate.startswith("/")
+            and not candidate.startswith("//")
+            and not candidate.startswith("/\\")
+        ):
+            return candidate
+        return "/dashboard"
+
+    target_redirect = _safe_return_to(return_to)
     response = RedirectResponse(url=target_redirect, status_code=302)
 
     # Set session cookie (__Host- compliant)
