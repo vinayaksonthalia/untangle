@@ -106,6 +106,80 @@ def test_oidc_callback_successful_new_principal(
     assert principal.display_name == "Alice Alpha"
 
 
+@pytest.mark.parametrize(
+    ("aud", "azp", "sub", "error"),
+    [
+        ("other_client", None, "scalar-mismatch", "Audience mismatch"),
+        ("untangle_client", "other_client", "scalar-wrong-azp", "azp claim"),
+        (["untangle_client", "other_client"], None, "multi-missing-azp", "azp claim"),
+        (["untangle_client", "other_client"], "other_client", "multi-wrong-azp", "azp claim"),
+        ("untangle_client", None, None, "Missing subject"),
+        ("untangle_client", None, "", "Missing subject"),
+    ],
+)
+def test_oidc_callback_rejects_invalid_claim_combinations(
+    session: Session,
+    oidc_manager: OidcManager,
+    mock_idp: MockOidcServer,
+    seed_issuer: TrustedAuthIssuer,
+    aud: str | list[str],
+    azp: str | None,
+    sub: str | None,
+    error: str,
+) -> None:
+    auth_url, state = oidc_manager.create_authorization_flow(session)
+    nonce = _extract_nonce(auth_url)
+    claims = {"aud": aud, "sub": sub}
+    if azp is not None:
+        claims["azp"] = azp
+    mock_idp.register_code(
+        code=f"invalid-{error}-{str(aud)}-{sub}",
+        sub="fallback-sub",
+        email="claims@test.com",
+        email_verified=True,
+        nonce=nonce,
+        custom_claims=claims,
+    )
+    with pytest.raises(OidcTokenError, match=error):
+        oidc_manager.process_callback(
+            session, code=f"invalid-{error}-{str(aud)}-{sub}", state=state
+        )
+
+
+@pytest.mark.parametrize(
+    ("aud", "azp"),
+    [
+        ("untangle_client", None),
+        (["untangle_client"], None),
+        (["untangle_client", "other"], "untangle_client"),
+    ],
+)
+def test_oidc_callback_accepts_valid_audience_and_authorized_party(
+    session: Session,
+    oidc_manager: OidcManager,
+    mock_idp: MockOidcServer,
+    seed_issuer: TrustedAuthIssuer,
+    aud: str | list[str],
+    azp: str | None,
+) -> None:
+    auth_url, state = oidc_manager.create_authorization_flow(session)
+    nonce = _extract_nonce(auth_url)
+    claims: dict[str, object] = {"aud": aud, "sub": f"valid-{str(aud)}"}
+    if azp is not None:
+        claims["azp"] = azp
+    code = f"valid-{len(mock_idp.issued_codes)}-{id(session)}"
+    mock_idp.register_code(
+        code=code,
+        sub="fallback",
+        email=f"{code}-{id(aud)}@test.com",
+        email_verified=True,
+        nonce=nonce,
+        custom_claims=claims,
+    )
+    principal_id, _, _ = oidc_manager.process_callback(session, code=code, state=state)
+    assert principal_id > 0
+
+
 def test_oidc_callback_existing_principal_login(
     session: Session,
     oidc_manager: OidcManager,

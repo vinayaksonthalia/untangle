@@ -17,6 +17,7 @@ from auth.crypto import (
     generate_invitation_token,
     hash_token,
 )
+from auth.permissions import permission_policy_metadata
 from auth.sessions import _ensure_utc
 from persistence.ids import (
     PREFIX_AUDIT_EVENT,
@@ -146,8 +147,11 @@ class ControlPlaneService:
         # SQLite fallback
         now = datetime.now(UTC)
         sess = app_session.scalar(
-            select(UserSession).where(
+            select(UserSession)
+            .join(Principal, Principal.id == UserSession.principal_id)
+            .where(
                 UserSession.session_token_hash == token_hash,
+                Principal.is_active.is_(True),
                 UserSession.revoked_at.is_(None),
                 UserSession.absolute_expires_at > now,
                 UserSession.idle_expires_at > now,
@@ -179,7 +183,7 @@ class ControlPlaneService:
                 event_type="organisation.created",
                 subject_type="organisation",
                 subject_public_id=org_pub_id,
-                metadata_json={"name": name},
+                metadata_json={"name": name, **permission_policy_metadata()},
             )
         )
         app_session.add(
@@ -190,7 +194,7 @@ class ControlPlaneService:
                 event_type="membership.assigned",
                 subject_type="organisation_membership",
                 subject_public_id=mem_pub_id,
-                metadata_json={"role": "owner"},
+                metadata_json={"role": "owner", **permission_policy_metadata()},
             )
         )
         app_session.commit()
@@ -227,8 +231,11 @@ class ControlPlaneService:
         # SQLite fallback
         now = datetime.now(UTC)
         sess = app_session.scalar(
-            select(UserSession).where(
+            select(UserSession)
+            .join(Principal, Principal.id == UserSession.principal_id)
+            .where(
                 UserSession.session_token_hash == token_hash,
+                Principal.is_active.is_(True),
                 UserSession.revoked_at.is_(None),
                 UserSession.absolute_expires_at > now,
                 UserSession.idle_expires_at > now,
@@ -298,8 +305,11 @@ class ControlPlaneService:
         # SQLite fallback
         now = datetime.now(UTC)
         sess = app_session.scalar(
-            select(UserSession).where(
+            select(UserSession)
+            .join(Principal, Principal.id == UserSession.principal_id)
+            .where(
                 UserSession.session_token_hash == token_hash,
+                Principal.is_active.is_(True),
                 UserSession.revoked_at.is_(None),
                 UserSession.absolute_expires_at > now,
                 UserSession.idle_expires_at > now,
@@ -377,8 +387,11 @@ class ControlPlaneService:
         # SQLite fallback
         now = datetime.now(UTC)
         sess = app_session.scalar(
-            select(UserSession).where(
+            select(UserSession)
+            .join(Principal, Principal.id == UserSession.principal_id)
+            .where(
                 UserSession.session_token_hash == token_hash,
+                Principal.is_active.is_(True),
                 UserSession.revoked_at.is_(None),
                 UserSession.absolute_expires_at > now,
                 UserSession.idle_expires_at > now,
@@ -439,7 +452,9 @@ class ControlPlaneService:
 
         # Revoke target user's active sessions in this org
         target_sessions = app_session.scalars(
-            select(UserSession).where(
+            select(UserSession)
+            .join(Principal, Principal.id == UserSession.principal_id)
+            .where(
                 UserSession.principal_id == target_principal_id,
                 UserSession.active_organisation_id == org_id,
                 UserSession.revoked_at.is_(None),
@@ -461,6 +476,7 @@ class ControlPlaneService:
                 metadata_json={
                     "target_principal_id": target_principal_id,
                     "new_role": new_role_code,
+                    **permission_policy_metadata(),
                 },
             )
         )
@@ -518,8 +534,11 @@ class ControlPlaneService:
         # SQLite fallback
         now = datetime.now(UTC)
         sess = app_session.scalar(
-            select(UserSession).where(
+            select(UserSession)
+            .join(Principal, Principal.id == UserSession.principal_id)
+            .where(
                 UserSession.session_token_hash == token_hash,
+                Principal.is_active.is_(True),
                 UserSession.revoked_at.is_(None),
                 UserSession.absolute_expires_at > now,
                 UserSession.idle_expires_at > now,
@@ -577,7 +596,7 @@ class ControlPlaneService:
                 event_type="invitation.created",
                 subject_type="organisation_invitation",
                 subject_public_id=inv_pub_id,
-                metadata_json={"role": role_code},
+                metadata_json={"role": role_code, **permission_policy_metadata()},
             )
         )
         app_session.commit()
@@ -683,8 +702,11 @@ class ControlPlaneService:
         # SQLite fallback
         now = datetime.now(UTC)
         sess = app_session.scalar(
-            select(UserSession).where(
+            select(UserSession)
+            .join(Principal, Principal.id == UserSession.principal_id)
+            .where(
                 UserSession.session_token_hash == token_hash,
+                Principal.is_active.is_(True),
                 UserSession.revoked_at.is_(None),
                 UserSession.absolute_expires_at > now,
                 UserSession.idle_expires_at > now,
@@ -727,7 +749,10 @@ class ControlPlaneService:
                 event_type="invitation.accepted",
                 subject_type="organisation_invitation",
                 subject_public_id=inv.public_id,
-                metadata_json={"accepted_by_principal_id": p.id},
+                metadata_json={
+                    "accepted_by_principal_id": p.id,
+                    **permission_policy_metadata(),
+                },
             )
         )
         app_session.add(
@@ -738,7 +763,7 @@ class ControlPlaneService:
                 event_type="membership.assigned",
                 subject_type="organisation_membership",
                 subject_public_id=mem_pub_id,
-                metadata_json={"role": inv.role_code},
+                metadata_json={"role": inv.role_code, **permission_policy_metadata()},
             )
         )
         app_session.commit()
@@ -775,8 +800,11 @@ class ControlPlaneService:
         # SQLite fallback
         now = datetime.now(UTC)
         sess = app_session.scalar(
-            select(UserSession).where(
+            select(UserSession)
+            .join(Principal, Principal.id == UserSession.principal_id)
+            .where(
                 UserSession.session_token_hash == token_hash,
+                Principal.is_active.is_(True),
                 UserSession.revoked_at.is_(None),
                 UserSession.absolute_expires_at > now,
                 UserSession.idle_expires_at > now,
@@ -816,7 +844,7 @@ class ControlPlaneService:
                 event_type="invitation.revoked",
                 subject_type="organisation_invitation",
                 subject_public_id=inv.public_id,
-                metadata_json={},
+                metadata_json=permission_policy_metadata(),
             )
         )
         app_session.commit()
@@ -854,8 +882,11 @@ class ControlPlaneService:
         # SQLite fallback
         now = datetime.now(UTC)
         sess = app_session.scalar(
-            select(UserSession).where(
+            select(UserSession)
+            .join(Principal, Principal.id == UserSession.principal_id)
+            .where(
                 UserSession.session_token_hash == token_hash,
+                Principal.is_active.is_(True),
                 UserSession.revoked_at.is_(None),
                 UserSession.absolute_expires_at > now,
                 UserSession.idle_expires_at > now,

@@ -321,9 +321,13 @@ class OidcManager:
         aud_values = aud if isinstance(aud, list) else [aud]
         if self.client_id not in aud_values:
             raise OidcTokenError(f"Audience mismatch: expected {self.client_id}, got {aud}")
-        # OIDC: when the ID token carries multiple audiences, the authorized party (azp) MUST be
-        # present and equal to our client_id (Qodo #6).
-        if isinstance(aud, list) and len(aud) > 1 and claims.get("azp") != self.client_id:
+        # Any supplied authorized-party claim must identify this client.  OIDC additionally
+        # requires azp for a multiple-audience token; checking it for scalar audiences too avoids
+        # accepting a token issued to another client with a matching audience (Qodo #3).
+        azp = claims.get("azp")
+        if azp is not None and azp != self.client_id:
+            raise OidcTokenError("azp claim must equal the client_id")
+        if isinstance(aud, list) and len(aud) > 1 and azp != self.client_id:
             raise OidcTokenError(
                 "azp claim must equal the client_id when the ID token has multiple audiences"
             )

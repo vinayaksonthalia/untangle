@@ -11,6 +11,7 @@ Supported roles:
 from __future__ import annotations
 
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Final
 
 from persistence.context import Role
@@ -38,46 +39,62 @@ class Action(StrEnum):
     AUDIT_VIEW = "audit:view"
 
 
-# Immutable Capability Matrix mapping Action -> set of authorized Roles
-CAPABILITY_MATRIX: Final[dict[Action, frozenset[Role]]] = {
-    Action.ORG_UPDATE: frozenset({Role.OWNER}),
-    Action.ORG_DELETE: frozenset({Role.OWNER}),
-    Action.MEMBERSHIP_LIST: frozenset({Role.OWNER, Role.ADMIN}),
-    Action.MEMBERSHIP_MUTATE: frozenset({Role.OWNER, Role.ADMIN}),
-    Action.INVITATION_CREATE: frozenset({Role.OWNER, Role.ADMIN}),
-    Action.INVITATION_REVOKE: frozenset({Role.OWNER, Role.ADMIN}),
-    Action.INVITATION_LIST: frozenset({Role.OWNER, Role.ADMIN}),
-    Action.RUN_CREATE: frozenset({Role.OWNER, Role.ADMIN, Role.OPERATOR}),
-    Action.RUN_ABORT: frozenset({Role.OWNER, Role.ADMIN, Role.OPERATOR}),
-    Action.RUN_DELETE: frozenset({Role.OWNER, Role.ADMIN}),
-    Action.RUN_VIEW: frozenset(
-        {
-            Role.OWNER,
-            Role.ADMIN,
-            Role.OPERATOR,
-            Role.REVIEWER,
-            Role.AUDITOR,
-        }
-    ),
-    Action.INVESTIGATION_RESOLVE: frozenset(
-        {
-            Role.OWNER,
-            Role.ADMIN,
-            Role.OPERATOR,
-            Role.REVIEWER,
-        }
-    ),
-    Action.CERTIFICATE_ISSUE: frozenset({Role.OWNER, Role.ADMIN, Role.REVIEWER}),
-    Action.AUDIT_VIEW: frozenset(
-        {
-            Role.OWNER,
-            Role.ADMIN,
-            Role.OPERATOR,
-            Role.REVIEWER,
-            Role.AUDITOR,
-        }
-    ),
-}
+CAPABILITY_POLICY_ID: Final[str] = "untangle.authorization.capability-matrix"
+CAPABILITY_POLICY_VERSION: Final[str] = "1.0.0"
+CAPABILITY_POLICY_SOURCE: Final[str] = "auth/permissions.py"
+
+
+def permission_policy_metadata() -> dict[str, str]:
+    """Return a fresh, JSON-safe reference to the governing policy."""
+    return {
+        "permission_policy_id": CAPABILITY_POLICY_ID,
+        "permission_policy_version": CAPABILITY_POLICY_VERSION,
+        "permission_policy_source": CAPABILITY_POLICY_SOURCE,
+    }
+
+
+# Structurally immutable Capability Matrix mapping Action -> authorized Roles.
+CAPABILITY_MATRIX: Final = MappingProxyType(
+    {
+        Action.ORG_UPDATE: frozenset({Role.OWNER}),
+        Action.ORG_DELETE: frozenset({Role.OWNER}),
+        Action.MEMBERSHIP_LIST: frozenset({Role.OWNER, Role.ADMIN}),
+        Action.MEMBERSHIP_MUTATE: frozenset({Role.OWNER, Role.ADMIN}),
+        Action.INVITATION_CREATE: frozenset({Role.OWNER, Role.ADMIN}),
+        Action.INVITATION_REVOKE: frozenset({Role.OWNER, Role.ADMIN}),
+        Action.INVITATION_LIST: frozenset({Role.OWNER, Role.ADMIN}),
+        Action.RUN_CREATE: frozenset({Role.OWNER, Role.ADMIN, Role.OPERATOR}),
+        Action.RUN_ABORT: frozenset({Role.OWNER, Role.ADMIN, Role.OPERATOR}),
+        Action.RUN_DELETE: frozenset({Role.OWNER, Role.ADMIN}),
+        Action.RUN_VIEW: frozenset(
+            {
+                Role.OWNER,
+                Role.ADMIN,
+                Role.OPERATOR,
+                Role.REVIEWER,
+                Role.AUDITOR,
+            }
+        ),
+        Action.INVESTIGATION_RESOLVE: frozenset(
+            {
+                Role.OWNER,
+                Role.ADMIN,
+                Role.OPERATOR,
+                Role.REVIEWER,
+            }
+        ),
+        Action.CERTIFICATE_ISSUE: frozenset({Role.OWNER, Role.ADMIN, Role.REVIEWER}),
+        Action.AUDIT_VIEW: frozenset(
+            {
+                Role.OWNER,
+                Role.ADMIN,
+                Role.OPERATOR,
+                Role.REVIEWER,
+                Role.AUDITOR,
+            }
+        ),
+    }
+)
 
 
 class PermissionDeniedError(Exception):

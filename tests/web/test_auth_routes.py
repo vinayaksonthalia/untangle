@@ -8,10 +8,37 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from auth.crypto import generate_csrf_token, hash_token
-from auth.sessions import create_session
+from auth.sessions import create_session, lookup_session
 from persistence.context import Role, TenantContext
 from persistence.models import TrustedAuthIssuer
-from webapp.auth_routes import CSRF_COOKIE_NAME
+from webapp.auth_routes import (
+    CSRF_COOKIE_NAME,
+    create_session_with_default_organisation,
+    safe_return_to,
+)
+
+
+def test_safe_return_to_accepts_only_same_site_paths() -> None:
+    assert safe_return_to("/dashboard") == "/dashboard"
+    assert safe_return_to("/app?tab=cases") == "/app?tab=cases"
+    for candidate in ("", "https://attacker.test", "//attacker.test", "/\\attacker.test"):
+        assert safe_return_to(candidate) == "/dashboard"
+
+
+def test_callback_session_selects_the_only_active_organisation(
+    session: Session, tenant_a: tuple[TenantContext, int]
+) -> None:
+    ctx, org_id = tenant_a
+    raw_token = create_session_with_default_organisation(
+        session,
+        session,
+        principal_id=ctx.principal_id,
+        ip_address="127.0.0.1",
+        user_agent="test",
+    )
+    info = lookup_session(session, raw_token)
+    assert info is not None
+    assert info.active_organisation_id == org_id
 
 
 def test_auth_login_redirect_and_cookie(client: TestClient, seed_issuer: TrustedAuthIssuer) -> None:

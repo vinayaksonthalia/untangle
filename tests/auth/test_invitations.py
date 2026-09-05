@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from auth.service import ControlPlaneService
 from auth.sessions import create_session
 from persistence.context import Role, TenantContext
-from persistence.models import OrganisationInvitation, Principal
+from persistence.models import AuditEvent, OrganisationInvitation, OrganisationMembership, Principal
 
 
 def test_invitation_lifecycle(
@@ -35,6 +35,11 @@ def test_invitation_lifecycle(
     assert db_inv is not None
     assert db_inv.status == "pending"
     assert db_inv.role_code == Role.REVIEWER.value
+    audit = session.query(AuditEvent).filter_by(subject_public_id=inv_pub_id).one()
+    assert audit.metadata_json["permission_policy_id"] == (
+        "untangle.authorization.capability-matrix"
+    )
+    assert audit.metadata_json["permission_policy_version"] == "1.0.0"
 
     # 2. Lookup invitation
     details = ControlPlaneService.lookup_invitation(session, raw_inv_token)
@@ -145,3 +150,27 @@ def test_invitation_revocation(
     details = ControlPlaneService.lookup_invitation(session, raw_inv_token)
     assert details is not None
     assert details.status == "revoked"
+
+
+def test_inactive_principal_cannot_use_sqlite_control_plane_session(
+    session: Session, tenant_a: tuple[TenantContext, int]
+) -> None:
+    ctx, org_id = tenant_a
+    raw_token, _ = create_session(session, principal_id=ctx.principal_id, active_org_id=org_id)
+    principal = session.get(Principal, ctx.principal_id)
+    assert principal is not None
+    membership = (
+        session.query(OrganisationMembership)
+        .filter_by(principal_id=ctx.principal_id, organisation_id=org_id)
+        .one()
+    )
+    membership.status = "suspended"
+    principal.is_active = False
+    from datetime import UTC, datetime
+
+    principal.deleted_at = datetime.now(UTC)
+    session.commit()
+
+    assert ControlPlaneService.list_organisations(session, raw_token) == []
+    with pytest.raises(RuntimeError, match="Unauthorized"):
+        ControlPlaneService.create_organisation(session, raw_token, "Should fail")

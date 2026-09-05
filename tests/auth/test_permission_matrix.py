@@ -5,10 +5,15 @@ from __future__ import annotations
 import pytest
 
 from auth.permissions import (
+    CAPABILITY_MATRIX,
+    CAPABILITY_POLICY_ID,
+    CAPABILITY_POLICY_SOURCE,
+    CAPABILITY_POLICY_VERSION,
     Action,
     PermissionDeniedError,
     can_manage_target_role,
     check_permission,
+    permission_policy_metadata,
     require_permission,
 )
 
@@ -82,3 +87,16 @@ def test_null_or_unknown_role_fails_closed() -> None:
 
     with pytest.raises(PermissionDeniedError):
         require_permission(None, Action.RUN_VIEW)
+
+
+def test_capability_policy_has_machine_readable_provenance() -> None:
+    assert permission_policy_metadata() == {
+        "permission_policy_id": CAPABILITY_POLICY_ID,
+        "permission_policy_version": CAPABILITY_POLICY_VERSION,
+        "permission_policy_source": CAPABILITY_POLICY_SOURCE,
+    }
+
+
+def test_capability_matrix_cannot_be_mutated() -> None:
+    with pytest.raises(TypeError):
+        CAPABILITY_MATRIX[Action.RUN_VIEW] = frozenset()  # type: ignore[index]

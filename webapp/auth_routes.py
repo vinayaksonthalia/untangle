@@ -5,10 +5,10 @@ from __future__ import annotations
 import os
 from typing import Any
 
-import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from auth.crypto import (
     generate_csrf_token,
@@ -41,6 +41,7 @@ from persistence.config import (
     create_session_factory,
     get_auth_database_url,
     get_database_url,
+    is_local_or_test_mode,
 )
 from webapp.middleware import (
     COOKIE_NAME_DEV,
@@ -53,6 +54,7 @@ router = APIRouter(prefix="/api", tags=["auth"])
 OIDC_STATE_COOKIE_PROD = "__Host-untangle_oidc_state"
 OIDC_STATE_COOKIE_DEV = "untangle_oidc_state"
 CSRF_COOKIE_NAME = "untangle_csrf"
+DEFAULT_OIDC_CLIENT_SECRET = "dev_secret"
 
 
 def is_secure_connection(request: Request) -> bool:
@@ -69,6 +71,13 @@ def is_secure_connection(request: Request) -> bool:
 def get_cookie_name(request: Request, prod_name: str, dev_name: str) -> str:
     """Select __Host- prefix only when connection is Secure."""
     return prod_name if is_secure_connection(request) else dev_name
+
+
+def safe_return_to(candidate: str) -> str:
+    """Allow only same-site absolute paths for post-auth redirects."""
+    if candidate and candidate.startswith("/") and not candidate.startswith(("//", "/\\")):
+        return candidate
+    return "/dashboard"
 
 
 def get_app_session():
@@ -89,19 +98,44 @@ def get_auth_session():
     return factory()
 
 
-_OIDC_HTTP_CLIENT: httpx.Client | None = None
+def create_session_with_default_organisation(
+    auth_session: Session,
+    app_session: Session,
+    *,
+    principal_id: int,
+    ip_address: str,
+    user_agent: str | None,
+) -> str:
+    """Mint a session and select its sole active organisation, if one exists."""
+    raw_token, _ = create_session(
+        auth_session,
+        principal_id=principal_id,
+        active_org_id=None,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    active_memberships = [
+        item
+        for item in ControlPlaneService.list_organisations(app_session, raw_token)
+        if item.membership_status == "active"
+    ]
+    if len(active_memberships) == 1:
+        raw_token, _, _ = switch_organisation(app_session, raw_token, active_memberships[0].org_id)
+    return raw_token
 
 
-def set_oidc_http_client(client: httpx.Client | None) -> None:
-    """Set custom HTTP client for OIDC manager (used for mock IdP in tests)."""
-    global _OIDC_HTTP_CLIENT
-    _OIDC_HTTP_CLIENT = client
-
-
-def get_oidc_manager() -> OidcManager:
+def get_oidc_manager(request: Request) -> OidcManager:
     issuer = os.environ.get("OIDC_ISSUER_URL", "https://auth.untangle.internal")
     client_id = os.environ.get("OIDC_CLIENT_ID", "untangle_client")
-    client_secret = os.environ.get("OIDC_CLIENT_SECRET", "dev_secret")
+    client_secret = os.environ.get("OIDC_CLIENT_SECRET", "").strip()
+    if (
+        not client_secret or client_secret == DEFAULT_OIDC_CLIENT_SECRET
+    ) and not is_local_or_test_mode():
+        raise RuntimeError(
+            "OIDC_CLIENT_SECRET must be explicitly configured to a non-development value "
+            "outside local/test mode"
+        )
+    client_secret = client_secret or DEFAULT_OIDC_CLIENT_SECRET
     redirect_uri = os.environ.get("OIDC_REDIRECT_URI", "http://localhost:8080/api/auth/callback")
     secret_key = get_app_secret_key()
     return OidcManager(
@@ -110,7 +144,7 @@ def get_oidc_manager() -> OidcManager:
         client_secret=client_secret,
         redirect_uri=redirect_uri,
         secret_key=secret_key,
-        http_client=_OIDC_HTTP_CLIENT,
+        http_client=getattr(request.app.state, "oidc_http_client", None),
     )
 
 
@@ -153,7 +187,7 @@ def auth_login(
     return_to: str = Query("/", max_length=255),
 ) -> Response:
     """Initiate OIDC authentication flow with PKCE."""
-    mgr = get_oidc_manager()
+    mgr = get_oidc_manager(request)
     ip = request.client.host if request.client else "127.0.0.1"
     ua = request.headers.get("user-agent")
 
@@ -197,7 +231,7 @@ def auth_callback(
     if not cookie_state or cookie_state != state:
         raise HTTPException(400, "Invalid or missing OIDC state cookie")
 
-    mgr = get_oidc_manager()
+    mgr = get_oidc_manager(request)
     ip = request.client.host if request.client else "127.0.0.1"
     ua = request.headers.get("user-agent")
 
@@ -207,21 +241,17 @@ def auth_callback(
                 auth_sess, code=code, state=state, ip_address=ip, user_agent=ua
             )
 
-            # Check if user has active memberships
+            # Mint a short-lived session first so the control-plane lookup can
+            # authenticate normally.  Calling list_organisations with an empty
+            # token would always fail (and bypasses the tenant boundary).
             with get_app_session() as app_sess:
-                orgs = ControlPlaneService.list_organisations(app_sess, "")
-                # If only 1 org, auto-select it
-                user_memberships = [o for o in orgs if o.membership_status == "active"]
-                active_org_id = user_memberships[0].org_id if len(user_memberships) == 1 else None
-
-            # Mint session via untangle_auth
-            raw_session_token, session_info = create_session(
-                auth_sess,
-                principal_id=principal_id,
-                active_org_id=active_org_id,
-                ip_address=ip,
-                user_agent=ua,
-            )
+                raw_session_token = create_session_with_default_organisation(
+                    auth_sess,
+                    app_sess,
+                    principal_id=principal_id,
+                    ip_address=ip,
+                    user_agent=ua,
+                )
     except OidcStateError as exc:
         raise HTTPException(400, str(exc)) from exc
     except UnverifiedEmailError as exc:
@@ -240,17 +270,7 @@ def auth_callback(
     # Only accept a same-site absolute path. Reject scheme-relative ("//host") and
     # backslash-tricked ("/\\host") targets, which browsers resolve to an external origin —
     # otherwise the callback is an open redirect to an attacker site (Qodo #9).
-    def _safe_return_to(candidate: str) -> str:
-        if (
-            candidate
-            and candidate.startswith("/")
-            and not candidate.startswith("//")
-            and not candidate.startswith("/\\")
-        ):
-            return candidate
-        return "/dashboard"
-
-    target_redirect = _safe_return_to(return_to)
+    target_redirect = safe_return_to(return_to)
     response = RedirectResponse(url=target_redirect, status_code=302)
 
     # Set session cookie (__Host- compliant)

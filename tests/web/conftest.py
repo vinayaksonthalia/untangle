@@ -59,8 +59,6 @@ def configure_auth_env(
     web_db_url: str, mock_idp: MockOidcServer, monkeypatch
 ) -> Generator[None, None, None]:
     """Ensure environment points to the active test database and mock IdP."""
-    from webapp.auth_routes import set_oidc_http_client
-
     auth_url = os.environ.get("POSTGRES_AUTH_TEST_URL", "").strip() or web_db_url
     maintenance_url = os.environ.get("POSTGRES_MAINTENANCE_TEST_URL", "").strip() or web_db_url
     monkeypatch.setenv("DATABASE_URL", web_db_url)
@@ -72,9 +70,9 @@ def configure_auth_env(
     monkeypatch.setenv("UNTANGLE_DEV_MODE", "1")
     monkeypatch.setenv("UNTANGLE_SECRET_KEY", "test-secret-key-12345678901234567890")
 
-    set_oidc_http_client(mock_idp.create_mock_client())
+    app.state.oidc_http_client = mock_idp.create_mock_client()
     yield
-    set_oidc_http_client(None)
+    del app.state.oidc_http_client
 
 
 @pytest.fixture(scope="session")

@@ -855,7 +855,7 @@ def upgrade() -> None:
                     ) VALUES (
                         p_audit_public_id, p_target_org_id, v_sess.principal_id,
                         'organisation.switched', 'organisation', v_org_public_id,
-                        NULL, jsonb_build_object('role_code', v_role_code), NOW()
+                        NULL, jsonb_build_object('role_code', v_role_code, 'permission_policy_id', 'untangle.authorization.capability-matrix', 'permission_policy_version', '1.0.0', 'permission_policy_source', 'auth/permissions.py'), NOW()
                     );
                     IF v_prev_tenant IS NULL THEN PERFORM set_config('app.current_tenant_id', '', true);
                     ELSE PERFORM set_config('app.current_tenant_id', v_prev_tenant, true); END IF;
@@ -928,7 +928,7 @@ def upgrade() -> None:
                     ) VALUES (
                         p_audit_public_id_1, v_org_id, v_principal_id,
                         'organisation.created', 'organisation', p_org_public_id,
-                        NULL, jsonb_build_object('name', p_org_name), NOW()
+                        NULL, jsonb_build_object('name', p_org_name, 'permission_policy_id', 'untangle.authorization.capability-matrix', 'permission_policy_version', '1.0.0', 'permission_policy_source', 'auth/permissions.py'), NOW()
                     );
 
                     INSERT INTO public.audit_events (
@@ -937,7 +937,7 @@ def upgrade() -> None:
                     ) VALUES (
                         p_audit_public_id_2, v_org_id, v_principal_id,
                         'membership.assigned', 'organisation_membership', p_membership_public_id,
-                        NULL, jsonb_build_object('role', 'owner'), NOW()
+                        NULL, jsonb_build_object('role', 'owner', 'permission_policy_id', 'untangle.authorization.capability-matrix', 'permission_policy_version', '1.0.0', 'permission_policy_source', 'auth/permissions.py'), NOW()
                     );
 
                     IF v_prev_tenant IS NULL THEN PERFORM set_config('app.current_tenant_id', '', true);
@@ -1176,7 +1176,7 @@ def upgrade() -> None:
                         p_audit_public_id, v_organisation_id, v_actor_principal_id,
                         CASE WHEN p_new_status != 'active' THEN 'membership.suspended' ELSE 'membership.role_changed' END,
                         'organisation_membership', v_target_public_id, NULL,
-                        jsonb_build_object('target_principal_id', p_target_principal_id, 'previous_role', v_target_current_role, 'new_role', p_new_role_code),
+                        jsonb_build_object('target_principal_id', p_target_principal_id, 'previous_role', v_target_current_role, 'new_role', p_new_role_code, 'permission_policy_id', 'untangle.authorization.capability-matrix', 'permission_policy_version', '1.0.0', 'permission_policy_source', 'auth/permissions.py'),
                         NOW()
                     );
                     IF v_prev_tenant IS NULL THEN PERFORM set_config('app.current_tenant_id', '', true);
@@ -1276,7 +1276,7 @@ def upgrade() -> None:
                     ) VALUES (
                         p_audit_public_id, v_actor.active_organisation_id, v_actor.principal_id,
                         'invitation.created', 'organisation_invitation', p_invitation_public_id,
-                        NULL, jsonb_build_object('role', p_role_code), NOW()
+                        NULL, jsonb_build_object('role', p_role_code, 'permission_policy_id', 'untangle.authorization.capability-matrix', 'permission_policy_version', '1.0.0', 'permission_policy_source', 'auth/permissions.py'), NOW()
                     );
                     IF v_prev_tenant IS NULL THEN PERFORM set_config('app.current_tenant_id', '', true);
                     ELSE PERFORM set_config('app.current_tenant_id', v_prev_tenant, true); END IF;
@@ -1402,7 +1402,7 @@ def upgrade() -> None:
                     ) VALUES (
                         p_audit_public_id_1, v_inv.organisation_id, v_caller.principal_id,
                         'invitation.accepted', 'organisation_invitation', v_inv.public_id,
-                        NULL, jsonb_build_object('accepted_by_principal_id', v_caller.principal_id), NOW()
+                        NULL, jsonb_build_object('accepted_by_principal_id', v_caller.principal_id, 'permission_policy_id', 'untangle.authorization.capability-matrix', 'permission_policy_version', '1.0.0', 'permission_policy_source', 'auth/permissions.py'), NOW()
                     );
 
                     INSERT INTO public.audit_events (
@@ -1411,7 +1411,7 @@ def upgrade() -> None:
                     ) VALUES (
                         p_audit_public_id_2, v_inv.organisation_id, v_caller.principal_id,
                         'membership.assigned', 'organisation_membership', p_membership_public_id,
-                        NULL, jsonb_build_object('role', v_inv.role_code), NOW()
+                        NULL, jsonb_build_object('role', v_inv.role_code, 'permission_policy_id', 'untangle.authorization.capability-matrix', 'permission_policy_version', '1.0.0', 'permission_policy_source', 'auth/permissions.py'), NOW()
                     );
 
                     IF v_prev_tenant IS NULL THEN PERFORM set_config('app.current_tenant_id', '', true);
@@ -1497,7 +1497,7 @@ def upgrade() -> None:
                     ) VALUES (
                         p_audit_public_id, v_inv.organisation_id, v_actor.principal_id,
                         'invitation.revoked', 'organisation_invitation', v_inv.public_id,
-                        NULL, '{}'::jsonb, NOW()
+                        NULL, jsonb_build_object('permission_policy_id', 'untangle.authorization.capability-matrix', 'permission_policy_version', '1.0.0', 'permission_policy_source', 'auth/permissions.py'), NOW()
                     );
                     IF v_prev_tenant IS NULL THEN PERFORM set_config('app.current_tenant_id', '', true);
                     ELSE PERFORM set_config('app.current_tenant_id', v_prev_tenant, true); END IF;

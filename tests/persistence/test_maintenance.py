@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -40,6 +41,19 @@ def _seed_org_and_principal(session: Session) -> tuple[int, int]:
     session.add(principal)
     session.flush()
     return org.id, principal.id
+
+
+@pytest.mark.parametrize("field", ["sessions_days", "invites_days", "sec_events_days"])
+@pytest.mark.parametrize("value", [0, -1, 3651])
+def test_maintenance_rejects_invalid_day_retention(session: Session, field: str, value: int):
+    with pytest.raises(ValueError):
+        run_maintenance_purge(session, **{field: value})
+
+
+@pytest.mark.parametrize("value", [0, -1, 87601])
+def test_maintenance_rejects_invalid_oidc_retention(session: Session, value: int):
+    with pytest.raises(ValueError):
+        run_maintenance_purge(session, oidc_hours=value)
 
 
 def test_maintenance_purge_security_events(session: Session) -> None:

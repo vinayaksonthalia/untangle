@@ -29,6 +29,16 @@ from persistence.models import (
     UserSession,
 )
 
+MAX_RETENTION_DAYS = 3650
+MAX_RETENTION_HOURS = 87600
+
+
+def _validate_retention(name: str, value: int, maximum: int) -> int:
+    """Validate retention before acquiring locks or performing any deletion."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= maximum:
+        raise ValueError(f"{name} must be an integer from 1 to {maximum}")
+    return value
+
 
 def run_maintenance_purge(
     session: Session,
@@ -38,6 +48,10 @@ def run_maintenance_purge(
     oidc_hours: int = 1,
 ) -> dict[str, int]:
     """Execute retention purge and redaction operations under advisory locking."""
+    sessions_days = _validate_retention("sessions_days", sessions_days, MAX_RETENTION_DAYS)
+    invites_days = _validate_retention("invites_days", invites_days, MAX_RETENTION_DAYS)
+    sec_events_days = _validate_retention("sec_events_days", sec_events_days, MAX_RETENTION_DAYS)
+    oidc_hours = _validate_retention("oidc_hours", oidc_hours, MAX_RETENTION_HOURS)
     bind = session.get_bind()
     is_postgres = bind.dialect.name == "postgresql"
 
@@ -173,27 +187,40 @@ def main() -> int:
     purge_parser = subparsers.add_parser(
         "purge", help="Purge expired records and redact sensitive data"
     )
+
+    def retention_arg(maximum: int):
+        def parse(value: str) -> int:
+            try:
+                parsed = int(value)
+            except ValueError as exc:
+                raise argparse.ArgumentTypeError("must be an integer") from exc
+            if not 1 <= parsed <= maximum:
+                raise argparse.ArgumentTypeError(f"must be between 1 and {maximum}")
+            return parsed
+
+        return parse
+
     purge_parser.add_argument(
         "--sessions-days",
-        type=int,
+        type=retention_arg(MAX_RETENTION_DAYS),
         default=30,
         help="Purge sessions older than N days (default: 30)",
     )
     purge_parser.add_argument(
         "--invites-days",
-        type=int,
+        type=retention_arg(MAX_RETENTION_DAYS),
         default=14,
         help="Redact accepted/revoked invites older than N days (default: 14)",
     )
     purge_parser.add_argument(
         "--sec-events-days",
-        type=int,
+        type=retention_arg(MAX_RETENTION_DAYS),
         default=90,
         help="Purge security events older than N days (default: 90)",
     )
     purge_parser.add_argument(
         "--oidc-hours",
-        type=int,
+        type=retention_arg(MAX_RETENTION_HOURS),
         default=1,
         help="Purge consumed OIDC transactions older than N hours (default: 1)",
     )

@@ -16,6 +16,7 @@ from persistence.config import (
     create_db_engine,
     create_session_factory,
     get_database_url,
+    is_local_or_test_mode,
 )
 from persistence.context import Role, TenantContext
 
@@ -43,8 +44,16 @@ def get_allowed_origins() -> set[str]:
 
 
 def get_app_secret_key() -> str:
-    """Return configured application secret key."""
-    return os.environ.get(ENV_SECRET_KEY, DEFAULT_DEV_SECRET)
+    """Return configured key; never silently use the development key when hosted."""
+    configured = os.environ.get(ENV_SECRET_KEY, "").strip()
+    if configured and (configured != DEFAULT_DEV_SECRET or is_local_or_test_mode()):
+        return configured
+    if is_local_or_test_mode():
+        return DEFAULT_DEV_SECRET
+    raise RuntimeError(
+        f"{ENV_SECRET_KEY} must be explicitly configured to a non-development value "
+        "outside local/test mode"
+    )
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
