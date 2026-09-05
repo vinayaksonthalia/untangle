@@ -140,6 +140,6 @@ def save_idempotency_record(
             if winner.request_hash != request_hash:
                 raise IdempotencyCollisionError(
                     "Idempotency key reused with conflicting request payload"
-                )
+                ) from None
             return winner
         raise

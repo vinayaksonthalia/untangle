@@ -24,6 +24,7 @@ from persistence.repositories.job import (
     claim_next_job,
     complete_job_fenced,
     create_reconciliation_job,
+    fail_job,
     get_job_by_public_id,
     heartbeat_job,
     list_jobs,
@@ -141,6 +142,37 @@ def test_job_claim_heartbeat_and_stage_transitions(
             lease_generation=1,
         )
         s.commit()
+
+
+def test_retryable_failure_requeues_with_clean_lifecycle_fields(
+    session_factory: sessionmaker[Session],
+    worker_session_factory: sessionmaker[Session],
+    tenant_a: tuple[TenantContext, int],
+) -> None:
+    ctx, _ = tenant_a
+    with UnitOfWork(session_factory, ctx) as uow:
+        run = create_run(uow.session, ctx)
+        job = create_reconciliation_job(uow.session, ctx, run.id)
+        job_id = job.id
+
+    with worker_session_factory() as worker:
+        claimed = claim_next_job(worker, "worker_retry", lease_seconds=30)
+        assert claimed is not None
+        result = fail_job(
+            worker, job_id, "worker_retry", claimed["attempt_token"], claimed["lease_generation"],
+            "temporary_error", "temporary failure", retryable=True,
+        )
+        assert result["new_status"] == "queued"
+
+    with session_factory() as session:
+        requeued = session.get(ReconciliationJob, job_id)
+        assert requeued is not None
+        assert requeued.status == "queued"
+        assert requeued.started_at is None
+        assert requeued.completed_at is None
+        assert requeued.failed_at is None
+        assert requeued.error_code is None
+        assert requeued.error_summary is None
 
 
 def test_stale_worker_neutralization_and_preemption(

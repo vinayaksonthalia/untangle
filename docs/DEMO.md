@@ -3,8 +3,10 @@
 This script guides the official submission video for judges and evaluators. It demonstrates both Untangle's **instant public demo** and the **enterprise multi-tenant platform**.
 
 Scope note: Paytm and Cashfree entries in the demo dataset are synthetic,
-narration-based examples only. They are not native Paytm or Cashfree statement
-format integrations, and this demo makes no provider-format support claim.
+narration-keyword scenario coverage only—not native Paytm or Cashfree
+provider-format ingestion. Authentic native formats currently supported are
+none; production ingestion supports only Untangle's generic canonical CSV
+schema (not proprietary bank/provider exports).
 
 ---
 

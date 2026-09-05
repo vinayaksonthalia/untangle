@@ -10,7 +10,7 @@ services:
     numInstances: 1
     healthCheckPath: /readyz
     autoDeploy: true
-    startCommand: uvicorn webapp.app:create_app --factory --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn webapp.app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PORT
         value: "8080"

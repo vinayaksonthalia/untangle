@@ -500,6 +500,11 @@ def fail_job(
         job.attempt_token = None
         job.worker_id = None
         job.lease_expires_at = None
+        job.started_at = None
+        job.completed_at = None
+        job.failed_at = None
+        job.error_code = None
+        job.error_summary = None
         job.stage = "queued"
 
     session.commit()

@@ -548,6 +548,9 @@ def upgrade() -> None:
                     worker_id = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE worker_id END,
                     lease_expires_at = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE lease_expires_at END,
                     started_at = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE started_at END,
+                    completed_at = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE completed_at END,
+                    error_code = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE p_error_code END,
+                    error_summary = CASE WHEN p_retryable AND attempt_count < max_attempts THEN NULL ELSE p_error_summary END,
                     stage = CASE WHEN p_retryable AND attempt_count < max_attempts THEN 'queued' ELSE 'completed' END,
                     updated_at = clock_timestamp()
                 WHERE id = p_job_id
