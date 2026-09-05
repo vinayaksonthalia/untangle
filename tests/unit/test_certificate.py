@@ -167,6 +167,25 @@ def test_uncanonicalizable_object_report_fails_without_raising(monkeypatch):
         assert result["ok"] is False
 
 
+def test_uncanonicalizable_certificate_body_fails_without_raising(monkeypatch):
+    """The certificate BODY (not just the attached report) being non-canonicalizable must fail
+    closed with a clear error and never raise. This exercises the certificate-body guard
+    specifically: the existing report-path test would still pass if that guard were removed,
+    so a distinct test is required (Qodo #71)."""
+    monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
+
+    cyclic: dict = {"period": "2026-06"}
+    cyclic["self"] = cyclic  # circular reference -> json.dumps raises ValueError
+    non_serializable = {"period": "2026-06", "tags": {1, 2, 3}}  # a set -> json.dumps raises TypeError
+
+    for bad_body in (cyclic, non_serializable):
+        env = issue_certificate(_report())
+        env["certificate"] = bad_body  # corrupt the body the guard canonicalizes
+        result = verify_certificate(env)  # must not raise
+        assert result["ok"] is False
+        assert result["error"] == "certificate body is not canonical JSON"
+
+
 def test_absent_report_keeps_standalone_certificate_valid(monkeypatch):
     """A fully absent `report` key retains standalone-certificate behaviour (binding not applicable)."""
     monkeypatch.delenv("UNTANGLE_SIGNING_KEY", raising=False)
