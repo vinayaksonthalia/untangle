@@ -17,6 +17,7 @@ COPY eval ./eval
 COPY ui ./ui
 COPY webapp ./webapp
 COPY generator ./generator
+COPY persistence ./persistence
 COPY mcp_server.py ./
 
 RUN pip install --upgrade pip && pip install -e ".[web,mcp]"
