@@ -18,7 +18,7 @@ from persistence.repositories.artifact import (
     save_uploaded_file_metadata,
 )
 from persistence.repositories.audit import append_audit_event
-from persistence.repositories.certificate import save_certificate
+from persistence.repositories.certificate import get_certificate_by_run_id, save_certificate
 from persistence.repositories.investigation import save_investigations
 from persistence.repositories.result import save_result
 from persistence.repositories.run import (
@@ -168,13 +168,21 @@ class TenantReconciliationService:
                         raise InvalidRunStateError(
                             "A completed run cannot be replaced by different output."
                         )
-                    return {
-                        "run_public_id": run_public_id,
-                        "report": report,
-                        "certificate": cert_envelope,
-                        "presentation": presentation,
-                        "report_sha256": report_sha256,
-                    }
+                    # Idempotent retry: return the certificate persisted at first completion,
+                    # never a freshly re-issued one (ECDSA re-signing would change the
+                    # signature for identical inputs).
+                    return self._authoritative_completed_result(
+                        uow.session, context, run_id, run_public_id, report, report_sha256
+                    )
+                if locked_run.status in ("failed", "aborted"):
+                    # A concurrent worker already recorded this run as terminal. Do not
+                    # complete it, and do NOT fall through to failure recording — that would
+                    # overwrite the original failure diagnostics and append a duplicate
+                    # immutable run.failed audit event.
+                    raise InvalidRunStateError(
+                        f"Run {run_public_id} is already {locked_run.status}; refusing to complete "
+                        "or overwrite a terminal run."
+                    )
 
                 # Persist canonical results
                 save_result(
@@ -257,8 +265,13 @@ class TenantReconciliationService:
                     ),
                 )
 
+        except InvalidRunStateError:
+            # Expected lifecycle conflict: the run is missing, already terminal, or a
+            # completed run diverged. This attempt persisted nothing, so never rewrite the
+            # run's failure state or append a duplicate audit event — just surface it.
+            raise
         except Exception as exc:
-            # Handle failure during Phase 3
+            # Handle unexpected failure during Phase 3
             try:
                 self._record_failure(
                     context,
@@ -271,6 +284,47 @@ class TenantReconciliationService:
                 exc.add_note(str(record_error))
             raise
 
+        return {
+            "run_public_id": run_public_id,
+            "report": report,
+            "certificate": cert_envelope,
+            "presentation": presentation,
+            "report_sha256": report_sha256,
+        }
+
+    def _authoritative_completed_result(
+        self,
+        session: Session,
+        context: TenantContext,
+        run_id: int,
+        run_public_id: str,
+        report: dict[str, Any],
+        report_sha256: str,
+    ) -> dict[str, Any]:
+        """Return the result of an already-completed run for an idempotent retry.
+
+        Reads the certificate stored at first completion instead of recomputing it, so a
+        retry with identical inputs returns the authoritative (identical) envelope rather
+        than a freshly re-signed one. The deterministic report is recomputed identically.
+        """
+        from webapp.presentation import build_presentation_payload
+
+        stored = get_certificate_by_run_id(session, context, run_id)
+        if stored is None:
+            raise InvalidRunStateError(
+                "The completed run is missing its persisted certificate; refusing to "
+                "fabricate one."
+            )
+        cert_envelope: dict[str, Any] = {
+            "certificate": stored.certificate_json,
+            "content_sha256": stored.content_sha256,
+            "signed": stored.is_signed,
+        }
+        if stored.signature is not None:
+            cert_envelope["signature"] = stored.signature
+        if stored.public_key_pem is not None:
+            cert_envelope["public_key_pem"] = stored.public_key_pem
+        presentation = build_presentation_payload(report, certificate=cert_envelope)
         return {
             "run_public_id": run_public_id,
             "report": report,

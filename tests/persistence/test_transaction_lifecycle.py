@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
@@ -17,7 +18,14 @@ from persistence.models import (
     ReconciliationRun,
     UploadedFileMetadata,
 )
-from persistence.repositories.run import complete_run, fail_run, get_run_by_public_id
+from persistence.repositories.audit import append_audit_event
+from persistence.repositories.run import (
+    InvalidRunStateError,
+    complete_run,
+    create_run,
+    fail_run,
+    get_run_by_public_id,
+)
 from persistence.service import TenantReconciliationService
 from persistence.uow import UnitOfWork
 
@@ -190,6 +198,144 @@ def test_complete_run_is_idempotent(
         assert run is not None
         idempotent_run = complete_run(uow.session, ctx, run.id)
         assert idempotent_run.status == "completed"
+
+
+def test_service_retry_on_completed_run_returns_persisted_certificate(
+    session_factory: sessionmaker[Session],
+    tenant_a: tuple[TenantContext, int],
+    sample_file_bytes: tuple[bytes, bytes, bytes],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The completed-run recovery branch in execute_reconciliation must return the
+    certificate persisted at first completion, not a freshly re-issued one, and must not
+    write duplicate completion rows or audit events."""
+    ctx, org_id = tenant_a
+    bank_bytes, recon_bytes, ledger_bytes = sample_file_bytes
+
+    service = TenantReconciliationService(session_factory)
+    first = service.execute_reconciliation(ctx, bank_bytes, recon_bytes, ledger_bytes)
+    run_public_id = first["run_public_id"]
+    persisted_content_sha = first["certificate"]["content_sha256"]
+
+    with UnitOfWork(session_factory, ctx) as uow:
+        run = get_run_by_public_id(uow.session, ctx, run_public_id)
+        assert run is not None
+        run_id = run.id
+
+    # Simulate a Phase-3 retry that resumes the SAME already-completed run: Phase 1 already
+    # ran (skip its writes), and the engine "recomputes" a DIFFERENT certificate so we can
+    # prove the persisted one — not the recomputed one — is returned.
+    import persistence.service as service_mod
+
+    monkeypatch.setattr(
+        service_mod,
+        "create_run",
+        lambda session, context, **kw: SimpleNamespace(id=run_id, public_id=run_public_id),
+    )
+    monkeypatch.setattr(service_mod, "save_uploaded_file_metadata", lambda *a, **k: None)
+    monkeypatch.setattr(service_mod, "append_audit_event", lambda *a, **k: None)
+    tampered = {"certificate": {"tampered": True}, "content_sha256": "0" * 64, "signed": False}
+    monkeypatch.setattr(service_mod, "issue_certificate", lambda report: tampered)
+
+    retry = service.execute_reconciliation(ctx, bank_bytes, recon_bytes, ledger_bytes)
+
+    # The authoritative persisted certificate is returned, never the recomputed/tampered one.
+    assert retry["certificate"]["content_sha256"] == persisted_content_sha
+    assert retry["certificate"]["content_sha256"] != "0" * 64
+
+    # No duplicate one-to-one completion rows and no second run.completed audit event.
+    with UnitOfWork(session_factory, ctx) as uow:
+        certs = list(
+            uow.session.scalars(
+                select(CertificateRecord).where(CertificateRecord.run_id == run_id)
+            ).all()
+        )
+        assert len(certs) == 1
+        results = list(
+            uow.session.scalars(
+                select(ReconciliationResult).where(ReconciliationResult.run_id == run_id)
+            ).all()
+        )
+        assert len(results) == 1
+        completed_events = list(
+            uow.session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.subject_public_id == run_public_id,
+                    AuditEvent.event_type == "run.completed",
+                )
+            ).all()
+        )
+        assert len(completed_events) == 1
+
+
+def test_service_completion_does_not_overwrite_terminal_failed_run(
+    session_factory: sessionmaker[Session],
+    tenant_a: tuple[TenantContext, int],
+    sample_file_bytes: tuple[bytes, bytes, bytes],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If a run is already failed/aborted, a later completion attempt must refuse and must
+    NOT overwrite the original failure diagnostics or append a duplicate run.failed event."""
+    ctx, org_id = tenant_a
+    bank_bytes, recon_bytes, ledger_bytes = sample_file_bytes
+
+    # Create a run, fail it with known diagnostics, and record its single run.failed event.
+    with UnitOfWork(session_factory, ctx) as uow:
+        run = create_run(uow.session, ctx)
+        run_id = run.id
+        run_public_id = run.public_id
+    with UnitOfWork(session_factory, ctx) as uow:
+        fail_run(
+            uow.session,
+            ctx,
+            run_id,
+            error_code="ORIGINAL_FAILURE",
+            error_summary="original diagnostics",
+        )
+        append_audit_event(
+            uow.session,
+            ctx,
+            event_type="run.failed",
+            subject_type="reconciliation_run",
+            subject_public_id=run_public_id,
+            metadata_json={"error_code": "ORIGINAL_FAILURE"},
+        )
+    with UnitOfWork(session_factory, ctx) as uow:
+        r = get_run_by_public_id(uow.session, ctx, run_public_id)
+        assert r is not None and r.status == "failed"
+        original_failed_at = r.failed_at
+
+    # Force a completion attempt to resume this already-terminal run.
+    import persistence.service as service_mod
+
+    monkeypatch.setattr(
+        service_mod,
+        "create_run",
+        lambda session, context, **kw: SimpleNamespace(id=run_id, public_id=run_public_id),
+    )
+    monkeypatch.setattr(service_mod, "save_uploaded_file_metadata", lambda *a, **k: None)
+    # append_audit_event stays REAL so a duplicate would actually be recorded if the bug existed.
+
+    service = TenantReconciliationService(session_factory)
+    with pytest.raises(InvalidRunStateError):
+        service.execute_reconciliation(ctx, bank_bytes, recon_bytes, ledger_bytes)
+
+    with UnitOfWork(session_factory, ctx) as uow:
+        r = get_run_by_public_id(uow.session, ctx, run_public_id)
+        assert r is not None
+        assert r.status == "failed"
+        assert r.error_code == "ORIGINAL_FAILURE"  # not overwritten by PERSISTENCE_FAILURE
+        assert r.error_summary == "original diagnostics"
+        assert r.failed_at == original_failed_at  # original timestamp preserved
+        failed_events = list(
+            uow.session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.subject_public_id == run_public_id,
+                    AuditEvent.event_type == "run.failed",
+                )
+            ).all()
+        )
+        assert len(failed_events) == 1  # no duplicate immutable audit event
 
 
 def test_engine_failure_transitions_run_to_failed(
