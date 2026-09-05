@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="brand/untangle_wordmark_dark.svg" alt="untangle" width="360" />
+# untangle
 
 **Close your Razorpay settlement books — with proof, not guesses.**
 
