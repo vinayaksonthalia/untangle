@@ -11,7 +11,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from engine.certificate import _canonical, issue_certificate
+from engine.certificate import _canonical, certificate_note, issue_certificate
 from persistence.context import TenantContext
 from persistence.repositories.artifact import (
     save_artifact_metadata,
@@ -319,6 +319,10 @@ class TenantReconciliationService:
             "certificate": stored.certificate_json,
             "content_sha256": stored.content_sha256,
             "signed": stored.is_signed,
+            # Reproduce the authoritative trust guidance issue_certificate emits. It is a pure
+            # function of the signed state, so this reconstructs the identical envelope without
+            # re-issuing (and re-signing) the certificate.
+            "note": certificate_note(signed=stored.is_signed),
         }
         if stored.signature is not None:
             cert_envelope["signature"] = stored.signature

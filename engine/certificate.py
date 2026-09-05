@@ -83,9 +83,33 @@ def public_key_pem() -> str | None:
     ).decode()
 
 
+def certificate_note(signed: bool) -> str:
+    """The human-readable trust guidance for a certificate envelope.
+
+    A pure function of the signed/unsigned state — no signature bytes involved — so it can
+    be reproduced deterministically when reconstructing a persisted envelope (e.g. on an
+    idempotent retry) without re-issuing the certificate.
+    """
+    if signed:
+        return (
+            "ECDSA (P-256) signed and tamper-evident. Re-derive the SHA-256 hash and check the "
+            "signature against this deployment's pinned issuer key — a tampered field breaks the "
+            "hash, a forgery fails the signature. Packet checks can be re-run against the attached "
+            "bound report; this does not re-audit the original bank, settlement, or ledger source files."
+        )
+    # Honest framing (from the Lethe pattern): by default this is a tamper-evident content hash,
+    # not a cryptographic signature — and untangle's real proof is that every verdict is
+    # re-derivable from the source files (re-run the verifier), never "trust our attestation".
+    return (
+        "Tamper-evident content hash (SHA-256) over the certificate. Not a cryptographic "
+        "signature. Packet checks can be re-run against the attached bound report; this does not "
+        "re-audit the original bank, settlement, or ledger source files."
+    )
+
+
 def issue_certificate(report: dict) -> dict:
     """Build → content-hash → (optionally) sign a close certificate into a portable envelope:
-        {certificate, content_sha256, signature?, public_key_pem?}
+        {certificate, content_sha256, note, signature?, public_key_pem?}
     The content hash is always present (tamper-evident); the ECDSA signature is added only when the
     crypto extra is installed and $UNTANGLE_SIGNING_KEY is set. Fully deterministic."""
     cert = build_close_certificate(report)
@@ -97,14 +121,7 @@ def issue_certificate(report: dict) -> dict:
         "certificate": cert,
         "content_sha256": hashlib.sha256(body).hexdigest(),
         "signed": False,
-        # Honest framing (from the Lethe pattern): by default this is a tamper-evident content hash,
-        # not a cryptographic signature — and untangle's real proof is that every verdict is
-        # re-derivable from the source files (re-run the verifier), never "trust our attestation".
-        "note": (
-            "Tamper-evident content hash (SHA-256) over the certificate. Not a cryptographic "
-            "signature. Packet checks can be re-run against the attached bound report; this does not "
-            "re-audit the original bank, settlement, or ledger source files."
-        ),
+        "note": certificate_note(signed=False),
     }
     key = _signing_key()
     if key is not None:
@@ -112,12 +129,7 @@ def issue_certificate(report: dict) -> dict:
         envelope["signature"] = base64.b64encode(sig).decode()
         envelope["public_key_pem"] = public_key_pem()
         envelope["signed"] = True
-        envelope["note"] = (
-            "ECDSA (P-256) signed and tamper-evident. Re-derive the SHA-256 hash and check the "
-            "signature against this deployment's pinned issuer key — a tampered field breaks the "
-            "hash, a forgery fails the signature. Packet checks can be re-run against the attached "
-            "bound report; this does not re-audit the original bank, settlement, or ledger source files."
-        )
+        envelope["note"] = certificate_note(signed=True)
     return envelope
 
 

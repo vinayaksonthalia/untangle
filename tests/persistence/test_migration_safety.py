@@ -9,7 +9,59 @@ from pathlib import Path
 
 import pytest
 
-from persistence.migrate import get_alembic_config, get_migration_provenance
+from persistence.migrate import (
+    get_alembic_config,
+    get_head_revision,
+    get_migration_provenance,
+)
+
+
+def test_migration_apis_resolve_from_any_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: get_alembic_config pins an absolute script_location, so provenance and head
+    discovery work even when the process working directory is not the repository root. Under the
+    previous relative script_location, ScriptDirectory.from_config resolved against the CWD and
+    failed outside the repo root."""
+    monkeypatch.chdir(tmp_path)
+    provenance = get_migration_provenance()
+    assert provenance["revision"] == "0001_initial_tenant_schema"
+    assert get_head_revision() == "0001_initial_tenant_schema"
+
+
+def test_fresh_provisioning_defers_data_table_grants_to_migration() -> None:
+    """Regression: on a fresh database the tenant-table grants must not run before Alembic
+    creates the tables (that aborts setup with missing-relation errors). The provisioning script
+    guards those grants behind a to_regclass() existence check, and the initial migration issues
+    the authoritative grants after creating the tables."""
+    root = Path(__file__).resolve().parents[2]
+    provisioning = (root / "scripts/provision_db_roles.sql").read_text()
+    migration = (
+        root / "migrations/versions/0001_initial_tenant_schema.py"
+    ).read_text()
+
+    data_tables = [
+        "reconciliation_runs",
+        "uploaded_file_metadata",
+        "investigations",
+        "artifact_metadata",
+        "reconciliation_results",
+        "certificates",
+        "audit_events",
+    ]
+    guard = "IF to_regclass('public.reconciliation_runs') IS NOT NULL THEN"
+    assert guard in provisioning
+    before_guard, guarded_region = provisioning.split(guard, 1)
+    for table in data_tables:
+        grant_fragment = f"ON {table} TO untangle_app"
+        # Every tenant-table grant lives only inside the existence-guarded block...
+        assert grant_fragment in guarded_region
+        # ...and never runs unconditionally before the guard on a fresh database.
+        assert grant_fragment not in before_guard
+
+    # The migration issues the authoritative grants after the tables are created.
+    assert "GRANT SELECT, INSERT, UPDATE, DELETE ON {_crud_table} TO untangle_app" in migration
+    assert "GRANT SELECT, INSERT ON {_append_only_table} TO untangle_app" in migration
 
 
 def test_migration_provenance_is_repository_derived() -> None:
