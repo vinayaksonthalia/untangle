@@ -29,6 +29,9 @@ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_maintenance') THEN
         RAISE EXCEPTION 'Required role untangle_maintenance has not been provisioned';
     END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_worker') THEN
+        RAISE EXCEPTION 'Required role untangle_worker has not been provisioned';
+    END IF;
 END;
 $$;
 
@@ -37,11 +40,11 @@ $$;
 GRANT untangle_fn_owner TO untangle_migrator;
 
 ALTER SCHEMA public OWNER TO untangle_migrator;
-GRANT USAGE ON SCHEMA public TO untangle_app, untangle_auth, untangle_maintenance;
+GRANT USAGE ON SCHEMA public TO untangle_app, untangle_auth, untangle_maintenance, untangle_worker;
 
 -- Prevent arbitrary table or function creation by unprivileged roles
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-REVOKE CREATE ON SCHEMA public FROM untangle_app, untangle_auth, untangle_maintenance;
+REVOKE CREATE ON SCHEMA public FROM untangle_app, untangle_auth, untangle_maintenance, untangle_worker;
 
 -- 4. Explicit Per-Table Grants for Runtime Application Role
 -- Control-plane access is deliberately not granted to the data-plane role.
@@ -64,6 +67,12 @@ BEGIN
         EXECUTE 'GRANT SELECT, INSERT ON reconciliation_results TO untangle_app';
         EXECUTE 'GRANT SELECT, INSERT ON certificates TO untangle_app';
         EXECUTE 'GRANT SELECT, INSERT ON audit_events TO untangle_app';
+    END IF;
+    IF to_regclass('public.reconciliation_jobs') IS NOT NULL THEN
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON reconciliation_jobs TO untangle_app';
+    END IF;
+    IF to_regclass('public.idempotency_records') IS NOT NULL THEN
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON idempotency_records TO untangle_app';
     END IF;
 END;
 $$;

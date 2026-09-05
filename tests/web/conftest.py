@@ -161,6 +161,68 @@ def tenant_a(seed_session_factory: sessionmaker[Session]) -> tuple[TenantContext
     return ctx, org_id
 
 
+@pytest.fixture
+def tenant_b(seed_session_factory: sessionmaker[Session]) -> tuple[TenantContext, int]:
+    from persistence.repositories.control_plane import (
+        create_membership,
+        create_organisation,
+        create_principal,
+        issue_tenant_context,
+    )
+
+    with seed_session_factory() as seed:
+        org = create_organisation(seed, "Organisation Beta Web")
+        user = create_principal(seed, "bob@beta.test", "Bob Beta")
+        create_membership(seed, org.id, user.id, Role.OWNER)
+        seed.commit()
+
+        ctx = issue_tenant_context(seed, user.id, org.id, request_id="req_beta_web_001")
+        org_id = org.id
+    return ctx, org_id
+
+
+@pytest.fixture
+def sample_file_bytes() -> tuple[bytes, bytes, bytes]:
+    """Load sample dataset files for web testing."""
+    data_dir = "data"
+    bank_p = os.path.join(data_dir, "bank_statement.csv")
+    recon_p = os.path.join(data_dir, "recon_report.json")
+    ledger_p = os.path.join(data_dir, "order_ledger.csv")
+
+    if not (os.path.exists(bank_p) and os.path.exists(recon_p) and os.path.exists(ledger_p)):
+        import tempfile
+
+        from generator.config import Config
+        from generator.demo_dataset import write_demo_dataset
+
+        tmp = tempfile.mkdtemp()
+        base = write_demo_dataset(tmp, Config())
+        bank_p = os.path.join(base, "bank_statement.csv")
+        recon_p = os.path.join(base, "recon_report.json")
+        ledger_p = os.path.join(base, "order_ledger.csv")
+
+    with open(bank_p, "rb") as f:
+        b_data = f.read()
+    with open(recon_p, "rb") as f:
+        r_data = f.read()
+    with open(ledger_p, "rb") as f:
+        l_data = f.read()
+    return b_data, r_data, l_data
+
+
+def auth_headers(
+    raw_token: str, secret_key: str = "test-secret-key-12345678901234567890"
+) -> dict[str, str]:
+    from auth.crypto import generate_csrf_token, hash_token
+
+    token_hash = hash_token(raw_token)
+    csrf_token = generate_csrf_token(secret_key, token_hash)
+    return {
+        "Origin": "http://localhost:8080",
+        "X-CSRF-Token": csrf_token,
+    }
+
+
 @pytest.fixture(scope="session")
 def client() -> Generator[TestClient, None, None]:
     with TestClient(app, base_url="http://localhost:8080") as c:

@@ -13,12 +13,18 @@ from sqlalchemy.orm import Session
 from persistence.context import TenantContext
 from persistence.ids import PREFIX_RUN, generate_public_id
 from persistence.models import ReconciliationRun
+from persistence.repositories.audit import append_audit_event
 from persistence.repositories.base import RecordNotFoundError, scoped_select
+from persistence.repositories.cursor import decode_cursor, encode_cursor
 from persistence.uow import insert_with_public_id_retry
 
 
 class InvalidRunStateError(Exception):
     """Raised when an illegal run lifecycle transition is attempted."""
+
+
+class RunUnderLegalHoldError(InvalidRunStateError):
+    """Raised when an operation is blocked by an active legal hold."""
 
 
 def create_run(
@@ -40,6 +46,8 @@ def create_run(
             status="initiated",
             config_json=config_json,
             started_at=now,
+            created_at=now,
+            updated_at=now,
             is_deleted=False,
         ),
         expected_constraint="reconciliation_runs_public_id_key",
@@ -77,15 +85,53 @@ def list_runs(
     return list(session.scalars(stmt).all())
 
 
+def list_runs_cursor(
+    session: Session,
+    context: TenantContext,
+    *,
+    limit: int = 50,
+    cursor: str | None = None,
+) -> tuple[list[ReconciliationRun], str | None]:
+    """List runs for the current tenant using stable cursor pagination (created_at DESC, id DESC)."""
+    stmt = scoped_select(ReconciliationRun, context).where(ReconciliationRun.is_deleted.is_(False))
+
+    if cursor:
+        cursor_dt, cursor_id = decode_cursor(cursor)
+        stmt = stmt.where(
+            (ReconciliationRun.created_at < cursor_dt)
+            | ((ReconciliationRun.created_at == cursor_dt) & (ReconciliationRun.id < cursor_id))
+        )
+
+    stmt = stmt.order_by(ReconciliationRun.created_at.desc(), ReconciliationRun.id.desc()).limit(
+        limit + 1
+    )
+
+    rows = list(session.scalars(stmt).all())
+    next_cursor = None
+    if len(rows) > limit:
+        rows = rows[:limit]
+        last_row = rows[-1]
+        next_cursor = encode_cursor(last_row.created_at, last_row.id)
+
+    return rows, next_cursor
+
+
 def lock_run_for_update(
-    session: Session, context: TenantContext, run_id: int
+    session: Session,
+    context: TenantContext,
+    run_id: int | None = None,
+    *,
+    public_id: str | None = None,
 ) -> ReconciliationRun | None:
     """Lock a run row FOR UPDATE, scoped to the current tenant."""
-    return session.scalar(
-        scoped_select(ReconciliationRun, context)
-        .where(ReconciliationRun.id == run_id)
-        .with_for_update()
-    )
+    stmt = scoped_select(ReconciliationRun, context)
+    if run_id is not None:
+        stmt = stmt.where(ReconciliationRun.id == run_id)
+    elif public_id is not None:
+        stmt = stmt.where(ReconciliationRun.public_id == public_id)
+    else:
+        raise ValueError("Must provide either run_id or public_id")
+    return session.scalar(stmt.with_for_update())
 
 
 def complete_run(
@@ -179,10 +225,44 @@ def fail_run(
 def soft_delete_run(session: Session, context: TenantContext, public_id: str) -> bool:
     """Soft-delete a run by public ID within the tenant scope."""
     context.require_run_mutation("delete")
-    run = get_run_by_public_id(session, context, public_id)
-    if run is None:
+    run = lock_run_for_update(session, context, public_id=public_id)
+    if run is None or run.is_deleted:
         return False
+    if run.legal_hold:
+        raise RunUnderLegalHoldError(f"Run {public_id} is under legal hold and cannot be deleted.")
     run.is_deleted = True
     run.deleted_at = datetime.now(UTC)
+    append_audit_event(
+        session,
+        context,
+        event_type="run.deleted",
+        subject_type="reconciliation_run",
+        subject_public_id=run.public_id,
+        metadata_json={"deleted_at": run.deleted_at.isoformat()},
+    )
     session.flush()
     return True
+
+
+def set_run_legal_hold(
+    session: Session,
+    context: TenantContext,
+    public_id: str,
+    legal_hold: bool,
+) -> ReconciliationRun:
+    """Set or release legal hold on a reconciliation run."""
+    context.require_run_mutation("legal_hold")
+    run = lock_run_for_update(session, context, public_id=public_id)
+    if run is None or run.is_deleted:
+        raise RecordNotFoundError(f"Run {public_id} not found")
+    run.legal_hold = legal_hold
+    append_audit_event(
+        session,
+        context,
+        event_type="run.legal_hold_placed" if legal_hold else "run.legal_hold_released",
+        subject_type="reconciliation_run",
+        subject_public_id=run.public_id,
+        metadata_json={"legal_hold": legal_hold},
+    )
+    session.flush()
+    return run

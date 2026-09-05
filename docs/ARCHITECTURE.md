@@ -171,3 +171,35 @@ dominates; capped at 0.99).
 - **Prompt-retaining models** (e.g. a free stealth model) are fine for synthetic + masked
   data, but real merchant data must never be sent to one — deterministic path or a
   non-retaining provider only.
+
+
+## Enterprise Multi-Tenant & Asynchronous Storage Architecture
+
+Untangle incorporates an enterprise-grade multi-tenant persistence layer (`persistence/`) and background worker pipeline:
+
+### 1. Database Role Separation & Row-Level Security
+PostgreSQL operations enforce least privilege across four isolated database roles:
+- `untangle_fn_owner`: Owns privileged `SECURITY DEFINER` claim, session minting, and mutex functions.
+- `untangle_app`: Application role subjected to forced Row-Level Security (RLS) via `app.current_tenant_id`. Denied direct mutation of control-plane tables.
+- `untangle_worker`: Dedicated background processing role with permissions to claim queued jobs across tenants atomically.
+- `untangle_auth`: Dedicated authentication role for OIDC session creation and principal provisioning.
+
+### 2. Durable Asynchronous Worker & Attempt Fencing
+Large reconciliation runs are decoupled from HTTP request cycles:
+- **Atomic Job Claiming**: Worker executes `fn_job_claim_next` (`SELECT ... FOR UPDATE SKIP LOCKED`), returning a scoped lease token (`attempt_token`) and lease generation.
+- **Heartbeat & Leases**: Worker maintains an active background thread updating `last_heartbeat_at`. If a worker dies, expired leases are reclaimed cleanly.
+- **Attempt Fencing**: State transitions verify both `attempt_token` and `lease_generation`. Stale workers whose leases expired are prevented from committing results.
+- **Single Completion Transaction**: At job conclusion, the worker executes a single transactional commit that updates job status, run status, generates audit records, and registers uploaded/generated artifacts under tenant RLS.
+
+### 3. Private Immutable S3 Object Storage
+- File uploads (`bank_statement`, `recon_report`, `order_ledger`) and engine artifacts (`presentation_json`, `report_json`, `certificate_json`, `journal_tally_xml`) are stored in private S3 or MinIO buckets.
+- Key prefixes follow strict tenant scoping: `tenants/{org_public_id}/runs/{run_public_id}/{artifact_type}_{hash}.bin`.
+- Artifact metadata records SHA-256 digests, byte sizes, and S3 ETags, guaranteeing byte-level auditability.
+
+### 4. Untany Advisory Agent
+The conversational agent (`webapp/agent_service.py`) operates under strict compliance boundaries:
+- **Refusal on Mutating Intent**: Prompts requesting journal approvals, ledger changes, fund transfers, or close certification are immediately refused (`status: "refused"`).
+- **Factual Evidence Snapshot**: Answers are resolved strictly against an immutable snapshot of reconciliation totals, payment rails, recoverable fee-GST, and certificates.
+- **Explicit Abstention**: Out-of-domain or ambiguous queries trigger explicit abstention rather than generative hallucinations.
+- **Mandatory Disclaimer**: Every response carries an advisory notice reminding controllers that numbers are verifiable in the canonical report.
+

@@ -23,7 +23,9 @@ RUN_PERMISSIONS: dict[str, frozenset[Role]] = {
     "create": frozenset({Role.OWNER, Role.ADMIN, Role.OPERATOR}),
     "complete": frozenset({Role.OWNER, Role.ADMIN, Role.OPERATOR}),
     "fail": frozenset({Role.OWNER, Role.ADMIN, Role.OPERATOR}),
+    "cancel": frozenset({Role.OWNER, Role.ADMIN, Role.OPERATOR}),
     "delete": frozenset({Role.OWNER, Role.ADMIN}),
+    "legal_hold": frozenset({Role.OWNER, Role.ADMIN}),
 }
 
 

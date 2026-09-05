@@ -129,9 +129,7 @@ def test_fresh_provisioning_then_migration_grants_exact_privileges() -> None:
         #    authoritative grants.
         from persistence.migrate import upgrade_head
 
-        migrator_url = make_url(_URL).set(
-            username=MIGRATOR, password=MIGRATOR_PW, database=test_db
-        )
+        migrator_url = make_url(_URL).set(username=MIGRATOR, password=MIGRATOR_PW, database=test_db)
         upgrade_head(migrator_url.render_as_string(hide_password=False))
 
         # 3) The runtime role now holds exactly the intended privileges.

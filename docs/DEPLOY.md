@@ -1,98 +1,127 @@
-# Deploy untangle
+# Deploying Untangle
 
-untangle is a single FastAPI app with **zero third-party runtime dependencies** beyond
-`fastapi`/`uvicorn` (everything else is stdlib). Admitted uploads become bounded, immutable byte
-snapshots; the app does not persist them to its filesystem or a database, and no secret is required.
-Any container host works.
+Untangle is designed for dual deployment:
+1. **Public Demo Mode**: Ephemeral in-memory processing. Zero database, zero external storage, zero credentials required.
+2. **Enterprise Hosted Mode**: Fully isolated multi-tenant architecture with PostgreSQL Row-Level Security (RLS), S3/MinIO immutable object storage, asynchronous background workers, and fail-closed health probes.
 
-## Fastest path — Render (free tier)
+---
 
-1. Push this repo to GitHub (already done).
-2. Render dashboard → **New → Blueprint** → select this repo.
-3. Render reads [`render.yaml`](../render.yaml), builds the [`Dockerfile`](../Dockerfile), and gives you a
-   live `https://untangle-*.onrender.com` URL. No env vars to set.
+## 1. Fast Path — Render Blueprint
 
-The health check hits `/` (the landing page). First request after an idle spin-down takes a few
-seconds on the free tier — that is Render cold-start, not the app.
+The easiest way to deploy both the web application, background worker daemon, and managed PostgreSQL instance is via Render's infrastructure-as-code blueprint:
 
-## Public demo safeguards
+1. Push this repository to GitHub.
+2. In Render dashboard: **New → Blueprint** → select your repository.
+3. Render parses [`render.yaml`](../render.yaml) and provisions:
+   - `untangle-web`: FastAPI application service with health check on `/readyz`.
+   - `untangle-worker`: Background worker processing reconciliation jobs.
+   - `untangle-postgres`: PostgreSQL 16 database with multi-tenant schema.
+4. Set S3 environment variables (`UNTANGLE_S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
 
-`/healthz` provides a non-sensitive readiness/version response. The app adds request IDs, latency-only
-structured logs, security headers, per-file upload limits, and bounded JSON verification payloads.
-Per-file limits are enforced while reading multipart parts; aggregate multipart size is enforced by
-counting ASGI body bytes, including chunked or missing-`Content-Length` requests.
-Reconciliation is limited to two worker slots and returns `503` when saturated; a wait beyond 90 seconds
-returns `504`. A timed-out Python thread may finish in the background, so its slot remains occupied until
-it returns and no cancellation is claimed.
+---
 
-Upload/API reconciliation and certificate verification use a small per-IP in-memory limit (20 requests
-per minute). This is suitable for the single-instance demo only; multiple workers/replicas need shared
-rate limiting and concurrency control. The MCP transport remains separately mounted with its protocol
-and CORS behavior.
+## 2. Docker & Container Deployment
 
-The hosted demo may run as a single instance with one worker for predictable resource limits. Private
-results are held in the browser tab's `sessionStorage` bundle; the server retains no private result store.
-During processing, the server necessarily sees uploaded bytes in memory (and may briefly spool multipart
-uploads), then releases them. This is not a promise that engineers cannot access process memory.
-
-## Any Docker host (Fly.io, Cloud Run, a VM)
-
+### 2.1 Public Demo Mode (Single Container)
 ```bash
 docker build -t untangle .
-docker run -p 8080:8080 untangle        # -> http://localhost:8080
+docker run -p 8080:8080 -e UNTANGLE_MODE=demo untangle
+```
+- Listens on `http://localhost:8080`.
+- Supports `/try-sample`, `/app`, `/reconcile`, and public certificate verification.
+- Ephemeral client-side session storage; no data persisted to host disk.
+
+### 2.2 Enterprise Multi-Tenant Mode
+When running in hosted mode, run separate containers for the web API and background worker:
+
+#### Web Service:
+```bash
+docker run -d --name untangle-web -p 8080:8080 \
+  -e UNTANGLE_MODE=hosted \
+  -e DATABASE_URL="postgresql://untangle_app:pass@postgres:5432/untangle" \
+  -e AUTH_DATABASE_URL="postgresql://untangle_auth:pass@postgres:5432/untangle" \
+  -e UNTANGLE_STORAGE_BACKEND=s3 \
+  -e UNTANGLE_S3_BUCKET="my-tenant-storage" \
+  -e AWS_REGION="ap-south-1" \
+  untangle uvicorn webapp.app:create_app --factory --host 0.0.0.0 --port 8080
 ```
 
-The image honours a platform-provided `$PORT` (Fly/Cloud Run set it), defaulting to `8080`.
-It runs as an unprivileged user and ships no build tooling.
+#### Background Worker Service:
+```bash
+docker run -d --name untangle-worker \
+  -e UNTANGLE_MODE=hosted \
+  -e DATABASE_URL="postgresql://untangle_app:pass@postgres:5432/untangle" \
+  -e WORKER_DATABASE_URL="postgresql://untangle_worker:pass@postgres:5432/untangle" \
+  -e UNTANGLE_STORAGE_BACKEND=s3 \
+  -e UNTANGLE_S3_BUCKET="my-tenant-storage" \
+  -e AWS_REGION="ap-south-1" \
+  untangle python -m persistence.worker
+```
 
-## Local, without Docker
+---
+
+## 3. Database Role Provisioning & Migrations
+
+For PostgreSQL deployments, provision the least-privilege roles prior to running migrations:
 
 ```bash
+# Provision roles and RLS policies
+psql -U postgres -d untangle -f scripts/provision_db_roles.sql
+
+# Apply database migrations to head (0003_reconciliation_jobs_and_storage)
+alembic upgrade head
+```
+
+### PostgreSQL Roles:
+- `untangle_fn_owner`: Owner of `SECURITY DEFINER` claim, mutex, and session issuance functions.
+- `untangle_app`: Application role bound to tenant RLS context (`app.current_tenant_id`).
+- `untangle_worker`: Dedicated background worker role with atomic claiming privileges.
+- `untangle_auth`: Isolated authentication role for OIDC session creation.
+
+---
+
+## 4. Health Probes & Monitoring
+
+Untangle exposes three health endpoints:
+
+| Endpoint | Probe Type | Behavior |
+|---|---|---|
+| `GET /livez` | Kubernetes Liveness | Returns `200 OK` (`{"status": "live"}`) if process is responding. |
+| `GET /readyz` | Kubernetes Readiness | Validates database connectivity, migration status, and storage. In hosted mode, returns `503 Service Unavailable` if database is down or unconfigured. |
+| `GET /healthz` | Public Status | Returns application version, commit hash, and engine status. |
+
+---
+
+## 5. Verifying Database Backup & Restoration
+
+Untangle includes an automated script to verify database restoration integrity:
+
+```bash
+# Test restoration from an existing SQLite or PostgreSQL dump
+python scripts/verify_restore.py --database-url "$DATABASE_URL"
+
+# Or verify clean migration cycle in isolated temporary scratch DB
+python scripts/verify_restore.py
+```
+
+The verification script checks:
+- Presence of all 20 core relational schema tables.
+- Alembic head migration (`0003_reconciliation_jobs_and_storage`).
+- Metadata columns (legal hold, reporting periods, S3 storage keys).
+- Foreign key integrity.
+- Cross-tenant RLS query isolation.
+
+---
+
+## 6. Local Development Quickstart
+
+```bash
+# 1. Install dependencies
 pip install -e ".[web]"
-uvicorn webapp.app:app --port 8080 --workers 1       # -> http://localhost:8080
+
+# 2. Start local web server
+uvicorn webapp.app:create_app --factory --port 8080 --reload
+
+# 3. Start local worker (in separate terminal)
+python -m persistence.worker
 ```
-
-## Routes
-
-| Route | What it is |
-|---|---|
-| `/` | Landing page |
-| `/app` | Upload the three files and reconcile |
-| `/try-sample` | Run the seeded sample end-to-end (no upload needed) |
-| `/api/docs` | OpenAPI docs |
-
-`/try-sample` and `/reconcile` return a no-store bootstrap page that writes a bounded result bundle to
-browser-tab `sessionStorage` and then navigates to `/dashboard`. Refreshes preserve the bundle; normal
-tab close clears it, though browser session restore and duplicated tabs may retain or copy it. The UI's
-Clear action removes it explicitly. Legacy `/api/*/current` endpoints return `410 Gone`.
-
-The 4 MiB limit is a tab-storage threshold, not a reconciliation rejection: larger completed
-bundles are returned as a no-store `untangle-results.json` download containing presentation,
-investigations, certificate and Tally XML. If browser storage rejects a smaller bundle, the
-completion page offers the same download. Large bundles are not loaded into the dashboard.
-The printable certificate independently verifies its envelope and renders only fields from
-that certificate, never editable presentation totals. Unsigned hashes do not authenticate an issuer.
-
-This is a breaking browser-route migration from `303` plus a run cookie to `200` HTML plus
-JavaScript navigation. Non-browser integrations should use `/api/reconcile` for report JSON;
-requesting `/dashboard` alone does not populate results. Stored browser data is display data,
-not evidence of authenticity: the Verify screen still checks certificates independently.
-
-### Browser regression check
-
-With a local server on port 8766 and Playwright available in your development environment:
-
-```bash
-node tests/browser/tab_results.cjs
-```
-
-This exercises separate browser profiles uploading distinct synthetic files, independent tabs,
-refresh, certificate downloads, navigation, clearing, corrupt storage, and unavailable storage.
-Generate the normal synthetic `data/` fixtures first; never use private statements for this check.
-Set `UNTANGLE_TEST_URL` to test another local port. Playwright is test tooling, not a runtime dependency.
-
-## Verification status
-
-The `uvicorn` start command in the Dockerfile `CMD` is verified locally — `GET /` and `GET /app`
-both return `200`. The Docker image build itself has **not** been run in this environment (no Docker
-daemon available here); build it once on a machine with Docker before relying on it for the demo.

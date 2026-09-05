@@ -21,6 +21,8 @@ ENV_MIGRATION_DATABASE_URL = "MIGRATION_DATABASE_URL"
 ENV_AUTH_DATABASE_URL = "AUTH_DATABASE_URL"
 # Maintenance database URL (cron retention runner role)
 ENV_MAINTENANCE_DATABASE_URL = "MAINTENANCE_DATABASE_URL"
+# Worker database URL (background worker claim and heartbeat role)
+ENV_WORKER_DATABASE_URL = "WORKER_DATABASE_URL"
 ENV_UNTANGLE_ENV = "UNTANGLE_ENV"
 ENV_UNTANGLE_DEV_MODE = "UNTANGLE_DEV_MODE"
 
@@ -89,6 +91,24 @@ def get_maintenance_database_url() -> str:
             return runtime_url
     raise RuntimeError(
         f"{ENV_MAINTENANCE_DATABASE_URL} must be explicitly configured in persistent hosted/production mode."
+    )
+
+
+def get_worker_database_url() -> str:
+    """Return the worker database URL (untangle_worker role).
+
+    Must NEVER fall back to DATABASE_URL in production or persistent hosted mode.
+    Only in explicit local/test mode is fallback permitted.
+    """
+    worker_url = os.environ.get(ENV_WORKER_DATABASE_URL, "").strip()
+    if worker_url:
+        return worker_url
+    if is_local_or_test_mode():
+        runtime_url = get_database_url()
+        if runtime_url:
+            return runtime_url
+    raise RuntimeError(
+        f"{ENV_WORKER_DATABASE_URL} must be explicitly configured in persistent hosted/production mode."
     )
 
 

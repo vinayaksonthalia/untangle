@@ -22,8 +22,8 @@ def test_migration_apis_resolve_from_a_foreign_working_directory(tmp_path: Path)
     program = (
         "from persistence.migrate import get_migration_provenance, get_head_revision\n"
         "p = get_migration_provenance()\n"
-        "assert p['revision'] == '0002_auth_federation_sessions', p\n"
-        "assert get_head_revision() == '0002_auth_federation_sessions'\n"
+        "assert p['revision'] == '0003_reconciliation_jobs_and_storage', p\n"
+        "assert get_head_revision() == '0003_reconciliation_jobs_and_storage'\n"
         "print('PROVENANCE_OK')\n"
     )
     env = os.environ.copy()
@@ -51,9 +51,7 @@ def test_fresh_provisioning_defers_data_table_grants_to_migration() -> None:
     the authoritative grants after creating the tables."""
     root = Path(__file__).resolve().parents[2]
     provisioning = (root / "scripts/provision_db_roles.sql").read_text()
-    migration = (
-        root / "migrations/versions/0001_initial_tenant_schema.py"
-    ).read_text()
+    migration = (root / "migrations/versions/0001_initial_tenant_schema.py").read_text()
 
     data_tables = [
         "reconciliation_runs",
@@ -83,13 +81,13 @@ def test_migration_provenance_is_repository_derived() -> None:
     provenance = get_migration_provenance()
 
     assert provenance == {
-        "revision": "0002_auth_federation_sessions",
-        "down_revision": "0001_initial_tenant_schema",
-        "source_file": "migrations/versions/0002_auth_federation_sessions.py",
-        "summary": "Authentication, federated identity, sessions, invitations, and server-enforced permissions.",
+        "revision": "0003_reconciliation_jobs_and_storage",
+        "down_revision": "0002_auth_federation_sessions",
+        "source_file": "migrations/versions/0003_reconciliation_jobs_and_storage.py",
+        "summary": "Durable reconciliation jobs, idempotency records, S3 storage metadata, and worker functions.",
         "created_by": "vinayaksonthalia",
-        "created_at": "2026-09-05T09:47:29Z",
-        "source": "docs/AUTHENTICATION_AND_PERMISSIONS.md#entity--ownership-model",
+        "created_at": "2026-09-05T19:45:00Z",
+        "source": "docs/PRODUCT_COMPLETION_ROADMAP.md#phase-3--saved-runs-and-multi-month-workspace",
     }
 
 

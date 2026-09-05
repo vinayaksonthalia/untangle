@@ -58,6 +58,12 @@ def maintenance_db_url(db_url: str) -> str:
 
 
 @pytest.fixture(scope="session")
+def worker_db_url(db_url: str) -> str:
+    """Return the URL for untangle_worker restricted connection."""
+    return os.environ.get("POSTGRES_WORKER_TEST_URL", "").strip() or db_url
+
+
+@pytest.fixture(scope="session")
 def is_postgres(db_url: str) -> bool:
     """Return True if testing against PostgreSQL."""
     return db_url.startswith("postgresql")
@@ -137,6 +143,19 @@ def maintenance_engine(
     role_engine.dispose()
 
 
+@pytest.fixture(scope="session")
+def worker_engine(
+    engine: Engine, worker_db_url: str, is_postgres: bool
+) -> Generator[Engine, None, None]:
+    """Engine using untangle_worker role."""
+    if not is_postgres:
+        yield engine
+        return
+    role_engine = create_db_engine(worker_db_url)
+    yield role_engine
+    role_engine.dispose()
+
+
 @pytest.fixture
 def session_factory(engine: Engine) -> sessionmaker[Session]:
     """Return session factory bound to the test engine."""
@@ -156,6 +175,11 @@ def auth_session_factory(auth_engine: Engine) -> sessionmaker[Session]:
 @pytest.fixture
 def maintenance_session_factory(maintenance_engine: Engine) -> sessionmaker[Session]:
     return create_session_factory(maintenance_engine)
+
+
+@pytest.fixture
+def worker_session_factory(worker_engine: Engine) -> sessionmaker[Session]:
+    return create_session_factory(worker_engine)
 
 
 @pytest.fixture
@@ -207,3 +231,32 @@ def tenant_b(session: Session) -> tuple[TenantContext, int]:
 
     ctx = issue_tenant_context(session, user.id, org.id, request_id="req_beta_001")
     return ctx, org.id
+
+
+@pytest.fixture
+def sample_file_bytes() -> tuple[bytes, bytes, bytes]:
+    """Load sample dataset files for testing."""
+    data_dir = "data"
+    bank_p = os.path.join(data_dir, "bank_statement.csv")
+    recon_p = os.path.join(data_dir, "recon_report.json")
+    ledger_p = os.path.join(data_dir, "order_ledger.csv")
+
+    if not (os.path.exists(bank_p) and os.path.exists(recon_p) and os.path.exists(ledger_p)):
+        import tempfile
+
+        from generator.config import Config
+        from generator.demo_dataset import write_demo_dataset
+
+        tmp = tempfile.mkdtemp()
+        base = write_demo_dataset(tmp, Config())
+        bank_p = os.path.join(base, "bank_statement.csv")
+        recon_p = os.path.join(base, "recon_report.json")
+        ledger_p = os.path.join(base, "order_ledger.csv")
+
+    with open(bank_p, "rb") as f:
+        b_data = f.read()
+    with open(recon_p, "rb") as f:
+        r_data = f.read()
+    with open(ledger_p, "rb") as f:
+        l_data = f.read()
+    return b_data, r_data, l_data
