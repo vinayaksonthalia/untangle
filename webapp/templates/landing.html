@@ -47,7 +47,7 @@ h1,h2,h3{margin:0;font-family:var(--display);letter-spacing:-.035em;text-wrap:ba
 .kbd{display:inline-flex;align-items:center;gap:5px;height:38px;padding:0 11px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-family:var(--mono);font-size:12px;background:var(--panel);cursor:pointer}
 .kbd kbd{font-family:var(--mono);font-size:11px;color:var(--ink);background:var(--ground);border:1px solid var(--line);border-radius:3px;padding:0 4px}
 .brand{font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:-.035em}.brand .b{color:var(--accent)}
-.ah .ln{display:inline-block}.ah.arm .ln{opacity:0;transform:translateY(.18em)}
+.ah .wd{display:inline-block;white-space:nowrap}.ah .ln{display:inline-block}.ah.arm .ln{opacity:0;transform:translateY(.18em)}
 .ah.arm.play .ln{animation:lnArrive .40s cubic-bezier(.22,1,.36,1) both;animation-delay:var(--d,0ms)}
 @keyframes lnArrive{from{opacity:0;transform:translateY(.18em)}to{opacity:1;transform:none}}
 .sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);border:0}
@@ -269,7 +269,7 @@ document.getElementById("theme").onclick=function(){var c=root.getAttribute("dat
 if(!reduce){document.querySelectorAll(".ah[data-ah]").forEach(function(h){
   var full=h.textContent,frag=document.createDocumentFragment();
   (function walk(node,dest){[].slice.call(node.childNodes).forEach(function(n){
-    if(n.nodeType===3){n.textContent.split("").forEach(function(ch){if(ch===" "){dest.appendChild(document.createTextNode(" "));return;}var sp=document.createElement("span");sp.className="ln";sp.textContent=ch;dest.appendChild(sp);});}
+    if(n.nodeType===3){n.textContent.split(/(\s+)/).forEach(function(part){if(part==="")return;if(/^\s+$/.test(part)){dest.appendChild(document.createTextNode(part));return;}var wd=document.createElement("span");wd.className="wd";part.split("").forEach(function(ch){var sp=document.createElement("span");sp.className="ln";sp.textContent=ch;wd.appendChild(sp);});dest.appendChild(wd);});}
     else if(n.nodeType===1){var cl=n.cloneNode(false);cl.className=n.className;walk(n,cl);dest.appendChild(cl);}});})(h,frag);
   var sr=document.createElement("span");sr.className="sr";sr.textContent=full;h.textContent="";h.appendChild(sr);
   var vis=document.createElement("span");vis.setAttribute("aria-hidden","true");vis.appendChild(frag);h.appendChild(vis);
