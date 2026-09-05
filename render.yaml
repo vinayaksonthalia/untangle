@@ -20,10 +20,10 @@ services:
         fromDatabase:
           name: untangle-postgres
           property: connectionString
-      - key: WORKER_DATABASE_URL
-        fromDatabase:
-          name: untangle-postgres
-          property: connectionString
+      - key: AUTH_DATABASE_URL
+        sync: false
+      - key: MAINTENANCE_DATABASE_URL
+        sync: false
       - key: UNTANGLE_STORAGE_BACKEND
         value: "s3"
       - key: UNTANGLE_S3_BUCKET
@@ -44,14 +44,8 @@ services:
     autoDeploy: true
     startCommand: python -m persistence.worker
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: untangle-postgres
-          property: connectionString
       - key: WORKER_DATABASE_URL
-        fromDatabase:
-          name: untangle-postgres
-          property: connectionString
+        sync: false
       - key: UNTANGLE_STORAGE_BACKEND
         value: "s3"
       - key: UNTANGLE_S3_BUCKET

@@ -300,17 +300,12 @@ def upgrade() -> None:
         ),
     )
 
-    # 7. PostgreSQL-Specific: RLS, untangle_worker role, and SECURITY DEFINER functions
+    # 7. PostgreSQL-Specific: RLS and SECURITY DEFINER functions.
+    # Roles are provisioned by the deployment/DBA layer (scripts/provision_db_roles.sql),
+    # never by application migrations.
     if is_postgres:
         op.execute(
             """
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_worker') THEN
-                    CREATE ROLE untangle_worker WITH LOGIN PASSWORD 'untangle_worker_pass' NOBYPASSRLS;
-                END IF;
-            END;
-            $$;
             GRANT USAGE ON SCHEMA public TO untangle_worker;
             REVOKE CREATE ON SCHEMA public FROM untangle_worker;
             REVOKE ALL ON ALL TABLES IN SCHEMA public FROM untangle_worker;

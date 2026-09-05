@@ -119,6 +119,9 @@ async def submit_tenant_reconciliation(
     """Submit reconciliation job with staged private object storage and idempotency guarantee."""
     ctx = get_tenant_context(request)
 
+    if idempotency_key is not None and (not idempotency_key or len(idempotency_key) > 64):
+        raise HTTPException(422, "Idempotency-Key must be between 1 and 64 characters.")
+
     bank_up = bank or bank_statement
     recon_up = recon or recon_report
     ledger_up = ledger or order_ledger

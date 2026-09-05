@@ -198,12 +198,13 @@ def verify_database_schema(db_url: str) -> bool:
                 ctx1,
                 config_json="{}",
             )
-            session.commit()
-
             runs_in_org1 = list_runs(session, ctx1)
             runs_in_org2 = list_runs(session, ctx2)
 
             isolation_ok = len(runs_in_org1) == 1 and len(runs_in_org2) == 0
+            # Verification must be read-only: roll back the isolation fixture
+            # after checking it so a live target gets no synthetic rows.
+            session.rollback()
     except Exception as exc:
         isolation_ok = False
         print(f"         Isolation test exception: {exc}")

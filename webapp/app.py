@@ -404,7 +404,9 @@ def readyz() -> JSONResponse:
     In private/hosted mode, probes database connectivity, schema currency,
     and S3 storage bucket readiness, returning 503 if any subsystem is unready.
     """
-    deploy_mode = os.environ.get("UNTANGLE_DEPLOY_MODE", "demo").strip().lower()
+    # UNTANGLE_MODE is the public deployment setting used by Render and docs;
+    # retain the older name for backwards compatibility.
+    deploy_mode = os.environ.get("UNTANGLE_MODE", os.environ.get("UNTANGLE_DEPLOY_MODE", "demo")).strip().lower()
     if deploy_mode == "demo":
         return JSONResponse({"status": "ready", "mode": "demo"})
 

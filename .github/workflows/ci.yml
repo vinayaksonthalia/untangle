@@ -51,6 +51,7 @@ jobs:
           CREATE ROLE untangle_fn_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
           CREATE ROLE untangle_auth LOGIN PASSWORD 'ci_auth_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
           CREATE ROLE untangle_maintenance LOGIN PASSWORD 'ci_maintenance_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+          CREATE ROLE untangle_worker LOGIN PASSWORD 'ci_worker_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
           ALTER DATABASE untangle_test OWNER TO untangle_migrator;
           GRANT untangle_fn_owner TO untangle_migrator;
           GRANT CONNECT ON DATABASE untangle_test TO untangle_app, untangle_auth, untangle_maintenance;

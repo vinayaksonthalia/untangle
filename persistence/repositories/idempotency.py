@@ -51,6 +51,10 @@ def get_idempotency_record(
     idempotency_key: str,
 ) -> IdempotencyRecord | None:
     """Retrieve an existing idempotency record for this tenant if unexpired."""
+    if not isinstance(idempotency_key, str) or not idempotency_key:
+        raise ValueError("idempotency key must be a non-empty string")
+    if len(idempotency_key) > 64:
+        raise ValueError("idempotency key must be at most 64 characters")
     stmt = scoped_select(IdempotencyRecord, context).where(
         IdempotencyRecord.idempotency_key == idempotency_key
     )
@@ -82,12 +86,33 @@ def save_idempotency_record(
     ttl_hours: int = 24,
 ) -> IdempotencyRecord:
     """Save an idempotency record for a newly accepted job."""
+    if not isinstance(idempotency_key, str) or not idempotency_key:
+        raise ValueError("idempotency key must be a non-empty string")
+    if len(idempotency_key) > 64:
+        raise ValueError("idempotency key must be at most 64 characters")
+    if ttl_hours <= 0:
+        raise ValueError("idempotency TTL must be positive")
     now = datetime.now(UTC)
     expires_at = now + timedelta(hours=ttl_hours)
 
+    # Expired keys are reusable. Remove the old row in the same transaction so
+    # the unique constraint does not turn expiry into a permanent reservation.
+    old = session.scalar(
+        scoped_select(IdempotencyRecord, context).where(
+            IdempotencyRecord.idempotency_key == idempotency_key
+        )
+    )
+    if old is not None:
+        old_exp = old.expires_at
+        if old_exp.tzinfo is None:
+            old_exp = old_exp.replace(tzinfo=UTC)
+        if old_exp < now:
+            session.delete(old)
+            session.flush()
+
     rec = IdempotencyRecord(
         organisation_id=context.organisation_id,
-        idempotency_key=idempotency_key[:64],
+        idempotency_key=idempotency_key,
         request_hash=request_hash,
         job_id=job_id,
         run_id=run_id,

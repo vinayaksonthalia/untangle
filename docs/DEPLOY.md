@@ -38,8 +38,8 @@ When running in hosted mode, run separate containers for the web API and backgro
 ```bash
 docker run -d --name untangle-web -p 8080:8080 \
   -e UNTANGLE_MODE=hosted \
-  -e DATABASE_URL="postgresql://untangle_app:pass@postgres:5432/untangle" \
-  -e AUTH_DATABASE_URL="postgresql://untangle_auth:pass@postgres:5432/untangle" \
+  -e DATABASE_URL="$DATABASE_URL" \
+  -e AUTH_DATABASE_URL="$AUTH_DATABASE_URL" \
   -e UNTANGLE_STORAGE_BACKEND=s3 \
   -e UNTANGLE_S3_BUCKET="my-tenant-storage" \
   -e AWS_REGION="ap-south-1" \
