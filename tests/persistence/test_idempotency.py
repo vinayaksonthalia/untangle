@@ -18,6 +18,7 @@ from persistence.repositories.idempotency import (
 )
 from persistence.service import TenantReconciliationService
 from persistence.storage import LocalStorageBackend
+from persistence.uow import UnitOfWork
 
 
 @pytest.fixture
@@ -107,7 +108,9 @@ def test_expired_idempotency_record_is_cache_miss(
     key = "expired_key_test"
 
     # Seed an expired record
-    with session_factory() as s:
+    with UnitOfWork(session_factory, ctx) as uow:
+        s = uow.session
+        assert s is not None
         rec = IdempotencyRecord(
             organisation_id=org_id,
             idempotency_key=key,
@@ -120,7 +123,7 @@ def test_expired_idempotency_record_is_cache_miss(
             expires_at=datetime.now(UTC) - timedelta(days=1),
         )
         s.add(rec)
-        s.commit()
+        s.flush()
 
         # Query via repository: expired record is ignored
         found = get_idempotency_record(s, ctx, key)

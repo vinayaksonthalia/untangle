@@ -23,7 +23,6 @@ from persistence.repositories.artifact import (
 from persistence.repositories.audit import append_audit_event
 from persistence.repositories.base import RecordNotFoundError
 from persistence.repositories.certificate import get_certificate_by_run_id, save_certificate
-from persistence.repositories.control_plane import get_organisation
 from persistence.repositories.idempotency import (
     IdempotencyCollisionError,
     compute_request_hash,
@@ -469,11 +468,10 @@ class TenantReconciliationService:
         recon_hash = hashlib.sha256(recon_bytes).hexdigest()
         ledger_hash = hashlib.sha256(ledger_bytes).hexdigest()
 
-        # 2. Upload input files to durable storage
-        with UnitOfWork(self.session_factory, context) as uow:
-            assert uow.session is not None
-            org = get_organisation(uow.session, context.organisation_id)
-            org_public_id = org.public_id if org else f"org_{context.organisation_id}"
+        # 2. Upload input files to durable storage. TenantContext deliberately
+        # contains only the authoritative internal id; the data-plane role must
+        # not read control-plane organisations merely to construct a key.
+        org_public_id = f"org_{context.organisation_id}"
 
         upload_run_token = secrets.token_hex(8)
         k_bank = generate_input_object_key(

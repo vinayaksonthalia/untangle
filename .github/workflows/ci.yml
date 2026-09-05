@@ -73,6 +73,7 @@ jobs:
           POSTGRES_CONTROL_TEST_URL: postgresql+psycopg://postgres:postgrespassword@localhost:5432/untangle_test
           POSTGRES_AUTH_TEST_URL: postgresql+psycopg://untangle_auth:ci_auth_password@localhost:5432/untangle_test
           POSTGRES_MAINTENANCE_TEST_URL: postgresql+psycopg://untangle_maintenance:ci_maintenance_password@localhost:5432/untangle_test
+          POSTGRES_WORKER_TEST_URL: postgresql+psycopg://untangle_worker:ci_worker_password@localhost:5432/untangle_test
         run: |
           python -m pytest --cov --cov-report=term-missing
           python -m coverage json

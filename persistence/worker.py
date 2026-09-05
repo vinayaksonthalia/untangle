@@ -39,7 +39,6 @@ from persistence.repositories.artifact import (
 )
 from persistence.repositories.audit import append_audit_event
 from persistence.repositories.certificate import save_certificate
-from persistence.repositories.control_plane import get_organisation
 from persistence.repositories.investigation import save_investigations
 from persistence.repositories.job import (
     JobFencingError,
@@ -209,8 +208,9 @@ class ReconciliationWorker:
                     raise ValueError(f"Run {run_id} not found for organisation {org_id}")
                 run_public_id = run.public_id
 
-                org = get_organisation(uow.session, org_id)
-                org_public_id = org.public_id if org else f"org_{org_id}"
+                # Keep storage names tenant-deterministic without consulting
+                # the control plane from the data-plane worker.
+                org_public_id = f"org_{org_id}"
 
                 uploaded_files = list_uploaded_files_for_run(uow.session, tenant_ctx, run_id)
 
