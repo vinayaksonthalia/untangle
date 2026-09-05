@@ -168,10 +168,10 @@ class OrganisationMembership(Base):
     id: Mapped[int] = mapped_column(IDType, primary_key=True, autoincrement=True)
     public_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     organisation_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False, index=True
+        BigInteger, ForeignKey("organisations.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     principal_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("principals.id", ondelete="CASCADE"), nullable=False, index=True
+        BigInteger, ForeignKey("principals.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     role_code: Mapped[str] = mapped_column(String(32), ForeignKey("roles.code"), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)

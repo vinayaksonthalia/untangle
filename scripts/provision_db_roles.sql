@@ -10,40 +10,33 @@
 --      Cannot ALTER tables, cannot DISABLE TRIGGERS, cannot TRUNCATE records.
 -- =============================================================================
 
--- 1. Create Migration / Schema Owner Role
+-- Credentials and roles must be created by the deployment control plane or DBA.
+-- This repository intentionally does not contain default database passwords.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_migrator') THEN
-        CREATE ROLE untangle_migrator WITH LOGIN PASSWORD 'change_this_migrator_password';
+        RAISE EXCEPTION 'Required role untangle_migrator has not been provisioned';
     END IF;
-END
+END;
 $$;
 
 -- 2. Create Runtime Application Role (Unprivileged, NO SUPERUSER, NO BYPASSRLS)
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_app') THEN
-        CREATE ROLE untangle_app WITH LOGIN PASSWORD 'change_this_runtime_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+        RAISE EXCEPTION 'Required role untangle_app has not been provisioned';
     END IF;
-END
+END;
 $$;
 
--- 3. Database Ownership & Schema Privileges
-ALTER DATABASE untangle OWNER TO untangle_migrator;
-GRANT CONNECT ON DATABASE untangle TO untangle_app;
-
--- Run subsequent commands connected to database 'untangle':
-\c untangle
-
+-- 3. Schema Privileges. The DBA must set database ownership and CONNECT
+-- privileges explicitly for the target database before running this script.
 ALTER SCHEMA public OWNER TO untangle_migrator;
 GRANT USAGE ON SCHEMA public TO untangle_app;
 
 -- 4. Explicit Per-Table Grants for Runtime Application Role
--- Control-Plane: Read-only for identity lookup during tenant bootstrap
-GRANT SELECT ON organisations TO untangle_app;
-GRANT SELECT ON principals TO untangle_app;
-GRANT SELECT ON roles TO untangle_app;
-GRANT SELECT ON organisation_memberships TO untangle_app;
+-- Control-plane access is deliberately not granted to the data-plane role.
+-- Phase 2 must provide a separately authorized bootstrap path after authentication.
 
 -- Tenant Data-Plane: Standard CRUD scoped by Row-Level Security
 GRANT SELECT, INSERT, UPDATE, DELETE ON reconciliation_runs TO untangle_app;

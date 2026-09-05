@@ -70,7 +70,7 @@ To resolve the RLS bootstrap chicken-and-egg problem without circular dependenci
 
 1. **Control-Plane Tables**: `organisations`, `principals`, `roles`, `organisation_memberships`.
    - Access is governed by authenticated principal identity.
-   - Queried by the control-plane repository to discover authorized organisations.
+   - The `untangle_app` data-plane role has no direct grants on these tables. Phase 2 must add a separately authorized bootstrap path to discover organizations after authentication.
 2. **Tenant Data-Plane Tables**: `reconciliation_runs`, `uploaded_file_metadata`, `reconciliation_results`, `investigations`, `certificates`, `artifact_metadata`, `audit_events`.
    - Protected by PostgreSQL Row-Level Security (RLS) and repository query scoping.
 
@@ -185,6 +185,11 @@ SQLSTATE `P0001` (`raise_exception`) distinguishes immutability violations from 
 - `MIGRATION_DATABASE_URL`: Privileged DDL migration connection string (e.g. `postgresql+psycopg://untangle_migrator:pass@localhost:5432/untangle`).
 - If `DATABASE_URL` is unset, Untangle operates in zero-database public demo mode.
 
+Database roles must be created by a DBA or managed deployment control plane before migrations.
+`scripts/provision_db_roles.sql` validates that both roles exist and grants schema/table privileges;
+it never creates credentials or supplies default passwords. The migration role owns the target
+database, while the runtime role is explicitly `NOSUPERUSER NOBYPASSRLS`.
+
 ### Commands
 ```bash
 # Apply migrations to head
@@ -217,6 +222,7 @@ When `DATABASE_URL` is set, application lifespan executes `persistence.migrate.v
 
 - **Authentication is Not Shipped in Phase 1**: Phase 1 establishes the database schema, repositories, and `TenantContext` boundary. User-facing login, registration, invitations, and session cookies belong to Phase 2.
 - **No Private HTTP Routes in Phase 1**: Private persistence is validated through internal service and repository test suites; production private endpoints will be exposed in Phase 2 once authentication is active.
+- **Control-Plane Bootstrap Is Not Yet Exposed**: The runtime data-plane role cannot enumerate principals, memberships, or organisations. Phase 2 must implement the authenticated control-plane boundary before constructing `TenantContext` for HTTP requests.
 - **Raw Object Storage Belongs to Phase 4**: `uploaded_file_metadata` and `artifact_metadata` store file metadata, sizes, and SHA-256 checksums; encrypted cloud object storage for raw statement files is scheduled for Phase 4.
 - **Background Job Execution Belongs to Phase 5**: Background workers (e.g. Celery / asynchronous queues) will be implemented in Phase 5.
 - **LLM Narration Remains Advisory**: AI narration never establishes financial evidence or overrides deterministic verdicts.

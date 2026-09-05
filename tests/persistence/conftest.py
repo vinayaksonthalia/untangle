@@ -34,13 +34,25 @@ def db_url() -> str:
 
 
 @pytest.fixture(scope="session")
+def migration_db_url(db_url: str) -> str:
+    """Return the privileged URL used for migrations and control-plane fixtures."""
+    return os.environ.get("POSTGRES_MIGRATION_TEST_URL", "").strip() or db_url
+
+
+@pytest.fixture(scope="session")
+def control_db_url(migration_db_url: str) -> str:
+    """Return the test-only administrative URL used to seed control-plane records."""
+    return os.environ.get("POSTGRES_CONTROL_TEST_URL", "").strip() or migration_db_url
+
+
+@pytest.fixture(scope="session")
 def is_postgres(db_url: str) -> bool:
     """Return True if testing against PostgreSQL."""
     return db_url.startswith("postgresql")
 
 
 @pytest.fixture(scope="session")
-def engine(db_url: str, is_postgres: bool) -> Generator[Engine, None, None]:
+def engine(db_url: str, migration_db_url: str, is_postgres: bool) -> Generator[Engine, None, None]:
     """Create and prepare test database schema."""
     test_engine = create_db_engine(db_url)
 
@@ -48,7 +60,7 @@ def engine(db_url: str, is_postgres: bool) -> Generator[Engine, None, None]:
         from persistence.migrate import upgrade_head
 
         # Run full Alembic migrations on PostgreSQL
-        upgrade_head(db_url)
+        upgrade_head(migration_db_url)
     else:
         # Create all tables on SQLite
         Base.metadata.create_all(test_engine)
@@ -74,6 +86,19 @@ def engine(db_url: str, is_postgres: bool) -> Generator[Engine, None, None]:
     test_engine.dispose()
 
 
+@pytest.fixture(scope="session")
+def control_engine(
+    engine: Engine, control_db_url: str, is_postgres: bool
+) -> Generator[Engine, None, None]:
+    """Use the privileged connection only to seed the unauthenticated control plane."""
+    if not is_postgres:
+        yield engine
+        return
+    privileged_engine = create_db_engine(control_db_url)
+    yield privileged_engine
+    privileged_engine.dispose()
+
+
 @pytest.fixture
 def session_factory(engine: Engine) -> sessionmaker[Session]:
     """Return session factory bound to the test engine."""
@@ -81,9 +106,14 @@ def session_factory(engine: Engine) -> sessionmaker[Session]:
 
 
 @pytest.fixture
-def session(session_factory: sessionmaker[Session]) -> Generator[Session, None, None]:
+def control_session_factory(control_engine: Engine) -> sessionmaker[Session]:
+    return create_session_factory(control_engine)
+
+
+@pytest.fixture
+def session(control_session_factory: sessionmaker[Session]) -> Generator[Session, None, None]:
     """Provide a clean session wrapped in an outer transaction for isolation."""
-    sess = session_factory()
+    sess = control_session_factory()
     yield sess
     sess.rollback()
     sess.close()
