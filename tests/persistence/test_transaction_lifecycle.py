@@ -242,6 +242,12 @@ def test_service_retry_on_completed_run_returns_persisted_certificate(
     # The authoritative persisted certificate is returned, never the recomputed/tampered one.
     assert retry["certificate"]["content_sha256"] == persisted_content_sha
     assert retry["certificate"]["content_sha256"] != "0" * 64
+    # The reconstructed envelope reproduces the authoritative trust guidance issue_certificate
+    # emits (a pure function of signed state), not the tampered stub's absent note.
+    from engine.certificate import certificate_note
+
+    assert retry["certificate"]["note"] == certificate_note(signed=retry["certificate"]["signed"])
+    assert retry["certificate"]["note"] == first["certificate"]["note"]
 
     # No duplicate one-to-one completion rows and no second run.completed audit event.
     with UnitOfWork(session_factory, ctx) as uow:
