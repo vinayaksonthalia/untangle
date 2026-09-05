@@ -21,13 +21,14 @@ target_metadata = Base.metadata
 
 def get_url() -> str:
     """Retrieve migration URL from environment or alembic config."""
-    try:
-        return get_migration_database_url()
-    except Exception:
-        configured = config.get_main_option("sqlalchemy.url")
-        if configured:
-            return configured
-        return "sqlite:///:memory:"
+    configured = (config.get_main_option("sqlalchemy.url") or "").strip()
+    if configured:
+        return configured
+    # get_migration_database_url deliberately raises when neither an explicit
+    # migration URL nor DATABASE_URL is configured.  Never silently migrate an
+    # in-memory SQLite database: that can report success while leaving the real
+    # deployment schema unchanged.
+    return get_migration_database_url()
 
 
 def run_migrations_offline() -> None:

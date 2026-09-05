@@ -29,6 +29,7 @@ def save_certificate(
     public_key_pem: str | None = None,
 ) -> CertificateRecord:
     """Persist an issued close certificate bound to a run."""
+    context.require_run_mutation("complete")
     return insert_with_public_id_retry(
         session,
         lambda: CertificateRecord(

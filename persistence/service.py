@@ -249,8 +249,12 @@ class TenantReconciliationService:
                     bank_statement_hash=bank_hash,
                     recon_report_hash=recon_hash,
                     order_ledger_hash=ledger_hash,
-                    evidence_pack_id=report.get("config", {}).get("evidence_pack_id"),
-                    evidence_pack_version=report.get("config", {}).get("evidence_pack_version"),
+                    evidence_pack_id=(report.get("config", {}).get("evidence_pack") or {}).get(
+                        "pack_id"
+                    ),
+                    evidence_pack_version=(report.get("config", {}).get("evidence_pack") or {}).get(
+                        "version"
+                    ),
                 )
 
         except Exception as exc:

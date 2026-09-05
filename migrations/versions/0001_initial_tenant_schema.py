@@ -2,7 +2,6 @@
 
 Revision ID: 0001_initial_tenant_schema
 Revises:
-Create Date: 2026-09-05 09:00:00.000000
 """
 
 from __future__ import annotations
@@ -18,6 +17,14 @@ revision: str = "0001_initial_tenant_schema"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+# Machine-readable provenance. The actor and timestamp are derived from the Git commit that
+# introduced this migration; the source identifies the approved Phase 1 architecture document.
+MIGRATION_PROVENANCE: dict[str, str] = {
+    "created_by": "vinayaksonthalia",
+    "created_at": "2026-09-05T03:44:44Z",
+    "source": "docs/PERSISTENCE_AND_TENANT_ISOLATION.md#entity--ownership-model",
+}
 
 # Cross-dialect JSON type: JSONB on PostgreSQL, JSON on SQLite
 JSONType = sa.JSON().with_variant(JSONB, "postgresql")
@@ -519,6 +526,10 @@ def upgrade() -> None:
     # PostgreSQL-Specific: RLS Policies and Immutability Triggers
     # -----------------------------------------------------------------------
     if is_postgres:
+        # The runtime role verifies the schema revision during application startup.  It needs
+        # only read access to Alembic's bookkeeping table; all DDL remains migration-role-only.
+        op.execute("GRANT SELECT ON TABLE alembic_version TO untangle_app")
+
         # Create immutability trigger function raising SQLSTATE P0001
         op.execute(
             """

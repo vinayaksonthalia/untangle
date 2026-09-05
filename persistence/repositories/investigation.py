@@ -16,6 +16,10 @@ from persistence.repositories.base import scoped_select
 from persistence.uow import insert_with_public_id_retry
 
 
+class InvalidInvestigationError(ValueError):
+    """Raised when decision-affecting investigation data is missing or ambiguous."""
+
+
 def save_investigations(
     session: Session,
     context: TenantContext,
@@ -23,11 +27,17 @@ def save_investigations(
     cases: list[dict[str, Any]],
 ) -> list[InvestigationRecord]:
     """Persist a list of investigation cases bound to a run."""
+    context.require_run_mutation("complete")
     records: list[InvestigationRecord] = []
     for c in cases:
+        if "variance_paise" not in c:
+            raise InvalidInvestigationError("variance_paise is required")
+        variance_paise = c["variance_paise"]
+        if isinstance(variance_paise, bool) or not isinstance(variance_paise, int):
+            raise InvalidInvestigationError("variance_paise must be an integer paise amount")
         record = insert_with_public_id_retry(
             session,
-            lambda c=c: InvestigationRecord(
+            lambda c=c, variance_paise=variance_paise: InvestigationRecord(
                 public_id=generate_public_id(PREFIX_INVESTIGATION),
                 organisation_id=context.organisation_id,
                 run_id=run_id,
@@ -35,7 +45,7 @@ def save_investigations(
                 root_cause=c["root_cause"],
                 resolved=bool(c.get("resolved", False)),
                 confidence=float(c.get("confidence", 0.0)),
-                variance_paise=int(c.get("variance_paise", 0)),
+                variance_paise=variance_paise,
                 details_json=c.get("details_json") or c,
             ),
             expected_constraint="investigations_public_id_key",

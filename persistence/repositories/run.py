@@ -29,6 +29,7 @@ def create_run(
     started_at: datetime | None = None,
 ) -> ReconciliationRun:
     """Create a new reconciliation run in 'initiated' status."""
+    context.require_run_mutation("create")
     now = started_at or datetime.now(UTC)
     return insert_with_public_id_retry(
         session,
@@ -106,6 +107,7 @@ def complete_run(
     - If already completed, returns existing run without raising or creating duplicates.
     - If in failed or aborted state, raises InvalidRunStateError.
     """
+    context.require_run_mutation("complete")
     run = lock_run_for_update(session, context, run_id)
     if run is None:
         raise RecordNotFoundError(
@@ -154,6 +156,7 @@ def fail_run(
     - Never overwrites a completed run. If run is already completed, returns without modifying.
     - Sanitizes error code and summary (caller must ensure no raw exceptions or PII).
     """
+    context.require_run_mutation("fail")
     run = lock_run_for_update(session, context, run_id)
     if run is None:
         raise RecordNotFoundError(
@@ -175,6 +178,7 @@ def fail_run(
 
 def soft_delete_run(session: Session, context: TenantContext, public_id: str) -> bool:
     """Soft-delete a run by public ID within the tenant scope."""
+    context.require_run_mutation("delete")
     run = get_run_by_public_id(session, context, public_id)
     if run is None:
         return False

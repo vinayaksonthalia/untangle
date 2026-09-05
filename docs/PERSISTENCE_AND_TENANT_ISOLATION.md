@@ -180,6 +180,10 @@ SQLSTATE `P0001` (`raise_exception`) distinguishes immutability violations from 
 
 ## 9. Migration Operations & Local Setup
 
+`persistence.migrate.get_migration_provenance()` returns the head and parent revisions,
+repository-relative source path, migration summary, source architecture section, and the creator
+and UTC timestamp derived from the Git commit that introduced the migration.
+
 ### Environment Variables
 - `DATABASE_URL`: Runtime connection string (e.g. `postgresql+psycopg://untangle_app:pass@localhost:5432/untangle`).
 - `MIGRATION_DATABASE_URL`: Privileged DDL migration connection string (e.g. `postgresql+psycopg://untangle_migrator:pass@localhost:5432/untangle`).
@@ -189,6 +193,11 @@ Database roles must be created by a DBA or managed deployment control plane befo
 `scripts/provision_db_roles.sql` validates that both roles exist and grants schema/table privileges;
 it never creates credentials or supplies default passwords. The migration role owns the target
 database, while the runtime role is explicitly `NOSUPERUSER NOBYPASSRLS`.
+
+Fresh-database order is strict: (1) provision both roles and assign target-database ownership and
+`CONNECT`, (2) run Alembic as `untangle_migrator`, then (3) run
+`scripts/provision_db_roles.sql` against that migrated target database. Table grants are deliberately
+applied after migration, so setup never attempts to grant privileges on missing relations.
 
 ### Commands
 ```bash
