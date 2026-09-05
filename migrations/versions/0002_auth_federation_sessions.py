@@ -352,25 +352,6 @@ def upgrade() -> None:
     # PostgreSQL-Specific: Roles, Privileges, 23 Functions, and Audit Policy
     # -----------------------------------------------------------------------
     if is_postgres:
-        # Create roles if they do not exist
-        op.execute(
-            """
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_fn_owner') THEN
-                    CREATE ROLE untangle_fn_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
-                END IF;
-                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_auth') THEN
-                    CREATE ROLE untangle_auth NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
-                END IF;
-                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_maintenance') THEN
-                    CREATE ROLE untangle_maintenance NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
-                END IF;
-            END;
-            $$;
-            """
-        )
-
         # Schema permissions
         op.execute("GRANT untangle_fn_owner TO untangle_migrator;")
         op.execute("ALTER SCHEMA public OWNER TO untangle_migrator;")
