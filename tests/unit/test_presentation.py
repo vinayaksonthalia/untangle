@@ -33,6 +33,7 @@ import webapp.app as webapp_app
 import webapp.presentation as presentation_module
 from engine.certificate import issue_certificate
 from engine.service import reconcile_bytes
+from engine.version import ENGINE_VERSION
 from eval import sealed as sealed_eval
 from eval.benchmark_generator import (
     _format_bank_statement_csv,
@@ -546,6 +547,7 @@ def test_qodo_8_9_sealed_evaluation_off_request_path_and_cached():
     # Calling without allow_compute_if_absent should succeed because sealed_report.json exists
     p = build_sealed_evaluation_presentation(allow_compute_if_absent=False)
     assert p["contract_type"] == "sealed_evaluation_presentation"
+    assert p["evaluator"]["engine_version"] == ENGINE_VERSION
     assert p["evaluation_status"] == "verified_server_holdout"
     assert p["metrics"]["razorpay_precision"] == 1.0
 
