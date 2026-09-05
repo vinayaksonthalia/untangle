@@ -357,6 +357,11 @@ def upgrade() -> None:
         op.execute("GRANT USAGE ON SCHEMA public TO untangle_app, untangle_auth, untangle_maintenance;")
         op.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC;")
         op.execute("REVOKE CREATE ON SCHEMA public FROM untangle_app, untangle_auth, untangle_maintenance;")
+        # untangle_fn_owner OWNS the SECURITY DEFINER functions created below. PostgreSQL requires
+        # a role to hold CREATE on a schema to own objects in it (ALTER FUNCTION ... OWNER TO),
+        # so grant it here before the function definitions. It is NOLOGIN, so CREATE on public is
+        # not interactively exercisable.
+        op.execute("GRANT USAGE, CREATE ON SCHEMA public TO untangle_fn_owner;")
 
         # Table & sequence grants to untangle_fn_owner
         op.execute(
