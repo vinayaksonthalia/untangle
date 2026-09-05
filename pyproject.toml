@@ -27,6 +27,11 @@ web = [
     "uvicorn[standard]>=0.29",
     "python-multipart>=0.0.9",
     "authlib>=1.3,<2.0",
+    # Auth routes import persistence models at application startup. Keep the
+    # production web image self-contained even when DATABASE_URL is unset.
+    "sqlalchemy>=2.0,<3.0",
+    "alembic>=1.13,<2.0",
+    "psycopg[binary]>=3.1",
 ]
 db = ["sqlalchemy>=2.0,<3.0", "alembic>=1.13,<2.0", "psycopg[binary]>=3.1"]
 # Optional: ECDSA-signed close certificates. The core is stdlib-only; without this extra (or a
