@@ -353,7 +353,6 @@ def upgrade() -> None:
     # -----------------------------------------------------------------------
     if is_postgres:
         # Schema permissions
-        op.execute("GRANT untangle_fn_owner TO untangle_migrator;")
         op.execute("ALTER SCHEMA public OWNER TO untangle_migrator;")
         op.execute("GRANT USAGE ON SCHEMA public TO untangle_app, untangle_auth, untangle_maintenance;")
         op.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC;")
