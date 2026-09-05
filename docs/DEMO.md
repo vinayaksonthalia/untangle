@@ -2,11 +2,11 @@
 
 This script guides the official submission video for judges and evaluators. It demonstrates both Untangle's **instant public demo** and the **enterprise multi-tenant platform**.
 
-Scope note: Paytm and Cashfree entries in the demo dataset are synthetic,
+Scope note: Paytm and Cashfree entries in the demo dataset are synthetic
 narration-keyword scenario coverage only—not native Paytm or Cashfree
-provider-format ingestion. Authentic native formats currently supported are
-none; production ingestion supports only Untangle's generic canonical CSV
-schema (not proprietary bank/provider exports).
+provider-format ingestion. The only native input format currently supported
+in production is Untangle's generic canonical CSV schema; no proprietary bank
+or provider export format is supported.
 
 ---
 
@@ -14,6 +14,11 @@ schema (not proprietary bank/provider exports).
 
 ### 0:00–0:30 — The Problem, in Money
 > *"This is an Indian merchant's bank account for a month. ₹4.5 crore arrived, commingled across Razorpay, Paytm, Cashfree, Direct UPI, and courier COD payouts. Razorpay's settlement report reconciles transactions, but only after you know which bank credits actually belong to Razorpay. Accountants do this by hand, guessing on matching amounts and silently leaking input tax credit on processing fees."*
+
+Paytm and Cashfree in this narration are synthetic narration-keyword scenario
+coverage only, not native Paytm or Cashfree provider-format ingestion. The
+production input format supported here is Untangle's generic canonical CSV
+schema; proprietary bank/provider exports are not supported.
 
 - **Visual**: The Untangle landing page (`/`) and dashboard ribbon showing the commingled bank stream.
 
