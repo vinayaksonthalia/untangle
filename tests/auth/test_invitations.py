@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from auth.service import ControlPlaneService
 from auth.sessions import create_session
 from persistence.context import Role, TenantContext
-from persistence.models import AuditEvent, OrganisationInvitation, OrganisationMembership, Principal
+from persistence.models import AuditEvent, OrganisationInvitation, Principal
 
 
 def test_invitation_lifecycle(
@@ -153,18 +153,14 @@ def test_invitation_revocation(
 
 
 def test_inactive_principal_cannot_use_sqlite_control_plane_session(
-    session: Session, tenant_a: tuple[TenantContext, int]
+    session: Session, tenant_a: tuple[TenantContext, int], is_postgres: bool
 ) -> None:
+    if is_postgres:
+        pytest.skip("This regression targets the SQLite fallback paths")
     ctx, org_id = tenant_a
     raw_token, _ = create_session(session, principal_id=ctx.principal_id, active_org_id=org_id)
     principal = session.get(Principal, ctx.principal_id)
     assert principal is not None
-    membership = (
-        session.query(OrganisationMembership)
-        .filter_by(principal_id=ctx.principal_id, organisation_id=org_id)
-        .one()
-    )
-    membership.status = "suspended"
     principal.is_active = False
     from datetime import UTC, datetime
 
@@ -174,3 +170,19 @@ def test_inactive_principal_cannot_use_sqlite_control_plane_session(
     assert ControlPlaneService.list_organisations(session, raw_token) == []
     with pytest.raises(RuntimeError, match="Unauthorized"):
         ControlPlaneService.create_organisation(session, raw_token, "Should fail")
+    with pytest.raises(RuntimeError, match="Unauthorized"):
+        ControlPlaneService.list_memberships(session, raw_token)
+    with pytest.raises(RuntimeError, match="Unauthorized"):
+        ControlPlaneService.mutate_membership(
+            session, raw_token, ctx.principal_id, Role.OWNER.value, "active"
+        )
+    with pytest.raises(RuntimeError, match="Unauthorized"):
+        ControlPlaneService.create_invitation(
+            session, raw_token, "invite@example.com", Role.REVIEWER.value
+        )
+    with pytest.raises(RuntimeError, match="Unauthorized"):
+        ControlPlaneService.accept_invitation(session, raw_token, "invalid-invitation-token")
+    with pytest.raises(RuntimeError, match="Unauthorized"):
+        ControlPlaneService.revoke_invitation(session, raw_token, "ivt_missing")
+    with pytest.raises(RuntimeError, match="Unauthorized"):
+        ControlPlaneService.list_invitations(session, raw_token)

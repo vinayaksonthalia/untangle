@@ -5,12 +5,17 @@ from __future__ import annotations
 import urllib.parse
 
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from auth.crypto import generate_csrf_token, hash_token
 from auth.sessions import create_session, lookup_session
 from persistence.context import Role, TenantContext
 from persistence.models import TrustedAuthIssuer
+from persistence.repositories.control_plane import (
+    create_membership,
+    create_organisation,
+    create_principal,
+)
 from webapp.auth_routes import (
     CSRF_COOKIE_NAME,
     create_session_with_default_organisation,
@@ -26,19 +31,70 @@ def test_safe_return_to_accepts_only_same_site_paths() -> None:
 
 
 def test_callback_session_selects_the_only_active_organisation(
-    session: Session, tenant_a: tuple[TenantContext, int]
+    session: Session,
+    web_session_factory: sessionmaker[Session],
+    tenant_a: tuple[TenantContext, int],
 ) -> None:
     ctx, org_id = tenant_a
-    raw_token = create_session_with_default_organisation(
-        session,
-        session,
-        principal_id=ctx.principal_id,
-        ip_address="127.0.0.1",
-        user_agent="test",
-    )
+    with web_session_factory() as app_session:
+        raw_token = create_session_with_default_organisation(
+            session,
+            app_session,
+            principal_id=ctx.principal_id,
+            ip_address="127.0.0.1",
+            user_agent="test",
+        )
     info = lookup_session(session, raw_token)
     assert info is not None
     assert info.active_organisation_id == org_id
+
+
+def test_callback_session_keeps_zero_memberships_unscoped(
+    session: Session,
+    web_session_factory: sessionmaker[Session],
+    seed_session_factory: sessionmaker[Session],
+) -> None:
+    with seed_session_factory() as seed:
+        principal = create_principal(seed, "no-org@example.test", "No Org")
+        seed.commit()
+        principal_id = principal.id
+    with web_session_factory() as app_session:
+        raw_token = create_session_with_default_organisation(
+            session,
+            app_session,
+            principal_id=principal_id,
+            ip_address="127.0.0.1",
+            user_agent="test",
+        )
+    info = lookup_session(session, raw_token)
+    assert info is not None
+    assert info.active_organisation_id is None
+
+
+def test_callback_session_keeps_multiple_memberships_unscoped(
+    session: Session,
+    web_session_factory: sessionmaker[Session],
+    seed_session_factory: sessionmaker[Session],
+) -> None:
+    with seed_session_factory() as seed:
+        principal = create_principal(seed, "multi-org@example.test", "Multi Org")
+        first = create_organisation(seed, "First Callback Org")
+        second = create_organisation(seed, "Second Callback Org")
+        create_membership(seed, first.id, principal.id, Role.OWNER)
+        create_membership(seed, second.id, principal.id, Role.REVIEWER)
+        seed.commit()
+        principal_id = principal.id
+    with web_session_factory() as app_session:
+        raw_token = create_session_with_default_organisation(
+            session,
+            app_session,
+            principal_id=principal_id,
+            ip_address="127.0.0.1",
+            user_agent="test",
+        )
+    info = lookup_session(session, raw_token)
+    assert info is not None
+    assert info.active_organisation_id is None
 
 
 def test_auth_login_redirect_and_cookie(client: TestClient, seed_issuer: TrustedAuthIssuer) -> None:
