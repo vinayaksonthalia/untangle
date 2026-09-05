@@ -129,7 +129,10 @@ def test_concurrent_worker_count_bounded_by_slots(monkeypatch):
     finish_event.set()
 
     for t in threads:
-        t.join(timeout=10.0)
+        # The accepted workers run the real reconciliation after finish_event, which can take a
+        # while on a loaded CI runner; give them a generous join window so cleanup is not flaky.
+        # This is a harness timeout only — the concurrency invariants are asserted below.
+        t.join(timeout=60.0)
         assert not t.is_alive()
 
     # Invariants
