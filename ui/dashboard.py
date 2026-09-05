@@ -759,6 +759,10 @@ tr.pk-row.open td{{background:var(--sunken)}}
 @media(max-width:880px){{.wrap,.topbar .in,footer{{padding-left:24px;padding-right:24px}}
 .cards{{grid-template-columns:repeat(2,1fr)}}.grid2{{grid-template-columns:1fr}}.hero-fig{{font-size:40px}}
 .secnav{{display:none}}.search input{{width:100%}}.exc-toolbar{{align-items:stretch}}.search{{width:100%}}}}
+/* Phones: collapse the stat-card grid to one column so cards never clip off-screen, and keep any
+   fixed-width row grids from forcing page overflow. Scoped to <=560px — desktop is untouched. */
+@media(max-width:560px){{.cards{{grid-template-columns:1fr}}.grid2,.court-grid{{grid-template-columns:1fr}}
+html,body{{max-width:100%;overflow-x:hidden}}}}
 </style></head><body>
 <div class="topbar"><div class="in">
   <span class="logo">un<b>tangle</b></span>
