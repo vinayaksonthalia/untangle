@@ -1,102 +1,133 @@
-# untangle — 5-minute demo script
+# untangle — Comprehensive Demo Script & Submission Video Guide
 
-The video the judges watch. Grounded in the real, reproducible output. Times are targets.
-Record the terminal + the dashboard; speak plainly, no hype. Every number below is real.
+This script guides the official submission video for judges and evaluators. It demonstrates both Untangle's **instant public demo** and the **enterprise multi-tenant platform**.
 
----
-
-## 0:00–0:30 — The problem, in money
-
-> "This is one Indian merchant's bank account for a month. ₹4.5 crore came in — but not
-> all from Razorpay. It's mixed with a second gateway, direct UPI, courier COD payouts,
-> even personal transfers. Razorpay's own report reconciles the Razorpay *transactions* —
-> but only *after* you know which of these bank credits are even Razorpay's. Nobody solves
-> that first step. So this merchant's accountant does it by hand, and quietly loses the GST
-> they could reclaim on the processing fee."
-
-**On screen:** the dashboard hero — the account ribbon (the commingled bar) and the four figures.
-
-## 0:30–1:30 — One command, real numbers
-
-> "untangle reads three files — the bank statement, Razorpay's settlement report, the order
-> ledger — and sorts every credit to its rail. One command, no AI, fully reproducible."
-
-```bash
-# one-time: regenerate the seeded dataset (byte-identical every run; not committed)
-python3 -m generator.generate --seed 42 --scale 1.0 --out data
-python -m engine.cli run --bank data/bank_statement.csv --recon data/recon_report.json \
-  --ledger data/order_ledger.csv --out out/ --no-ai --seed 42
-```
-
-> "103 credits attributed to Razorpay — **zero** false positives. ₹2.97 crore reconciled to
-> the paise. And **₹43,201 of recoverable fee-GST** surfaced — that's input tax credit the
-> merchant was silently leaving on the table, and every rupee is traceable to a transaction."
-
-**On screen:** the console output, then the dashboard figures.
-
-## 1:30–2:45 — The honest part: it says "I don't know"
-
-> "It didn't force-match everything. 26 credits it couldn't prove, it flagged — each with a
-> reason and a next step. It abstains rather than guess, because a wrong 'this is Razorpay's'
-> corrupts the books. Let me trace one."
-
-```bash
-python -m engine.cli why <line_key> --out out/
-```
-
-> "This credit matched a Razorpay settlement UTR exactly — tier A — and reconciled across 125
-> transactions with a 7-paise rounding residual. Balanced. Fully explainable."
-
-**On screen:** the exception queue, then the `why` trace.
-
-## 2:45–3:45 — Break it on camera
-
-> "The interesting question is where it *fails*. Every attribution is measured against a blind
-> answer key, per hard case."
-
-```bash
-python -m eval.harness --run out/report.json --truth data/ground_truth.json
-```
-
-> "Precision 1.000 on every rail. Zero decoy false-positives — and those decoys are credits
-> engineered to look like Razorpay; a naive keyword search gets 100% of them wrong, we get
-> zero. On the genuinely hard cases — split settlements, destroyed UTRs — recall drops to
-> 0.5–0.8, and you can see it *abstains* there rather than misattribute. I validated on unseen
-> generated seeds: precision and zero-decoy-FP hold; recall varies by seed. Those are out-of-sample
-> synthetic-generator results, not validation of arbitrary real bank exports."
-
-**On screen:** the per-hard-case table; the difficulty-probe table showing naive baselines collapse.
-
-## 3:45–4:30 — Where I used AI, and where I didn't
-
-> "This is an AI builder track, so the honest answer matters. The matching, the arithmetic,
-> the money verdict — all deterministic and unit-tested. AI is only allowed to read ambiguous
-> narration text, and even then a deterministic rule confirms it. I benchmarked four models
-> on that task — but I measured that on this data the AI adds ~zero marginal recall, because
-> the deterministic core already catches what's catchable. So the shipped default is AI-off.
-> The judgment was to measure it and *not* rely on it."
-
-**On screen:** `docs/llm-benchmark.md` table.
-
-## 4:30–5:00 — What broke, and the bar
-
-> "Two independent audits caught real issues — a coincidental-amount misattribution path and
-> a reconciliation ordering bug. I fixed both; the ordering fix actually *improved* coverage.
-> Every schema claim in the repo cites a Razorpay fixture I verified myself, after getting
-> burned by a confident wrong reading early — that's incident 001 in the repo. It's read-only
-> toward money, PII is masked before any model call, and every decision is in a hash-chained
-> audit log. The full suite is deterministic: from the seed-42 dataset, the pipeline command
-> reproduces the dashboard's numbers, and the evaluation command reproduces the precision, recall,
-> and hard-case figures."
-
-**Close on:** the dashboard, and the repo's commit history.
+Scope note: Paytm and Cashfree entries in the demo dataset are synthetic
+narration-keyword scenario coverage only—not native Paytm or Cashfree
+provider-format ingestion. The only native input format currently supported
+in production is Untangle's generic canonical CSV schema; no proprietary bank
+or provider export format is supported.
 
 ---
 
-## Shot list / prep
-- Terminal with a readable font; `out/` pre-cleared so the run is live.
-- Dashboard open in a browser (`python -m ui.dashboard` then serve `ui/`).
-- Have a reconciled `line_key` and an exception `line_key` copied ready for the `why` shots.
-- Rehearse the "why a set-sum, not a wider tolerance?" answer in case it's asked live (see
-  [EXPLAINED.md](EXPLAINED.md)).
-- Keep it calm and specific. The restraint *is* the pitch.
+## Act 1 — The Problem & Instant Public Demo (0:00–1:45)
+
+### 0:00–0:30 — The Problem, in Money
+> *"This is an Indian merchant's bank account for a month. ₹4.5 crore arrived, commingled across Razorpay, Paytm, Cashfree, Direct UPI, and courier COD payouts. Razorpay's settlement report reconciles transactions, but only after you know which bank credits actually belong to Razorpay. Accountants do this by hand, guessing on matching amounts and silently leaking input tax credit on processing fees."*
+
+Paytm and Cashfree in this narration are synthetic narration-keyword scenario
+coverage only, not native Paytm or Cashfree provider-format ingestion. The
+production input format supported here is Untangle's generic canonical CSV
+schema; proprietary bank/provider exports are not supported.
+
+- **Visual**: The Untangle landing page (`/`) and dashboard ribbon showing the commingled bank stream.
+
+### 0:30–1:15 — Instant Sample Run (`/try-sample`)
+> *"Untangle solves this without requiring cloud infrastructure or database setups for trial. Click 'Try Sample Dataset'. In under two seconds, Untangle ingests the bank statement, settlement report, and order ledger in memory."*
+
+- **Action**: Click `/try-sample`. The browser sessionStorage hydrates instantly.
+- **Visual**: The four headline metrics:
+  - **₹2.97 crore** reconciled to the exact integer paise.
+  - **103 credits** attributed to Razorpay with zero false positives.
+  - **₹43,201 of recoverable fee-GST** surfaced for immediate tax credit claim.
+  - **Zero guesswork**: 26 ambiguous credits flagged for human review.
+
+### 1:15–1:45 — The Cryptographic Period Close Certificate
+> *"Untangle issues an independent, verifiable certificate. Notice the SHA-256 digest binding the exact bank statement, ledger, and engine rules. Anyone can verify this certificate independently without access to our database."*
+
+- **Visual**: The Certificate View, demonstrating hash verification and the Tally XML export button.
+
+---
+
+## Act 2 — Hosted Enterprise Architecture & Worker Pipeline (1:45–3:30)
+
+### 1:45–2:30 — Asynchronous Reconciliation & Worker Fencing
+> *"In production enterprise mode, reconciliation runs on a hardened multi-tenant architecture. Let's submit a full monthly reconciliation through the authenticated API."*
+
+- **Terminal / API Call**:
+  ```bash
+  curl -X POST http://localhost:8080/api/tenant/reconcile \
+    -H "Cookie: untangle_session=$TOKEN" \
+    -H "X-Untangle-CSRF: 1" \
+    -H "Idempotency-Key: demo-run-may-2026" \
+    -H "X-Period-Start: 2026-05-01" \
+    -H "X-Period-End: 2026-05-31" \
+    -F "bank=@data/bank_statement.csv" \
+    -F "recon=@data/recon_report.json" \
+    -F "ledger=@data/order_ledger.csv"
+  ```
+- **Explanation**:
+  > *"The HTTP request returns immediately with 202 Accepted. The upload is staged to private S3 object storage, and a reconciliation job is registered in PostgreSQL under strict Row-Level Security."*
+
+- **Worker in Terminal**:
+  ```bash
+  python -m persistence.worker --once
+  ```
+  > *"Our background worker claims the job using a PostgreSQL atomic lease. Notice the stages: input validation, engine execution, S3 artifact promotion, and a single-transaction state transition. If a worker crashes, attempt fencing and heartbeat expirations prevent duplicate work or corruption."*
+
+### 2:30–3:00 — Multi-Month Period Comparison
+> *"Accounting is about trends and drift. Untangle allows one-click comparison between consecutive accounting periods."*
+
+- **API Call**:
+  ```bash
+  curl -X POST http://localhost:8080/api/tenant/runs/compare \
+    -H "Cookie: untangle_session=$TOKEN" \
+    -H "X-Untangle-CSRF: 1" \
+    -H "Content-Type: application/json" \
+    -d '{"run_a_id": "run_01J_APR", "run_b_id": "run_01J_MAY"}'
+  ```
+- **Visual**: The comparison JSON showing:
+  - Exact integer paise deltas across months.
+  - Rail volume drift (e.g. UPI share increasing vs card settlements).
+  - Root-cause migration (fee drifts resolved vs new exceptions).
+
+### 3:00–3:30 — Untany: The Advisory Agent with Hard Boundaries
+> *"Untangle includes Untany, an AI advisor for financial controllers. But notice our strict boundary: AI never touches the ledger, never changes numbers, and never posts money."*
+
+- **Test 1: Factual Inquiry**:
+  - Prompt: *"What is the total reconciled amount and unresolved balance?"*
+  - Untany response: Returns ₹2,97,00,000.00 reconciled with full evidence breakdown and mandatory advisory disclaimer.
+- **Test 2: Mutating Intent Refusal**:
+  - Prompt: *"Please approve the journal entry and transfer the money."*
+  - Untany response: **REFUSED**.
+  > *"Untangle is a read-only finance controller. The agent service cannot move money, approve journals, certify closes, or override reconciliation decisions."*
+
+---
+
+## Act 3 — Security, Compliance & Verification (3:30–5:00)
+
+### 3:30–4:15 — Legal Hold & Audit Defense
+> *"When tax authorities conduct an audit, records must be immutable. Let's place an active legal hold on this reconciliation run."*
+
+- **Action**: Call `POST /api/tenant/runs/{id}/legal-hold`.
+- **Attempt Deletion**: Call `DELETE /api/tenant/runs/{id}`.
+- **Result**: `409 Conflict` — blocked by the repository and database check constraints. Audit event recorded in the immutable audit log.
+
+### 4:15–4:45 — Fail-Closed Health Probes & Backup Restoration
+> *"We don't do silent demo fallbacks in production. In enterprise mode, `/readyz` fails closed if the database or migration is degraded. And we provide automated restoration verification."*
+
+- **Terminal**:
+  ```bash
+  python scripts/verify_restore.py
+  ```
+  > *"This script restores a backup into an isolated database, validates all 20 tables, checks the migration head, confirms foreign keys and column schemas, and tests tenant isolation."*
+
+### 4:45–5:00 — Final Wrap-Up
+> *"Untangle proves that AI in finance doesn't mean trusting an LLM with money. It means deterministic precision, integer paise arithmetic, cryptographic verifiability, and conversational advisement that knows when to say no."*
+
+---
+
+## Recording Checklist & Environment Setup
+
+1. **Pre-requisites**:
+   - Python virtualenv activated (`.venv/bin/activate`).
+   - Clean test database: `sqlite:///tests/web/web_test.db` or PostgreSQL.
+   - S3 storage configured or MinIO running locally.
+2. **Terminal Windows**:
+   - Window 1: Web server (`uvicorn webapp.app:create_app --factory --port 8080`).
+   - Window 2: Worker daemon (`python -m persistence.worker`).
+   - Window 3: Curl requests and evaluation runner.
+3. **Browser**:
+   - Tab 1: `http://localhost:8080` (Landing & Demo).
+   - Tab 2: `http://localhost:8080/app` (Upload & Reconcile).
+   - Tab 3: `http://localhost:8080/docs` (Swagger OpenAPI UI).

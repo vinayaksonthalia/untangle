@@ -1,14 +1,70 @@
-# One-click deploy to Render (https://render.com) — free tier is enough for the demo.
-# New → Blueprint → point at this repo; Render reads this file and builds the Dockerfile.
+# Untangle Render Deployment Blueprint
+# Supports both Public Demo Mode and Hosted Enterprise Tenant Mode
 services:
+  # 1. Web Application Service (FastAPI + Landing + Dashboard + Tenant API)
   - type: web
-    name: untangle
+    name: untangle-web
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: free
+    plan: standard
     numInstances: 1
-    healthCheckPath: /
+    healthCheckPath: /readyz
     autoDeploy: true
+    startCommand: uvicorn webapp.app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PORT
         value: "8080"
+      - key: UNTANGLE_MODE
+        value: "hosted"
+      - key: DATABASE_URL
+        # Provision explicitly with the restricted untangle_app credential.
+        # Render's generated connectionString belongs to the database owner.
+        sync: false
+      - key: AUTH_DATABASE_URL
+        sync: false
+      - key: UNTANGLE_SECRET_KEY
+        sync: false
+      - key: MAINTENANCE_DATABASE_URL
+        sync: false
+      - key: UNTANGLE_STORAGE_BACKEND
+        value: "s3"
+      - key: UNTANGLE_S3_BUCKET
+        sync: false
+      - key: AWS_REGION
+        value: "ap-south-1"
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+
+  # 2. Background Reconciliation Worker (Atomic claiming, heartbeats, S3 uploads)
+  - type: worker
+    name: untangle-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: standard
+    autoDeploy: true
+    startCommand: python -m persistence.worker
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: untangle-postgres
+          property: connectionString
+      - key: WORKER_DATABASE_URL
+        sync: false
+      - key: UNTANGLE_STORAGE_BACKEND
+        value: "s3"
+      - key: UNTANGLE_S3_BUCKET
+        sync: false
+      - key: AWS_REGION
+        value: "ap-south-1"
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+
+# 3. PostgreSQL Database with Multi-Tenant Support
+databases:
+  - name: untangle-postgres
+    plan: standard
+    postgresMajorVersion: 16

@@ -69,6 +69,9 @@ untangle is safer by design: **read-only toward money.** Full detail in [SAFETY.
 - ✅ Independently verifiable close certificate (content SHA-256 + proof packets; ECDSA P-256 when signed, else hash-bound)
 - ✅ Public upload privacy — demo/BYOD uploads are processed from bounded temporary snapshots; raw inputs and results are not written to the application database
 - ✅ Optional PostgreSQL foundation — tenant-scoped organisations, identities, memberships, sessions, audit records, and persistence models are isolated from the deterministic engine
+- ✅ Asynchronous background worker — atomic job claiming, attempt fencing, heartbeat leases, and private S3 object storage
+- ✅ AI advisory service — Untany answers factual audit inquiries with strict refusal of mutating financial intents
+- ✅ Fail-closed health probes — `/livez` and `/readyz` validate database readiness and prevent silent demo fallback in production
 - ☐ SOC 2 / ISO 27001 / statutory sign-off — **not claimed**
 - ☐ Native per-bank export adapters (HDFC/ICICI/…) — planned, not shipped
 - ☐ Benchmarks are synthetic unless a real dataset is explicitly named
@@ -273,12 +276,13 @@ adversarial challenger that tries to disprove each verdict before accepting it.
 engine/       attribution, proof-gate, reconciliation, split reconstruction, ledger, proof packets
 generator/    seeded multi-rail synthetic data + blind ground-truth labels (no matcher logic)
 eval/         evaluation harness, sealed holdout runner, 15 MiB stress benchmark, calibration
-webapp/       FastAPI app — landing, upload, live reconcile, JSON API
+webapp/       FastAPI app — landing, upload, live reconcile, JSON API, Untany advisory service, health probes
 ui/           the dashboard renderer
 auth/         OIDC, sessions, organisation bootstrap, and permission enforcement
-persistence/  PostgreSQL models, repositories, migrations, tenant isolation, and audit controls
+persistence/  PostgreSQL models, repositories, worker daemon, S3 storage, tenant isolation, and audit controls
+scripts/      verification, database role provisioning, backup restoration validator
 specs/        spec-driven development trail (constitution → spec → plan → tasks per feature)
-docs/         ARCHITECTURE, BENCHMARK, DEPLOY, EXCEPTION_TAXONOMY, EXPLAINED, and more
+docs/         ARCHITECTURE, BENCHMARK, DEPLOY, FINAL_UI_HANDOFF, DEMO, EXCEPTION_TAXONOMY, and more
 INCIDENTS.md  real failures during the build, and what changed
 ```
 

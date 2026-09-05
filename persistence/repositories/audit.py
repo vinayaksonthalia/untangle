@@ -39,6 +39,11 @@ def append_audit_event(
         "certificate.issued": "complete",
         "organisation.deactivated": "delete",
         "membership.assigned": "delete",
+        "run.deleted": "delete",
+        "run.purged": "delete",
+        "run.legal_hold_placed": "legal_hold",
+        "run.legal_hold_released": "legal_hold",
+        "job.cancelled": "cancel",
     }.get(event_type)
     if action is None:
         raise ValueError(f"unsupported audit event type {event_type!r}")

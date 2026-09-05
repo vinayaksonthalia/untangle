@@ -6,13 +6,14 @@ and non-enumerable public identifiers.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -252,15 +253,21 @@ class OidcAuthTransaction(Base):
     nonce_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     code_verifier_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     return_to: Mapped[str] = mapped_column(String(255), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     __table_args__ = (
-        CheckConstraint(HexHashCheck("state_hash", 64, nullable=False), name="chk_oidc_tx_state_hex"),
-        CheckConstraint(HexHashCheck("nonce_hash", 64, nullable=False), name="chk_oidc_tx_nonce_hex"),
+        CheckConstraint(
+            HexHashCheck("state_hash", 64, nullable=False), name="chk_oidc_tx_state_hex"
+        ),
+        CheckConstraint(
+            HexHashCheck("nonce_hash", 64, nullable=False), name="chk_oidc_tx_nonce_hex"
+        ),
         CheckConstraint("expires_at > created_at", name="chk_oidc_tx_expiry_order"),
     )
 
@@ -275,7 +282,9 @@ class UserSession(Base):
     principal_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("principals.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    session_token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    session_token_hash: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True
+    )
     active_organisation_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("organisations.id", ondelete="RESTRICT"), nullable=True, index=True
     )
@@ -297,8 +306,13 @@ class UserSession(Base):
     )
 
     __table_args__ = (
-        CheckConstraint(HexHashCheck("session_token_hash", 64, nullable=False), name="chk_sessions_token_hash_hex"),
-        CheckConstraint(HexHashCheck("ip_hash", 64, nullable=False), name="chk_sessions_ip_hash_hex"),
+        CheckConstraint(
+            HexHashCheck("session_token_hash", 64, nullable=False),
+            name="chk_sessions_token_hash_hex",
+        ),
+        CheckConstraint(
+            HexHashCheck("ip_hash", 64, nullable=False), name="chk_sessions_ip_hash_hex"
+        ),
         CheckConstraint(
             "membership_auth_version IS NULL OR membership_auth_version > 0",
             name="chk_sessions_membership_version_positive",
@@ -347,7 +361,9 @@ class OrganisationInvitation(Base):
     )
 
     __table_args__ = (
-        CheckConstraint(HexHashCheck("token_hash", 64, nullable=False), name="chk_invitations_token_hash_hex"),
+        CheckConstraint(
+            HexHashCheck("token_hash", 64, nullable=False), name="chk_invitations_token_hash_hex"
+        ),
         CheckConstraint(
             "status IN ('pending', 'accepted', 'revoked', 'expired')",
             name="chk_invitations_status",
@@ -434,6 +450,18 @@ class ReconciliationRun(Base):
     failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reporting_period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    reporting_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    engine_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    schema_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rule_pack_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rule_pack_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bank_adapter_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bank_adapter_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    parent_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("reconciliation_runs.id", ondelete="RESTRICT"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -468,6 +496,11 @@ class ReconciliationRun(Base):
             HexHashCheck("reconciliation_hash", 64, nullable=True),
             name="chk_runs_recon_hash_hex",
         ),
+        CheckConstraint(
+            "(reporting_period_start IS NULL AND reporting_period_end IS NULL) OR "
+            "(reporting_period_start IS NOT NULL AND reporting_period_end IS NOT NULL AND reporting_period_start <= reporting_period_end)",
+            name="chk_runs_period_order",
+        ),
     )
 
 
@@ -485,6 +518,25 @@ class UploadedFileMetadata(Base):
     content_type: Mapped[str] = mapped_column(String(128), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256_checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    backend: Mapped[str] = mapped_column(
+        String(32), server_default="s3", default="s3", nullable=False
+    )
+    object_key: Mapped[str] = mapped_column(
+        String(512), server_default="", default="", nullable=False
+    )
+    lifecycle_state: Mapped[str] = mapped_column(
+        String(32), server_default="active", default="active", nullable=False
+    )
+    etag: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    version_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    encryption_algorithm: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retention_eligible_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    tombstone: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -513,6 +565,18 @@ class UploadedFileMetadata(Base):
         CheckConstraint(
             HexHashCheck("sha256_checksum", 64, nullable=False),
             name="chk_uploaded_files_sha256_hex",
+        ),
+        CheckConstraint(
+            "lifecycle_state IN ('staged', 'active', 'tombstoned', 'purged')",
+            name="chk_uploaded_files_lifecycle_allowed",
+        ),
+        CheckConstraint(
+            "backend IN ('s3', 'local')",
+            name="chk_uploaded_files_backend_allowed",
+        ),
+        CheckConstraint(
+            "(tombstone = false AND lifecycle_state != 'tombstoned') OR (tombstone = true AND lifecycle_state IN ('tombstoned', 'purged'))",
+            name="chk_uploaded_files_tombstone_consistency",
         ),
     )
 
@@ -675,6 +739,25 @@ class ArtifactMetadata(Base):
     media_type: Mapped[str] = mapped_column(String(128), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    backend: Mapped[str] = mapped_column(
+        String(32), server_default="s3", default="s3", nullable=False
+    )
+    object_key: Mapped[str] = mapped_column(
+        String(512), server_default="", default="", nullable=False
+    )
+    lifecycle_state: Mapped[str] = mapped_column(
+        String(32), server_default="active", default="active", nullable=False
+    )
+    etag: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    version_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    encryption_algorithm: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retention_eligible_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    tombstone: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -696,13 +779,25 @@ class ArtifactMetadata(Base):
             "organisation_id", "run_id", "artifact_type", name="uq_artifacts_org_run_type"
         ),
         CheckConstraint(
-            "artifact_type IN ('tally_xml', 'report_json', 'certificate_json')",
+            "artifact_type IN ('tally_xml', 'report_json', 'certificate_json', 'recovery_json')",
             name="chk_artifacts_type_allowed",
         ),
         CheckConstraint("size_bytes >= 0", name="chk_artifacts_size_nonnegative"),
         CheckConstraint(
             HexHashCheck("content_sha256", 64, nullable=False),
             name="chk_artifacts_content_sha256_hex",
+        ),
+        CheckConstraint(
+            "lifecycle_state IN ('staged', 'active', 'tombstoned', 'purged')",
+            name="chk_artifacts_lifecycle_allowed",
+        ),
+        CheckConstraint(
+            "backend IN ('s3', 'local')",
+            name="chk_artifacts_backend_allowed",
+        ),
+        CheckConstraint(
+            "(tombstone = false AND lifecycle_state != 'tombstoned') OR (tombstone = true AND lifecycle_state IN ('tombstoned', 'purged'))",
+            name="chk_artifacts_tombstone_consistency",
         ),
     )
 
@@ -736,12 +831,134 @@ class AuditEvent(Base):
             "'membership.assigned', 'organisation.deactivated', "
             "'organisation.created', 'organisation.switched', 'invitation.created', "
             "'invitation.accepted', 'invitation.revoked', 'membership.role_changed', "
-            "'membership.suspended', 'membership.reactivated'"
+            "'membership.suspended', 'membership.reactivated', 'run.deleted', "
+            "'run.purged', 'run.legal_hold_placed', 'run.legal_hold_released'"
             ")",
             name="chk_audit_events_type_allowed",
         ),
         CheckConstraint(
             "subject_type IN ('reconciliation_run', 'certificate', 'organisation_membership', 'organisation', 'organisation_invitation')",
             name="chk_audit_events_subject_allowed",
+        ),
+    )
+
+
+class ReconciliationJob(Base):
+    """Durable asynchronous job record for a tenant reconciliation run."""
+
+    __tablename__ = "reconciliation_jobs"
+
+    id: Mapped[int] = mapped_column(IDType, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    organisation_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("organisations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    run_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("reconciliation_runs.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    created_by_principal_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("principals.id", ondelete="RESTRICT"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(32), default="queued", nullable=False)
+    stage: Mapped[str] = mapped_column(String(64), default="queued", nullable=False)
+    worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    attempt_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_generation: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    scheduled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_summary: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_cancelled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_by_principal_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("principals.id", ondelete="RESTRICT"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organisation_id", "run_id"],
+            ["reconciliation_runs.organisation_id", "reconciliation_runs.id"],
+            ondelete="RESTRICT",
+            name="fk_jobs_org_run",
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'completed', 'failed', 'cancelled')",
+            name="chk_jobs_status_allowed",
+        ),
+        CheckConstraint(
+            "stage IN ('queued', 'ingesting', 'attributing', 'reconciling', 'investigating', 'persisting', 'completed')",
+            name="chk_jobs_stage_allowed",
+        ),
+        CheckConstraint(
+            "("
+            "(status = 'queued' AND started_at IS NULL AND completed_at IS NULL AND failed_at IS NULL AND attempt_token IS NULL) OR "
+            "(status = 'running' AND started_at IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL AND attempt_token IS NOT NULL AND lease_expires_at IS NOT NULL) OR "
+            "(status = 'completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= started_at AND failed_at IS NULL AND error_code IS NULL) OR "
+            "(status = 'failed' AND started_at IS NOT NULL AND failed_at IS NOT NULL AND failed_at >= started_at AND completed_at IS NULL AND error_code IS NOT NULL) OR "
+            "(status = 'cancelled' AND cancelled_at IS NOT NULL AND completed_at IS NULL)"
+            ")",
+            name="chk_jobs_lifecycle_state_machine",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND attempt_count <= max_attempts",
+            name="chk_jobs_attempt_bounds",
+        ),
+        CheckConstraint("lease_generation >= 0", name="chk_jobs_generation_bounds"),
+    )
+
+
+class IdempotencyRecord(Base):
+    """Persistent idempotency token for reconciliation requests."""
+
+    __tablename__ = "idempotency_records"
+
+    id: Mapped[int] = mapped_column(IDType, primary_key=True, autoincrement=True)
+    organisation_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("organisations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    job_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("reconciliation_jobs.id", ondelete="RESTRICT"), nullable=False
+    )
+    run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("reconciliation_runs.id", ondelete="RESTRICT"), nullable=False
+    )
+    response_status_code: Mapped[int] = mapped_column(Integer, default=202, nullable=False)
+    response_json: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("organisation_id", "idempotency_key", name="uq_idempotency_org_key"),
+        CheckConstraint(
+            HexHashCheck("request_hash", 64, nullable=False),
+            name="chk_idempotency_hash_hex",
         ),
     )

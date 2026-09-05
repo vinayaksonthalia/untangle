@@ -24,6 +24,7 @@ PREFIX_INVITATION = "ivt_"
 PREFIX_FEDERATED_IDENTITY = "fed_"
 PREFIX_OIDC_TX = "otx_"
 PREFIX_SEC_EVENT = "sev_"
+PREFIX_JOB = "job_"
 
 _PUBLIC_ID_RE = re.compile(r"^[a-z]{3,4}_[0-9a-f]{32}$")
 
