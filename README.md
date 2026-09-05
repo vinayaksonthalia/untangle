@@ -67,7 +67,8 @@ untangle is safer by design: **read-only toward money.** Full detail in [SAFETY.
 - ✅ Abstains rather than guesses — refuses to assert a match it cannot prove
 - ✅ Every verdict is evidence-backed; deterministic, exact integer paise
 - ✅ Independently verifiable close certificate (content SHA-256 + proof packets; ECDSA P-256 when signed, else hash-bound)
-- ✅ Privacy by construction — processed in memory, no application database
+- ✅ Public upload privacy — demo/BYOD uploads are processed from bounded temporary snapshots; raw inputs and results are not written to the application database
+- ✅ Optional PostgreSQL foundation — tenant-scoped organisations, identities, memberships, sessions, audit records, and persistence models are isolated from the deterministic engine
 - ☐ SOC 2 / ISO 27001 / statutory sign-off — **not claimed**
 - ☐ Native per-bank export adapters (HDFC/ICICI/…) — planned, not shipped
 - ☐ Benchmarks are synthetic unless a real dataset is explicitly named
@@ -143,6 +144,13 @@ Razorpay credits whose UTR was mangled) or **fooled** (label look-alike decoys a
   hosted agents (ChatGPT, claude.ai, Claude Code) over remote streamable-HTTP mounted at `/mcp` with **zero
   local installation**. 100% read-only and analytical — never mutates state or moves money. Full guide:
   [`docs/MCP.md`](docs/MCP.md).
+- **Persistent tenant and authentication foundation** — optional PostgreSQL support provides
+  organisation ownership, memberships, server-enforced roles, OIDC sessions, row-level security,
+  immutable audit records, and versioned migrations. The public demo remains database-independent.
+  This foundation does **not yet mean that public uploads are saved** or that a user-facing persistent
+  run-history workspace is shipped. Architecture details:
+  [`docs/PERSISTENCE_AND_TENANT_ISOLATION.md`](docs/PERSISTENCE_AND_TENANT_ISOLATION.md) and
+  [`docs/AUTHENTICATION_AND_PERMISSIONS.md`](docs/AUTHENTICATION_AND_PERMISSIONS.md).
 - **Global Evidence-Constrained Solver** — formulates whole-period reconciliation as a single constrained
   assignment problem over a candidate graph, minimizing invalid picks, unexplained paise, and ops cost.
   Reconciles globally consistent assignments and rejects locally-plausible matches that violate global settlement
@@ -184,10 +192,12 @@ machine, or hosted on the web — with identical behaviour: landing, upload, liv
 
 ### Option A — Run it on the web (hosted, one click)
 
-The full product is a single self-contained FastAPI app that deploys anywhere Docker runs. On
+The public demo is a single self-contained FastAPI app that deploys anywhere Docker runs. On
 [Render](https://render.com): **New → Blueprint → point at this repo** — it reads [`render.yaml`](render.yaml),
 builds the [`Dockerfile`](Dockerfile), and gives you a public URL serving the complete app (free tier is
-enough for the demo). No config, no database, no keys stored. Full walkthrough: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+enough for the demo). The public sample and BYOD flows require no database. PostgreSQL-backed private
+capabilities require explicit database, migration-role, runtime-role, and identity-provider configuration;
+they are not enabled by the zero-config Render demo. Full walkthrough: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 > **Hosted demo:** deployment is planned; no public URL is claimed yet. Until then, run the local
 > quickstart below. Do not upload sensitive financial data to an unverified third-party deployment.
@@ -209,12 +219,13 @@ uvicorn webapp.app:app --port 8080
 Both options serve the same routes:
 `/` landing · `/app` upload your three files · `/try-sample` instant sample run · `/api/docs` the JSON API.
 
-`/try-sample` and `/reconcile` return a no-store bootstrap page which places the bounded result bundle in browser-tab `sessionStorage` before navigating to `/dashboard`. Results persist across refreshes and are normally cleared when the tab closes (browser session restore can retain them); no private raw inputs or result database is retained by the server. Legacy `/api/*/current` endpoints return `410 Gone`.
+`/try-sample` and the public `/reconcile` flow return a no-store bootstrap page which places the bounded result bundle in browser-tab `sessionStorage` before navigating to `/dashboard`. Results persist across refreshes and are normally cleared when the tab closes (browser session restore can retain them). These public routes do not save private raw inputs or results to PostgreSQL. The repository now includes an optional tenant-scoped persistence and authentication foundation, but a user-facing saved run-history flow is not shipped yet. Legacy `/api/*/current` endpoints return `410 Gone`.
 
 - **Bring your own data:** a bank statement CSV (`value_date · narration · credit · debit`), the Razorpay
   settlement report JSON (`entity_id · type · amount · fee · tax · settlement_utr`), and your order ledger
   CSV (`order_id · amount_paise · status`). Processed in a per-request temp directory and deleted the
-  moment the report renders — nothing is persisted (locally or hosted).
+  moment the report renders. The public upload route does not persist the raw files or completed result
+  server-side (locally or hosted); browser-tab `sessionStorage` holds the bounded presentation bundle.
 
 ### Option C — Headless CLI (no web)
 
@@ -264,6 +275,8 @@ generator/    seeded multi-rail synthetic data + blind ground-truth labels (no m
 eval/         evaluation harness, sealed holdout runner, 15 MiB stress benchmark, calibration
 webapp/       FastAPI app — landing, upload, live reconcile, JSON API
 ui/           the dashboard renderer
+auth/         OIDC, sessions, organisation bootstrap, and permission enforcement
+persistence/  PostgreSQL models, repositories, migrations, tenant isolation, and audit controls
 specs/        spec-driven development trail (constitution → spec → plan → tasks per feature)
 docs/         ARCHITECTURE, BENCHMARK, DEPLOY, EXCEPTION_TAXONOMY, EXPLAINED, and more
 INCIDENTS.md  real failures during the build, and what changed

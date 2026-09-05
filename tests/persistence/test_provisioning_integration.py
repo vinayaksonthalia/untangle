@@ -95,6 +95,18 @@ def test_fresh_provisioning_then_migration_grants_exact_privileges() -> None:
                 f"DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='{APP}') "
                 f"THEN CREATE ROLE {APP} NOSUPERUSER NOBYPASSRLS; END IF; END $$;"
             )
+            conn.exec_driver_sql(
+                "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='untangle_fn_owner') "
+                "THEN CREATE ROLE untangle_fn_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS; END IF; END $$;"
+            )
+            conn.exec_driver_sql(
+                "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='untangle_auth') "
+                "THEN CREATE ROLE untangle_auth NOSUPERUSER NOBYPASSRLS; END IF; END $$;"
+            )
+            conn.exec_driver_sql(
+                "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='untangle_maintenance') "
+                "THEN CREATE ROLE untangle_maintenance NOSUPERUSER NOBYPASSRLS; END IF; END $$;"
+            )
             # The name is unique to this invocation, so this drop cannot hit an unrelated DB.
             conn.exec_driver_sql(f"DROP DATABASE IF EXISTS {test_db} WITH (FORCE)")
             conn.exec_driver_sql(f"CREATE DATABASE {test_db} OWNER {MIGRATOR}")
@@ -102,7 +114,9 @@ def test_fresh_provisioning_then_migration_grants_exact_privileges() -> None:
         # 1) FRESH provisioning must succeed on a database with no application tables yet.
         #    Under the previous unconditional grants this aborted with missing-relation errors.
         with db_super_engine.connect() as conn:
-            conn.exec_driver_sql(f"GRANT CONNECT ON DATABASE {test_db} TO {APP}")
+            conn.exec_driver_sql(
+                f"GRANT CONNECT ON DATABASE {test_db} TO {APP}, untangle_auth, untangle_maintenance"
+            )
             _run_script(conn, PROVISION_SQL)
 
             # Sanity: the tenant tables genuinely do not exist yet.

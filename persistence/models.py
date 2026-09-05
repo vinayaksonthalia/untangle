@@ -175,6 +175,7 @@ class OrganisationMembership(Base):
     )
     role_code: Mapped[str] = mapped_column(String(32), ForeignKey("roles.code"), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    auth_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -191,6 +192,210 @@ class OrganisationMembership(Base):
             "status IN ('active', 'suspended', 'invited')",
             name="chk_memberships_status_allowed",
         ),
+        CheckConstraint("auth_version > 0", name="chk_memberships_auth_version_positive"),
+    )
+
+
+class TrustedAuthIssuer(Base):
+    """Trusted OpenID Connect identity provider configuration (migrator-controlled)."""
+
+    __tablename__ = "trusted_auth_issuers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    issuer_url: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    client_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class FederatedIdentity(Base):
+    """Federated external identity (issuer, subject) mapped to an internal principal."""
+
+    __tablename__ = "federated_identities"
+
+    id: Mapped[int] = mapped_column(IDType, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    principal_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("principals.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    issuer: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    email_at_auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("issuer", "subject", name="uq_federated_issuer_subject"),
+        CheckConstraint("email_verified = true", name="chk_federated_email_verified"),
+    )
+
+
+class OidcAuthTransaction(Base):
+    """Short-lived single-use OIDC authentication transaction."""
+
+    __tablename__ = "oidc_auth_transactions"
+
+    id: Mapped[int] = mapped_column(IDType, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    state_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    nonce_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    code_verifier_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    return_to: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(HexHashCheck("state_hash", 64, nullable=False), name="chk_oidc_tx_state_hex"),
+        CheckConstraint(HexHashCheck("nonce_hash", 64, nullable=False), name="chk_oidc_tx_nonce_hex"),
+        CheckConstraint("expires_at > created_at", name="chk_oidc_tx_expiry_order"),
+    )
+
+
+class UserSession(Base):
+    """Authenticated user session state."""
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(IDType, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    principal_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("principals.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    session_token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    active_organisation_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("organisations.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    membership_auth_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ip_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_agent_truncated: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_active_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    idle_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    absolute_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(HexHashCheck("session_token_hash", 64, nullable=False), name="chk_sessions_token_hash_hex"),
+        CheckConstraint(HexHashCheck("ip_hash", 64, nullable=False), name="chk_sessions_ip_hash_hex"),
+        CheckConstraint(
+            "membership_auth_version IS NULL OR membership_auth_version > 0",
+            name="chk_sessions_membership_version_positive",
+        ),
+        CheckConstraint(
+            "last_active_at <= idle_expires_at AND idle_expires_at <= absolute_expires_at",
+            name="chk_sessions_timestamp_ordering",
+        ),
+        CheckConstraint(
+            "revoked_at IS NULL OR revoked_at >= created_at",
+            name="chk_sessions_revoked_after_created",
+        ),
+        CheckConstraint(
+            "(active_organisation_id IS NULL AND membership_auth_version IS NULL) OR "
+            "(active_organisation_id IS NOT NULL AND membership_auth_version IS NOT NULL)",
+            name="chk_sessions_org_version_consistency",
+        ),
+    )
+
+
+class OrganisationInvitation(Base):
+    """Single-use organisation membership invitation."""
+
+    __tablename__ = "organisation_invitations"
+
+    id: Mapped[int] = mapped_column(IDType, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    organisation_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("organisations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    invited_by_principal_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("principals.id", ondelete="RESTRICT"), nullable=False
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    role_code: Mapped[str] = mapped_column(String(32), ForeignKey("roles.code"), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(HexHashCheck("token_hash", 64, nullable=False), name="chk_invitations_token_hash_hex"),
+        CheckConstraint(
+            "status IN ('pending', 'accepted', 'revoked', 'expired')",
+            name="chk_invitations_status",
+        ),
+        CheckConstraint(
+            "("
+            "(status = 'pending' AND accepted_at IS NULL AND revoked_at IS NULL) OR "
+            "(status = 'accepted' AND accepted_at IS NOT NULL AND revoked_at IS NULL) OR "
+            "(status = 'revoked' AND revoked_at IS NOT NULL AND accepted_at IS NULL) OR "
+            "(status = 'expired' AND accepted_at IS NULL)"
+            ")",
+            name="chk_invitations_lifecycle",
+        ),
+        CheckConstraint("expires_at > created_at", name="chk_invitations_expiry_order"),
+    )
+
+
+class ControlPlaneSecurityEvent(Base):
+    """Immutable control-plane security event (pre-auth and system-level events)."""
+
+    __tablename__ = "control_plane_security_events"
+
+    id: Mapped[int] = mapped_column(IDType, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    actor_principal_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("principals.id", ondelete="RESTRICT"), nullable=True
+    )
+    subject_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    subject_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
+    ip_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_agent_truncated: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    details_json: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ("
+            "'auth.oidc.initiated', 'auth.oidc.callback_success', 'auth.oidc.callback_failed', "
+            "'auth.session.created', 'auth.session.expired', 'auth.session.revoked', "
+            "'auth.session.stale_invalidated', 'auth.csrf.violation', 'auth.rate_limit.exceeded', "
+            "'auth.identity.collision'"
+            ")",
+            name="chk_sec_events_type",
+        ),
+        CheckConstraint("length(subject_identifier) <= 255", name="chk_sec_events_subject_len"),
     )
 
 
@@ -526,11 +731,17 @@ class AuditEvent(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "event_type IN ('run.initiated', 'run.completed', 'run.failed', 'certificate.issued', 'membership.assigned', 'organisation.deactivated')",
+            "event_type IN ("
+            "'run.initiated', 'run.completed', 'run.failed', 'certificate.issued', "
+            "'membership.assigned', 'organisation.deactivated', "
+            "'organisation.created', 'organisation.switched', 'invitation.created', "
+            "'invitation.accepted', 'invitation.revoked', 'membership.role_changed', "
+            "'membership.suspended', 'membership.reactivated'"
+            ")",
             name="chk_audit_events_type_allowed",
         ),
         CheckConstraint(
-            "subject_type IN ('reconciliation_run', 'certificate', 'organisation_membership', 'organisation')",
+            "subject_type IN ('reconciliation_run', 'certificate', 'organisation_membership', 'organisation', 'organisation_invitation')",
             name="chk_audit_events_subject_allowed",
         ),
     )

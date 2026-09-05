@@ -48,8 +48,12 @@ jobs:
           psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
           CREATE ROLE untangle_migrator LOGIN PASSWORD 'ci_migrator_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
           CREATE ROLE untangle_app LOGIN PASSWORD 'ci_app_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+          CREATE ROLE untangle_fn_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+          CREATE ROLE untangle_auth LOGIN PASSWORD 'ci_auth_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+          CREATE ROLE untangle_maintenance LOGIN PASSWORD 'ci_maintenance_password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
           ALTER DATABASE untangle_test OWNER TO untangle_migrator;
-          GRANT CONNECT ON DATABASE untangle_test TO untangle_app;
+          GRANT untangle_fn_owner TO untangle_migrator;
+          GRANT CONNECT ON DATABASE untangle_test TO untangle_app, untangle_auth, untangle_maintenance;
           SQL
           python -m persistence.migrate upgrade head
           psql -h localhost -U postgres -d untangle_test -v ON_ERROR_STOP=1 -f scripts/provision_db_roles.sql
@@ -66,6 +70,8 @@ jobs:
           POSTGRES_TEST_URL: postgresql+psycopg://untangle_app:ci_app_password@localhost:5432/untangle_test
           POSTGRES_MIGRATION_TEST_URL: postgresql+psycopg://untangle_migrator:ci_migrator_password@localhost:5432/untangle_test
           POSTGRES_CONTROL_TEST_URL: postgresql+psycopg://postgres:postgrespassword@localhost:5432/untangle_test
+          POSTGRES_AUTH_TEST_URL: postgresql+psycopg://untangle_auth:ci_auth_password@localhost:5432/untangle_test
+          POSTGRES_MAINTENANCE_TEST_URL: postgresql+psycopg://untangle_maintenance:ci_maintenance_password@localhost:5432/untangle_test
         run: |
           python -m pytest --cov --cov-report=term-missing
           python -m coverage json

@@ -46,6 +46,18 @@ def control_db_url(migration_db_url: str) -> str:
 
 
 @pytest.fixture(scope="session")
+def auth_db_url(db_url: str) -> str:
+    """Return the URL for untangle_auth restricted connection."""
+    return os.environ.get("POSTGRES_AUTH_TEST_URL", "").strip() or db_url
+
+
+@pytest.fixture(scope="session")
+def maintenance_db_url(db_url: str) -> str:
+    """Return the URL for untangle_maintenance restricted connection."""
+    return os.environ.get("POSTGRES_MAINTENANCE_TEST_URL", "").strip() or db_url
+
+
+@pytest.fixture(scope="session")
 def is_postgres(db_url: str) -> bool:
     """Return True if testing against PostgreSQL."""
     return db_url.startswith("postgresql")
@@ -99,6 +111,32 @@ def control_engine(
     privileged_engine.dispose()
 
 
+@pytest.fixture(scope="session")
+def auth_engine(
+    engine: Engine, auth_db_url: str, is_postgres: bool
+) -> Generator[Engine, None, None]:
+    """Engine using untangle_auth role."""
+    if not is_postgres:
+        yield engine
+        return
+    role_engine = create_db_engine(auth_db_url)
+    yield role_engine
+    role_engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def maintenance_engine(
+    engine: Engine, maintenance_db_url: str, is_postgres: bool
+) -> Generator[Engine, None, None]:
+    """Engine using untangle_maintenance role."""
+    if not is_postgres:
+        yield engine
+        return
+    role_engine = create_db_engine(maintenance_db_url)
+    yield role_engine
+    role_engine.dispose()
+
+
 @pytest.fixture
 def session_factory(engine: Engine) -> sessionmaker[Session]:
     """Return session factory bound to the test engine."""
@@ -111,9 +149,37 @@ def control_session_factory(control_engine: Engine) -> sessionmaker[Session]:
 
 
 @pytest.fixture
+def auth_session_factory(auth_engine: Engine) -> sessionmaker[Session]:
+    return create_session_factory(auth_engine)
+
+
+@pytest.fixture
+def maintenance_session_factory(maintenance_engine: Engine) -> sessionmaker[Session]:
+    return create_session_factory(maintenance_engine)
+
+
+@pytest.fixture
 def session(control_session_factory: sessionmaker[Session]) -> Generator[Session, None, None]:
     """Provide a clean session wrapped in an outer transaction for isolation."""
     sess = control_session_factory()
+    yield sess
+    sess.rollback()
+    sess.close()
+
+
+@pytest.fixture
+def auth_session(auth_session_factory: sessionmaker[Session]) -> Generator[Session, None, None]:
+    sess = auth_session_factory()
+    yield sess
+    sess.rollback()
+    sess.close()
+
+
+@pytest.fixture
+def maintenance_session(
+    maintenance_session_factory: sessionmaker[Session],
+) -> Generator[Session, None, None]:
+    sess = maintenance_session_factory()
     yield sess
     sess.rollback()
     sess.close()

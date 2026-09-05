@@ -17,22 +17,31 @@ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_migrator') THEN
         RAISE EXCEPTION 'Required role untangle_migrator has not been provisioned';
     END IF;
-END;
-$$;
-
--- 2. Create Runtime Application Role (Unprivileged, NO SUPERUSER, NO BYPASSRLS)
-DO $$
-BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_app') THEN
         RAISE EXCEPTION 'Required role untangle_app has not been provisioned';
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_fn_owner') THEN
+        RAISE EXCEPTION 'Required role untangle_fn_owner has not been provisioned';
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_auth') THEN
+        RAISE EXCEPTION 'Required role untangle_auth has not been provisioned';
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'untangle_maintenance') THEN
+        RAISE EXCEPTION 'Required role untangle_maintenance has not been provisioned';
     END IF;
 END;
 $$;
 
--- 3. Schema Privileges. The DBA must set database ownership and CONNECT
--- privileges explicitly for the target database before running this script.
+-- 2. Schema Privileges and Ownership
+-- CRITICAL: Grant function execution owner role to migrator so it can transfer ownership during migrations
+GRANT untangle_fn_owner TO untangle_migrator;
+
 ALTER SCHEMA public OWNER TO untangle_migrator;
-GRANT USAGE ON SCHEMA public TO untangle_app;
+GRANT USAGE ON SCHEMA public TO untangle_app, untangle_auth, untangle_maintenance;
+
+-- Prevent arbitrary table or function creation by unprivileged roles
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+REVOKE CREATE ON SCHEMA public FROM untangle_app, untangle_auth, untangle_maintenance;
 
 -- 4. Explicit Per-Table Grants for Runtime Application Role
 -- Control-plane access is deliberately not granted to the data-plane role.

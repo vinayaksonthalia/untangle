@@ -31,6 +31,12 @@ from starlette.staticfiles import StaticFiles
 from engine.certificate import issue_certificate, verify_certificate
 from engine.ingest import InputError, load_bank, load_bank_bytes
 from engine.service import reconcile, reconcile_bytes
+from webapp.auth_routes import router as auth_router
+from webapp.middleware import (
+    AuthenticationMiddleware,
+    CsrfMiddleware,
+    TenantRouteGuard,
+)
 from webapp.pages import (
     certificate_page,
     dashboard_page,
@@ -112,6 +118,9 @@ async def lifespan(app: FastAPI):
 
     if _MCP_AVAILABLE:
         _ensure_demo_data()  # the sandbox points at data/ — make sure it exists in a fresh container
+        if getattr(mcp.session_manager, "_has_started", False):
+            mcp._session_manager = None
+            _ = mcp.streamable_http_app()
         async with mcp.session_manager.run():
             yield
     else:
@@ -143,6 +152,7 @@ class _RevalidatingStatic(StaticFiles):
 
 
 app.mount("/static", _RevalidatingStatic(directory=_STATIC_DIR), name="static")
+app.include_router(auth_router)
 
 # This is deliberately process-local: the public demo has no shared state store.  It protects a
 # single instance from accidental refresh storms without pretending to be production auth/quotas.
@@ -274,10 +284,12 @@ class BodySizeLimitMiddleware:
         await send({"type": "http.response.body", "body": body})
 
 
-# Registered BEFORE safety_middleware so safety_middleware ends up the OUTERMOST layer: the per-IP
-# rate-limit / admission decision must run before this middleware consumes (buffers) the body, so an
-# already-limited client is turned away cheaply instead of forcing full request ingestion each time.
-# safety_middleware never reads the body, so this middleware still sees the raw byte stream.
+# Middleware execution order:
+# Outer -> Inner:
+# safety_middleware (@app.middleware("http")) -> BodySizeLimitMiddleware -> AuthenticationMiddleware -> CsrfMiddleware -> TenantRouteGuard -> routes
+app.add_middleware(TenantRouteGuard)
+app.add_middleware(CsrfMiddleware)
+app.add_middleware(AuthenticationMiddleware)
 app.add_middleware(BodySizeLimitMiddleware, limits=_BODY_LIMITS)
 
 
@@ -288,6 +300,7 @@ async def safety_middleware(request: Request, call_next):
     # Never log caller-controlled request IDs: even a valid-looking value can contain newlines or
     # grow without bound.  The generated UUID is the only identifier used in responses/logs.
     request_id = uuid.uuid4().hex
+    request.state.request_id = request_id
 
     def finish(response):
         response.headers["x-request-id"] = request_id
