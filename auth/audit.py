@@ -39,7 +39,7 @@ def record_security_event(
                 SELECT public.fn_sec_event_record(
                     :public_id, :event_type, :actor_principal_id,
                     :subject_type, :subject_identifier, :ip_hash,
-                    :user_agent_truncated, :details_json::jsonb
+                    :user_agent_truncated, CAST(:details_json AS jsonb)
                 )
                 """
             ),
