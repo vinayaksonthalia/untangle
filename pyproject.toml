@@ -19,9 +19,15 @@ dev = [
     "sqlalchemy>=2.0,<3.0",
     "alembic>=1.13,<2.0",
     "psycopg[binary]>=3.1",
+    "authlib>=1.3,<2.0",
 ]
 quality = ["mutmut>=3.6"]
-web = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9"]
+web = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+    "authlib>=1.3,<2.0",
+]
 db = ["sqlalchemy>=2.0,<3.0", "alembic>=1.13,<2.0", "psycopg[binary]>=3.1"]
 # Optional: ECDSA-signed close certificates. The core is stdlib-only; without this extra (or a
 # signing key) the certificate is still built and content-hashed — tamper-evident, just unsigned.
@@ -30,7 +36,7 @@ crypto = ["cryptography>=42"]
 mcp = ["mcp>=1.8,<2"]  # v1 FastMCP; >=1.8 for streamable-HTTP transport (streamable_http_app). <2: FastMCP renamed in mcp 2.x
 
 [tool.setuptools]
-packages = ["engine", "engine.llm", "eval", "ui", "webapp", "generator", "persistence"]
+packages = ["engine", "engine.llm", "eval", "ui", "webapp", "generator", "persistence", "auth"]
 # Qodo #9: the MCP server is a root-level module, not a package — list it explicitly so a wheel install
 # of untangle[mcp] ships the server, not just its dependency.
 py-modules = ["mcp_server"]
@@ -57,7 +63,7 @@ pythonpath = ["."]
 
 [tool.coverage.run]
 branch = true
-source = ["engine", "eval", "generator", "ui", "webapp", "persistence"]
+source = ["engine", "eval", "generator", "ui", "webapp", "persistence", "auth"]
 
 [tool.coverage.report]
 exclude_also = [

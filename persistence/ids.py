@@ -19,6 +19,11 @@ PREFIX_INVESTIGATION = "inv_"
 PREFIX_CERTIFICATE = "cert_"
 PREFIX_ARTIFACT = "art_"
 PREFIX_AUDIT_EVENT = "aud_"
+PREFIX_SESSION = "ses_"
+PREFIX_INVITATION = "ivt_"
+PREFIX_FEDERATED_IDENTITY = "fed_"
+PREFIX_OIDC_TX = "otx_"
+PREFIX_SEC_EVENT = "sev_"
 
 _PUBLIC_ID_RE = re.compile(r"^[a-z]{3,4}_[0-9a-f]{32}$")
 

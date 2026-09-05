@@ -17,6 +17,24 @@ from sqlalchemy.orm import Session, sessionmaker
 ENV_DATABASE_URL = "DATABASE_URL"
 # Migration database URL (privileged schema-owner role)
 ENV_MIGRATION_DATABASE_URL = "MIGRATION_DATABASE_URL"
+# Authentication database URL (pre-auth and session minting role)
+ENV_AUTH_DATABASE_URL = "AUTH_DATABASE_URL"
+# Maintenance database URL (cron retention runner role)
+ENV_MAINTENANCE_DATABASE_URL = "MAINTENANCE_DATABASE_URL"
+ENV_UNTANGLE_ENV = "UNTANGLE_ENV"
+ENV_UNTANGLE_DEV_MODE = "UNTANGLE_DEV_MODE"
+
+
+def is_local_or_test_mode() -> bool:
+    """Return True if running in explicit local, development, or test mode."""
+    env = os.environ.get(ENV_UNTANGLE_ENV, "").strip().lower()
+    dev_mode = os.environ.get(ENV_UNTANGLE_DEV_MODE, "").strip()
+    if env in ("test", "development", "local") or dev_mode == "1":
+        return True
+    runtime_url = get_database_url()
+    if runtime_url and runtime_url.startswith("sqlite"):
+        return True
+    return False
 
 
 def get_database_url() -> str | None:
@@ -35,6 +53,42 @@ def get_migration_database_url() -> str:
         return runtime_url
     raise RuntimeError(
         f"Neither {ENV_MIGRATION_DATABASE_URL} nor {ENV_DATABASE_URL} is configured."
+    )
+
+
+def get_auth_database_url() -> str:
+    """Return the authentication database URL (untangle_auth role).
+
+    Must NEVER fall back to DATABASE_URL in production or persistent hosted mode.
+    Only in explicit local/test mode is fallback permitted.
+    """
+    auth_url = os.environ.get(ENV_AUTH_DATABASE_URL, "").strip()
+    if auth_url:
+        return auth_url
+    if is_local_or_test_mode():
+        runtime_url = get_database_url()
+        if runtime_url:
+            return runtime_url
+    raise RuntimeError(
+        f"{ENV_AUTH_DATABASE_URL} must be explicitly configured in persistent hosted/production mode."
+    )
+
+
+def get_maintenance_database_url() -> str:
+    """Return the maintenance database URL (untangle_maintenance role).
+
+    Must NEVER fall back to DATABASE_URL in production or persistent hosted mode.
+    Only in explicit local/test mode is fallback permitted.
+    """
+    maint_url = os.environ.get(ENV_MAINTENANCE_DATABASE_URL, "").strip()
+    if maint_url:
+        return maint_url
+    if is_local_or_test_mode():
+        runtime_url = get_database_url()
+        if runtime_url:
+            return runtime_url
+    raise RuntimeError(
+        f"{ENV_MAINTENANCE_DATABASE_URL} must be explicitly configured in persistent hosted/production mode."
     )
 
 

@@ -22,8 +22,8 @@ def test_migration_apis_resolve_from_a_foreign_working_directory(tmp_path: Path)
     program = (
         "from persistence.migrate import get_migration_provenance, get_head_revision\n"
         "p = get_migration_provenance()\n"
-        "assert p['revision'] == '0001_initial_tenant_schema', p\n"
-        "assert get_head_revision() == '0001_initial_tenant_schema'\n"
+        "assert p['revision'] == '0002_auth_federation_sessions', p\n"
+        "assert get_head_revision() == '0002_auth_federation_sessions'\n"
         "print('PROVENANCE_OK')\n"
     )
     env = os.environ.copy()
@@ -83,13 +83,13 @@ def test_migration_provenance_is_repository_derived() -> None:
     provenance = get_migration_provenance()
 
     assert provenance == {
-        "revision": "0001_initial_tenant_schema",
-        "down_revision": None,
-        "source_file": "migrations/versions/0001_initial_tenant_schema.py",
-        "summary": "Initial multi-tenant schema with composite constraints, RLS, and immutability triggers.",
+        "revision": "0002_auth_federation_sessions",
+        "down_revision": "0001_initial_tenant_schema",
+        "source_file": "migrations/versions/0002_auth_federation_sessions.py",
+        "summary": "Authentication, federated identity, sessions, invitations, and server-enforced permissions.",
         "created_by": "vinayaksonthalia",
-        "created_at": "2026-09-05T03:44:44Z",
-        "source": "docs/PERSISTENCE_AND_TENANT_ISOLATION.md#entity--ownership-model",
+        "created_at": "2026-09-05T09:47:29Z",
+        "source": "docs/AUTHENTICATION_AND_PERMISSIONS.md#entity--ownership-model",
     }
 
 
