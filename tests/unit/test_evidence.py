@@ -105,6 +105,64 @@ def test_setsum_unique_fires():
     assert "s1" in ev[0].detail and "s2" in ev[0].detail
 
 
+def test_setsum_five_term_unique_fires():
+    from engine.attribute import _setsum_evidence
+
+    idx = _index(nets=[
+        ("s1", 10000, date(2026, 6, 10)),
+        ("s2", 20000, date(2026, 6, 10)),
+        ("s3", 30000, date(2026, 6, 10)),
+        ("s4", 40000, date(2026, 6, 10)),
+        ("s5", 50000, date(2026, 6, 10)),
+    ])
+    line = _line("RAZORPAY SETTLEMENT", amount=150000, vd="2026-06-10")
+
+    ev = _setsum_evidence(line, idx)
+
+    assert ev is not None
+    assert ev[0].signal == "setsum"
+    assert "5 settlements" in ev[0].detail
+
+
+def test_setsum_five_term_ambiguity_abstains():
+    from engine.attribute import _setsum_evidence
+
+    idx = _index(nets=[
+        ("a1", 10000, date(2026, 6, 10)),
+        ("a2", 20000, date(2026, 6, 10)),
+        ("a3", 30000, date(2026, 6, 10)),
+        ("a4", 40000, date(2026, 6, 10)),
+        ("a5", 50000, date(2026, 6, 10)),
+        ("b1", 11000, date(2026, 6, 10)),
+        ("b2", 21000, date(2026, 6, 10)),
+        ("b3", 31000, date(2026, 6, 10)),
+        ("b4", 41000, date(2026, 6, 10)),
+        ("b5", 46000, date(2026, 6, 10)),
+    ])
+
+    ev = _setsum_evidence(_line("RAZORPAY SETTLEMENT", amount=150000), idx)
+
+    assert ev is not None
+    assert ev[0].signal == "multiple_satisfying_subsets"
+
+
+def test_setsum_expansion_is_disabled_for_large_candidate_pools():
+    from engine.attribute import _setsum_evidence
+
+    nets = [(f"small_{i}", i + 1, date(2026, 6, 10)) for i in range(21)]
+    nets.extend(
+        (sid, amount, date(2026, 6, 10))
+        for sid, amount in (("s1", 10000), ("s2", 20000), ("s3", 30000), ("s4", 40000))
+    )
+    nets.extend((f"decoy_{i}", 1000 + i, date(2026, 6, 10)) for i in range(1, 5))
+
+    ev = _setsum_evidence(_line("RAZORPAY SETTLEMENT", amount=100000), _index(nets=nets))
+
+    # The exact four-term match is intentionally outside the <=16 expansion pool;
+    # the established 2–3-term contract remains in force for this 29-candidate pool.
+    assert ev is None
+
+
 def test_setsum_ambiguous_returns_multiple_satisfying_subsets():
     from engine.attribute import _setsum_evidence
     # Two distinct pairs sum to 100,000: (s1+s2 = 60k+40k) and (s3+s4 = 70k+30k)

@@ -50,16 +50,29 @@ def _canonical(obj: Any) -> bytes:
 
 
 def _signing_key():
-    """Load the ECDSA private key from the env (base64 PEM), or None if unavailable/unset."""
-    if not _CRYPTO_AVAILABLE:
-        return None
+    """Load the configured ECDSA P-256 key; fail closed on invalid configuration."""
     pem = os.environ.get(_SIGNING_KEY_ENV)
     if not pem:
         return None
+    if not _CRYPTO_AVAILABLE:
+        raise RuntimeError(
+            "UNTANGLE_SIGNING_KEY is configured but certificate signing support is unavailable"
+        )
     try:
-        return _ser.load_pem_private_key(base64.b64decode(pem), password=None)
-    except Exception:
-        return None
+        pem_bytes = base64.b64decode(pem, validate=True)
+    except Exception as exc:
+        raise ValueError("UNTANGLE_SIGNING_KEY must be valid base64") from exc
+    try:
+        key = _ser.load_pem_private_key(pem_bytes, password=None)
+    except Exception as exc:
+        raise ValueError(
+            "UNTANGLE_SIGNING_KEY must contain a valid unencrypted PEM private key"
+        ) from exc
+    # Certificates advertise ECDSA P-256; reject other private-key types/curves rather
+    # than silently changing the issuer algorithm or producing unverifiable envelopes.
+    if not isinstance(key, _ec.EllipticCurvePrivateKey) or not isinstance(key.curve, _ec.SECP256R1):
+        raise ValueError("UNTANGLE_SIGNING_KEY must contain an ECDSA P-256 private key")
+    return key
 
 
 def generate_signing_key() -> str:
@@ -141,7 +154,10 @@ def verify_certificate(payload: dict) -> dict:
     if not isinstance(payload, dict):
         return {"ok": False, "error": "payload is not a dict"}
     cert = payload.get("certificate") if isinstance(payload.get("certificate"), dict) else payload
-    body = _canonical(cert)
+    try:
+        body = _canonical(cert)
+    except Exception:
+        return {"ok": False, "error": "certificate body is not canonical JSON"}
     recomputed = hashlib.sha256(body).hexdigest()
     claimed = payload.get("content_sha256")
     # Qodo #11: a certificate MUST carry a content hash that matches; a missing/mismatched hash fails.
@@ -153,16 +169,25 @@ def verify_certificate(payload: dict) -> dict:
     # would let anyone sign with their own key and claim validity). If a signature is present but cannot
     # be authenticated (no crypto, no configured issuer key, malformed, or mismatch) → invalid, not None.
     signature_valid: bool | None = None
+    signature_present = "signature" in payload
     sig = payload.get("signature")
-    if sig:
-        issuer_pub = public_key_pem()  # this instance's pinned public key; None if unconfigured
+    signed = payload.get("signed")
+    signature_contract_valid = (
+        isinstance(signed, bool)
+        and signed is signature_present
+        and (not signature_present or isinstance(sig, str) and bool(sig))
+    )
+    if signature_present:
         signature_valid = False
-        if _CRYPTO_AVAILABLE and issuer_pub:
+        if signature_contract_valid and _CRYPTO_AVAILABLE:
             try:
+                issuer_pub = public_key_pem()
+                if not issuer_pub:
+                    raise ValueError("issuer signing key is not configured")
                 pub = _ser.load_pem_public_key(issuer_pub.encode())
-                pub.verify(base64.b64decode(sig), body, _ec.ECDSA(_hashes.SHA256()))
+                pub.verify(base64.b64decode(sig, validate=True), body, _ec.ECDSA(_hashes.SHA256()))
                 signature_valid = True
-            except Exception:  # InvalidSignature, malformed key/sig, etc. → not authenticated
+            except Exception:  # Invalid signature/key/configuration → structured failed verification.
                 signature_valid = False
 
     # Independent re-verification of an attached report is useful only when the report is bound to
@@ -235,7 +260,8 @@ def verify_certificate(payload: dict) -> dict:
 
     ok = (
         hash_matches
-        and (sig is None or signature_valid is True)     # a claimed signature must be valid
+        and signature_contract_valid
+        and (not signature_present or signature_valid is True)
         and (report_binding_valid is not False)
         and (packets_passed is None or packets_passed == packets_verified)
         and pack_valid
@@ -371,8 +397,22 @@ def build_close_certificate(report: dict) -> dict[str, Any]:
 def main() -> None:
     """CLI entry point for close certificate generation."""
     parser = argparse.ArgumentParser(description="Generate period close certificate from report JSON")
-    parser.add_argument("--run", required=True, help="Path to report JSON")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--run", help="Path to report JSON")
+    source.add_argument(
+        "--generate-key",
+        action="store_true",
+        help="Print a new base64-encoded ECDSA P-256 private key",
+    )
     args = parser.parse_args()
+
+    if args.generate_key:
+        try:
+            print(generate_signing_key())
+        except Exception as exc:
+            print(f"Error generating signing key: {exc}", file=sys.stderr)
+            sys.exit(2)
+        return
 
     try:
         with open(args.run, encoding="utf-8") as f:

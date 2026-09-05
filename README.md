@@ -115,6 +115,12 @@ Razorpay credits whose UTR was mangled) or **fooled** (label look-alike decoys a
   (when present), the per-credit proof packets, and internal metric consistency — *without trusting
   untangle*. It confirms the certificate is authentic and self-consistent; it does not re-audit your bank
   against reality.
+
+  **0.2 signing migration:** if `UNTANGLE_SIGNING_KEY` is set, it must be strict base64 containing an
+  unencrypted PKCS8 ECDSA P-256 PEM private key and the `cryptography` extra must be installed. Invalid
+  configured signing material now fails certificate issuance instead of silently producing an unsigned
+  certificate. Remove the variable for explicit unsigned mode, or replace it with output from
+  `python -m engine.certificate --generate-key` before deployment.
 - **An adversarial challenger** — a counterfactual engine that, before accepting a Razorpay verdict, tries
   to *disprove* it and computes a proof margin, abstaining when a competing explanation is too close. It
   knows when *not* to act. *(Wired and tested; enabled once a benchmark with real false-positives certifies

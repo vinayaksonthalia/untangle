@@ -27,6 +27,7 @@ from typing import Any
 from engine.certificate import verify_certificate
 from engine.config import DEFAULT_THRESHOLD
 from engine.packs import PACK_REGISTRY, get_default_pack
+from engine.version import ENGINE_VERSION
 
 PRESENTATION_SCHEMA_VERSION = "1.0.0"
 PRESENTATION_SCHEMA_PROVENANCE: dict[str, Any] = {
@@ -45,7 +46,7 @@ MAX_VERDICTS_LIMIT = 100
 # presentation.  This cache is deliberately process-local and keyed by the authenticated
 # manifest; it is never populated from a writable ``out/`` file.
 _SEALED_EVALUATOR_VERSION = "1.0.0"
-_SEALED_ENGINE_VERSION = "1.1.0"
+_SEALED_ENGINE_VERSION = ENGINE_VERSION
 _SEALED_GLOBAL_SOLVER = False
 _SEALED_PRESENTATION_CACHE: dict[tuple[str, str, str], dict[str, Any]] = {}
 
