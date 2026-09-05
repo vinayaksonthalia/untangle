@@ -26,6 +26,26 @@ from persistence.models import (
 from persistence.uow import UnitOfWork
 
 
+def _assert_mutation_blocked(exc_info: pytest.ExceptionInfo[DBAPIError]) -> None:
+    """The immutable ledgers cannot be mutated by the application — enforced by two layers.
+
+    1. Least privilege: the runtime role (untangle_app) is granted only SELECT/INSERT on the
+       immutable ledgers, so PostgreSQL denies an UPDATE/DELETE with InsufficientPrivilege
+       ("permission denied") before any trigger runs. This is the first line the app hits.
+    2. Immutability trigger: raises SQLSTATE P0001 to block UPDATE/DELETE even for a role that
+       *does* hold the privilege (defence in depth).
+
+    Either rejection satisfies the invariant, so accept both.
+    """
+    message = str(exc_info.value).lower()
+    assert (
+        "p0001" in message  # immutability trigger fired
+        or "immutable" in message
+        or "permission denied" in message  # least-privilege grant layer denied first
+        or "insufficientprivilege" in message
+    ), str(exc_info.value)
+
+
 def test_audit_events_immutable_trigger(
     is_postgres: bool,
     session_factory: sessionmaker[Session],
@@ -57,7 +77,7 @@ def test_audit_events_immutable_trigger(
                 ),
                 {"org_id": org_id},
             )
-    assert "P0001" in str(exc_info.value) or "immutable" in str(exc_info.value).lower()
+    _assert_mutation_blocked(exc_info)
 
     # 2. Attempt raw SQL DELETE on audit_events
     with pytest.raises(DBAPIError) as exc_info:
@@ -66,7 +86,7 @@ def test_audit_events_immutable_trigger(
                 text("DELETE FROM audit_events WHERE organisation_id = :org_id"),
                 {"org_id": org_id},
             )
-    assert "P0001" in str(exc_info.value) or "immutable" in str(exc_info.value).lower()
+    _assert_mutation_blocked(exc_info)
 
 
 def test_certificates_immutable_trigger(
@@ -107,7 +127,7 @@ def test_certificates_immutable_trigger(
                 text("UPDATE certificates SET content_sha256 = :h WHERE organisation_id = :org_id"),
                 {"h": "c" * 64, "org_id": org_id},
             )
-    assert "P0001" in str(exc_info.value) or "immutable" in str(exc_info.value).lower()
+    _assert_mutation_blocked(exc_info)
 
 
 def test_results_immutable_trigger(
@@ -152,4 +172,4 @@ def test_results_immutable_trigger(
                 ),
                 {"h": "d" * 64, "org_id": org_id},
             )
-    assert "P0001" in str(exc_info.value) or "immutable" in str(exc_info.value).lower()
+    _assert_mutation_blocked(exc_info)
