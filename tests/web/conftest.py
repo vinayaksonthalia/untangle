@@ -61,9 +61,11 @@ def configure_auth_env(
     """Ensure environment points to the active test database and mock IdP."""
     from webapp.auth_routes import set_oidc_http_client
 
+    auth_url = os.environ.get("POSTGRES_AUTH_TEST_URL", "").strip() or web_db_url
+    maintenance_url = os.environ.get("POSTGRES_MAINTENANCE_TEST_URL", "").strip() or web_db_url
     monkeypatch.setenv("DATABASE_URL", web_db_url)
-    monkeypatch.setenv("AUTH_DATABASE_URL", web_db_url)
-    monkeypatch.setenv("MAINTENANCE_DATABASE_URL", web_db_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", auth_url)
+    monkeypatch.setenv("MAINTENANCE_DATABASE_URL", maintenance_url)
     monkeypatch.setenv("OIDC_ISSUER_URL", mock_idp.issuer_url)
     monkeypatch.setenv("OIDC_CLIENT_ID", mock_idp.client_id)
     monkeypatch.setenv("OIDC_CLIENT_SECRET", mock_idp.client_secret)
@@ -87,31 +89,62 @@ def web_session_factory(web_engine: Engine) -> sessionmaker[Session]:
     return create_session_factory(web_engine)
 
 
+@pytest.fixture(scope="session")
+def web_auth_session_factory(web_db_url: str) -> Generator[sessionmaker[Session], None, None]:
+    """Factory bound to the auth role, which owns EXECUTE on the pre-auth
+    session functions (fn_auth_create_session, ...). The runtime app role is
+    denied those, so tests must mint session tokens through this factory."""
+    auth_url = os.environ.get("POSTGRES_AUTH_TEST_URL", "").strip() or web_db_url
+    eng = create_db_engine(auth_url)
+    yield create_session_factory(eng)
+    eng.dispose()
+
+
 @pytest.fixture
-def session(web_session_factory: sessionmaker[Session]) -> Generator[Session, None, None]:
-    sess = web_session_factory()
+def session(web_auth_session_factory: sessionmaker[Session]) -> Generator[Session, None, None]:
+    sess = web_auth_session_factory()
     yield sess
     sess.rollback()
     sess.close()
 
 
+@pytest.fixture(scope="session")
+def seed_session_factory(web_db_url: str) -> Generator[sessionmaker[Session], None, None]:
+    """Privileged factory for seeding control-plane rows in tests.
+
+    The runtime app role (POSTGRES_TEST_URL) is intentionally denied direct
+    INSERTs into control-plane tables, so test setup must seed as the schema
+    owner (POSTGRES_MIGRATION_TEST_URL). SQLite has no role separation, so it
+    falls back to the same database URL.
+    """
+    seed_url = os.environ.get("POSTGRES_MIGRATION_TEST_URL", "").strip() or web_db_url
+    eng = create_db_engine(seed_url)
+    yield create_session_factory(eng)
+    eng.dispose()
+
+
 @pytest.fixture
-def seed_issuer(session: Session, mock_idp: MockOidcServer) -> TrustedAuthIssuer:
-    issuer = session.query(TrustedAuthIssuer).filter_by(issuer_url=mock_idp.issuer_url).first()
-    if not issuer:
-        issuer = TrustedAuthIssuer(
-            issuer_url=mock_idp.issuer_url,
-            client_id=mock_idp.client_id,
-            description="Mock Test IdP",
-            is_active=True,
-        )
-        session.add(issuer)
-        session.commit()
+def seed_issuer(
+    seed_session_factory: sessionmaker[Session], mock_idp: MockOidcServer
+) -> TrustedAuthIssuer:
+    with seed_session_factory() as seed:
+        issuer = seed.query(TrustedAuthIssuer).filter_by(issuer_url=mock_idp.issuer_url).first()
+        if not issuer:
+            issuer = TrustedAuthIssuer(
+                issuer_url=mock_idp.issuer_url,
+                client_id=mock_idp.client_id,
+                description="Mock Test IdP",
+                is_active=True,
+            )
+            seed.add(issuer)
+            seed.commit()
+        seed.refresh(issuer)
+        seed.expunge(issuer)
     return issuer
 
 
 @pytest.fixture
-def tenant_a(session: Session) -> tuple[TenantContext, int]:
+def tenant_a(seed_session_factory: sessionmaker[Session]) -> tuple[TenantContext, int]:
     from persistence.repositories.control_plane import (
         create_membership,
         create_organisation,
@@ -119,13 +152,15 @@ def tenant_a(session: Session) -> tuple[TenantContext, int]:
         issue_tenant_context,
     )
 
-    org = create_organisation(session, "Organisation Alpha Web")
-    user = create_principal(session, "alice@alpha.test", "Alice Alpha")
-    create_membership(session, org.id, user.id, Role.OWNER)
-    session.commit()
+    with seed_session_factory() as seed:
+        org = create_organisation(seed, "Organisation Alpha Web")
+        user = create_principal(seed, "alice@alpha.test", "Alice Alpha")
+        create_membership(seed, org.id, user.id, Role.OWNER)
+        seed.commit()
 
-    ctx = issue_tenant_context(session, user.id, org.id, request_id="req_alpha_web_001")
-    return ctx, org.id
+        ctx = issue_tenant_context(seed, user.id, org.id, request_id="req_alpha_web_001")
+        org_id = org.id
+    return ctx, org_id
 
 
 @pytest.fixture(scope="session")

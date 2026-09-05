@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from auth.crypto import (
@@ -34,6 +35,29 @@ from persistence.models import (
 )
 
 INVITATION_TTL_DAYS = 7
+
+
+def _exec_control_plane_fn(app_session: Session, sql: str, params: dict):
+    """Execute a SECURITY DEFINER control-plane function and normalise errors.
+
+    The control-plane SQL functions signal business-rule violations with
+    ``RAISE EXCEPTION`` (invalid session, forbidden role, stale membership,
+    last-owner protection, ...). These reach SQLAlchemy as an opaque
+    ``DBAPIError`` and, once raised, poison the current transaction so any
+    further statement fails with "current transaction is aborted". To give
+    callers the same plaintext ``RuntimeError`` contract as the SQLite
+    fallbacks — and to leave the session usable — translate the driver's
+    primary message and roll back before re-raising.
+    """
+    try:
+        return app_session.execute(text(sql), params).first()
+    except DBAPIError as exc:
+        app_session.rollback()
+        message = None
+        diag = getattr(getattr(exc, "orig", None), "diag", None)
+        if diag is not None:
+            message = getattr(diag, "message_primary", None)
+        raise RuntimeError(message or "Control-plane operation failed") from exc
 
 
 @dataclass(frozen=True)
@@ -326,16 +350,15 @@ class ControlPlaneService:
         is_postgres = bind.dialect.name == "postgresql"
 
         if is_postgres:
-            row = app_session.execute(
-                text(
-                    """
+            row = _exec_control_plane_fn(
+                app_session,
+                """
                     SELECT membership_id, updated_role, updated_status, new_auth_version
                     FROM public.fn_membership_mutate_with_mutex(
                         :token_hash, :target_principal_id, :new_role_code,
                         :new_status, :audit_pub_id
                     )
-                    """
-                ),
+                    """,
                 {
                     "token_hash": token_hash,
                     "target_principal_id": target_principal_id,
@@ -343,7 +366,7 @@ class ControlPlaneService:
                     "new_status": new_status,
                     "audit_pub_id": audit_pub_id,
                 },
-            ).first()
+            )
             if not row:
                 raise RuntimeError(
                     "Failed to mutate membership via fn_membership_mutate_with_mutex"
@@ -634,15 +657,14 @@ class ControlPlaneService:
         is_postgres = bind.dialect.name == "postgresql"
 
         if is_postgres:
-            row = app_session.execute(
-                text(
-                    """
+            row = _exec_control_plane_fn(
+                app_session,
+                """
                     SELECT membership_id, organisation_id, role_code
                     FROM public.fn_invitation_accept_with_mutex(
                         :token_hash, :inv_token_hash, :mem_pub_id, :audit_1, :audit_2
                     )
-                    """
-                ),
+                    """,
                 {
                     "token_hash": token_hash,
                     "inv_token_hash": inv_token_hash,
@@ -650,7 +672,7 @@ class ControlPlaneService:
                     "audit_1": audit_1,
                     "audit_2": audit_2,
                 },
-            ).first()
+            )
             if not row:
                 raise RuntimeError(
                     "Failed to accept invitation via fn_invitation_accept_with_mutex"

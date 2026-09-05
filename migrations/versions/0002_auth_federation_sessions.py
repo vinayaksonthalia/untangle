@@ -367,6 +367,7 @@ def upgrade() -> None:
         op.execute(
             """
             GRANT SELECT ON public.trusted_auth_issuers TO untangle_fn_owner;
+            GRANT SELECT ON public.roles TO untangle_fn_owner;
             GRANT SELECT, INSERT, UPDATE ON public.organisations TO untangle_fn_owner;
             GRANT SELECT, INSERT, UPDATE ON public.principals TO untangle_fn_owner;
             GRANT SELECT, INSERT, UPDATE ON public.federated_identities TO untangle_fn_owner;
@@ -679,7 +680,10 @@ def upgrade() -> None:
             $$;
             ALTER FUNCTION public.fn_auth_lookup_session(VARCHAR) OWNER TO untangle_fn_owner;
             REVOKE ALL ON FUNCTION public.fn_auth_lookup_session(VARCHAR) FROM PUBLIC;
-            GRANT EXECUTE ON FUNCTION public.fn_auth_lookup_session(VARCHAR) TO untangle_app;
+            -- The app role resolves the session on every request; the auth role
+            -- also needs it because create_session() returns SessionInfo by
+            -- calling lookup_session() immediately after minting the session.
+            GRANT EXECUTE ON FUNCTION public.fn_auth_lookup_session(VARCHAR) TO untangle_app, untangle_auth;
             """
         )
 
@@ -691,11 +695,13 @@ def upgrade() -> None:
                 p_idle_window_seconds INT,
                 p_throttle_seconds INT
             )
-            RETURNS VOID
+            RETURNS BOOLEAN
             LANGUAGE plpgsql
             SECURITY DEFINER
             SET search_path = public, pg_temp
             AS $$
+            DECLARE
+                v_rows INTEGER;
             BEGIN
                 UPDATE public.user_sessions
                 SET last_active_at = NOW(),
@@ -705,6 +711,10 @@ def upgrade() -> None:
                   AND NOW() < absolute_expires_at
                   AND NOW() < idle_expires_at
                   AND last_active_at < NOW() - (p_throttle_seconds || ' seconds')::interval;
+                GET DIAGNOSTICS v_rows = ROW_COUNT;
+                -- Return whether this call actually wrote (throttled/expired calls touch nothing),
+                -- so the caller's touch_session_throttled() can report it truthfully (Qodo #12).
+                RETURN v_rows > 0;
             END;
             $$;
             ALTER FUNCTION public.fn_auth_touch_session_throttled(VARCHAR, INT, INT) OWNER TO untangle_fn_owner;
@@ -1033,10 +1043,10 @@ def upgrade() -> None:
                 END IF;
 
                 IF NOT EXISTS (
-                    SELECT 1 FROM public.organisation_memberships
-                    WHERE organisation_id = v_sess.active_organisation_id
-                      AND principal_id = v_sess.principal_id
-                      AND status = 'active'
+                    SELECT 1 FROM public.organisation_memberships om
+                    WHERE om.organisation_id = v_sess.active_organisation_id
+                      AND om.principal_id = v_sess.principal_id
+                      AND om.status = 'active'
                 ) THEN
                     RAISE EXCEPTION 'Unauthorized: not an active member of organisation' USING ERRCODE = '42501';
                 END IF;
@@ -1353,10 +1363,10 @@ def upgrade() -> None:
                     RAISE EXCEPTION 'Unauthorized: invalid or expired session' USING ERRCODE = '42501';
                 END IF;
 
-                SELECT id, public_id, organisation_id, email, role_code, status, expires_at
+                SELECT i.id, i.public_id, i.organisation_id, i.email, i.role_code, i.status, i.expires_at
                 INTO v_inv
-                FROM public.organisation_invitations
-                WHERE token_hash = p_token_hash;
+                FROM public.organisation_invitations i
+                WHERE i.token_hash = p_token_hash;
 
                 IF NOT FOUND THEN
                     RAISE EXCEPTION 'Invitation not found' USING ERRCODE = 'P0002';

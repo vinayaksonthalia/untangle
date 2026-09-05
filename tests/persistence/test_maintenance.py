@@ -224,6 +224,11 @@ def test_maintenance_redact_invitations(session: Session) -> None:
     results = run_maintenance_purge(session, invites_days=14)
     assert results["invitations_redacted"] >= 1
 
+    # Redaction runs server-side via raw SQL; expire the identity map so the
+    # ORM re-reads the redacted rows instead of returning cached instances
+    # (the factory uses expire_on_commit=False).
+    session.expire_all()
+
     inv1 = session.scalar(
         select(OrganisationInvitation).where(
             OrganisationInvitation.public_id == old_accepted_inv.public_id

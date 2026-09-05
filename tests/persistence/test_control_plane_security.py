@@ -32,15 +32,20 @@ def test_functions_reject_invalid_session_token_hash(
             text("SELECT * FROM public.fn_membership_list(:hash)"),
             {"hash": fake_hash},
         ).fetchall()
+    # A raised statement aborts the transaction; reset before the next probe.
+    session.rollback()
 
     # 3. fn_invitation_create must raise exception for fake session hash
     with pytest.raises(Exception, match="(?i)unauthorized|invalid"):
         session.execute(
             text(
-                "SELECT * FROM public.fn_invitation_create(:hash, 'test@example.com', 'reviewer', 'tok_hash', 'ivt_pub', 604800, 'aud_pub')"
+                "SELECT * FROM public.fn_invitation_create("
+                ":hash, 'test@example.com', 'reviewer', 'tok_hash', 'ivt_pub', 'aud_pub', "
+                "NOW() + interval '7 days')"
             ),
             {"hash": fake_hash},
         ).fetchall()
+    session.rollback()
 
 
 def test_untangle_app_cannot_query_control_plane_tables_directly(
@@ -65,3 +70,5 @@ def test_untangle_app_cannot_query_control_plane_tables_directly(
             with pytest.raises(Exception, match="(?i)permission denied"):
                 app_session.execute(text(f"SELECT * FROM public.{table} LIMIT 1"))
                 app_session.commit()
+            # The denied statement aborts the transaction; reset for the next table.
+            app_session.rollback()
